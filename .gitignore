@@ -1,0 +1,10 @@
+# BMad skill installs (reinstallable via `npx skills add` + skills-lock.json)
+.claude/skills/
+.agents/
+agent/
+
+# BMad runtime (reinstallable via `bmad setup`; render/ is a transient per-run cache)
+_bmad/render/
+_bmad/method/
+_bmad/scripts/
+_bmad/toolbox/

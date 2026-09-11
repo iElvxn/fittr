@@ -1,0 +1,222 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fittr — Fit Builder key screen</title>
+<style>
+/*
+  Governed by: DESIGN.md (colors, typography, rounded, spacing, components.wardrobe-grid-item/button-primary/button-secondary)
+  and EXPERIENCE.md (Component Patterns: Fit canvas, Fit save; Interaction Primitives: drag/pinch/rotate on this
+  surface only; Key Flow 1 step 6-7). System-font fallback used here (serif/sans) in place of Cormorant/Montserrat
+  since this mock renders offline with no network font loading.
+*/
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #E7E5E4;
+  font-family: -apple-system, Georgia, sans-serif;
+  display: flex;
+  gap: 40px;
+  padding: 40px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.caption { text-align: center; font-family: -apple-system, sans-serif; font-size: 13px; color: #57534E; margin-top: 12px; }
+.frame-wrap { display: flex; flex-direction: column; align-items: center; }
+.frame {
+  width: 375px;
+  height: 812px;
+  background: #FAFAF9;
+  border-radius: 40px;
+  border: 8px solid #1C1917;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.statusbar { height: 44px; }
+.topbar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #E7E5E4;
+}
+.topbar .back { font-size: 20px; color: #1C1917; width: 24px; }
+.topbar .title { font-family: Georgia, serif; font-weight: 600; font-size: 18px; color: #1C1917; }
+.topbar .save {
+  background: #1C1917;
+  color: #FFFFFF;
+  font-family: -apple-system, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 8px 18px;
+  border-radius: 8px;
+}
+
+/* ---- Screen 1: template picker ---- */
+.template-list { padding: 24px 16px; display: flex; flex-direction: column; gap: 16px; }
+.template-card {
+  background: #FFFFFF;
+  border: 1px solid #E7E5E4;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+.template-card .name { font-family: -apple-system, sans-serif; font-weight: 500; font-size: 15px; color: #1C1917; margin-bottom: 4px; }
+.template-card .desc { font-family: -apple-system, sans-serif; font-size: 13px; color: #78716C; }
+.template-preview { display: flex; justify-content: center; gap: 8px; margin-bottom: 12px; height: 60px; align-items: flex-end; }
+.silhouette { background: #E7E5E4; border-radius: 6px; }
+
+/* ---- Screen 2: canvas ---- */
+.canvas {
+  flex: 1;
+  position: relative;
+  background: #FAFAF9;
+}
+.item {
+  position: absolute;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: -apple-system, sans-serif;
+  font-size: 12px;
+  color: #78716C;
+  background: #F1EFED;
+  border: 1px dashed #D6D3D1;
+}
+.item.selected { border: 2px solid #1C1917; border-style: solid; color: #1C1917; }
+.item.jacket { top: 60px; left: 40px; width: 140px; height: 170px; transform: rotate(-4deg); }
+.item.top { top: 90px; left: 130px; width: 120px; height: 130px; }
+.item.jeans { top: 240px; left: 110px; width: 130px; height: 190px; }
+.item.shoes { top: 430px; left: 130px; width: 110px; height: 70px; }
+
+.name-row {
+  padding: 12px 16px;
+  border-top: 1px solid #E7E5E4;
+}
+.name-row input {
+  width: 100%;
+  font-family: Georgia, serif;
+  font-size: 16px;
+  color: #1C1917;
+  border: none;
+  outline: none;
+  background: transparent;
+}
+.name-row .placeholder { color: #A8A29E; }
+
+.tray {
+  height: 92px;
+  border-top: 1px solid #E7E5E4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  overflow: hidden;
+}
+.tray .chip {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  background: #F1EFED;
+  border: 1px solid #E7E5E4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: -apple-system, sans-serif;
+  font-size: 10px;
+  color: #78716C;
+  text-align: center;
+}
+.tray .chip.active-cat { border-color: #1C1917; color: #1C1917; font-weight: 600; }
+
+.tabbar {
+  height: 64px;
+  border-top: 1px solid #E7E5E4;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  font-family: -apple-system, sans-serif;
+  font-size: 10px;
+  color: #78716C;
+}
+.tabbar .tab.active { color: #1C1917; font-weight: 700; }
+</style>
+</head>
+<body>
+
+  <div class="frame-wrap">
+    <div class="frame">
+      <div class="statusbar"></div>
+      <div class="topbar">
+        <span class="back">‹</span>
+        <span class="title">New Fit</span>
+        <span style="width:24px;"></span>
+      </div>
+      <div class="template-list">
+        <div class="template-card">
+          <div class="template-preview">
+            <div class="silhouette" style="width:28px;height:20px;"></div>
+            <div class="silhouette" style="width:24px;height:40px;"></div>
+            <div class="silhouette" style="width:30px;height:14px;"></div>
+          </div>
+          <div class="name">Top + Bottom + Shoes</div>
+          <div class="desc">Seeds a top, bottom, and shoe slot</div>
+        </div>
+        <div class="template-card">
+          <div class="template-preview">
+            <div class="silhouette" style="width:30px;height:50px;"></div>
+            <div class="silhouette" style="width:24px;height:40px;"></div>
+          </div>
+          <div class="name">Layered Outerwear</div>
+          <div class="desc">Seeds a base layer plus outerwear</div>
+        </div>
+        <div class="template-card">
+          <div class="name">Blank canvas</div>
+          <div class="desc">Start with nothing seeded</div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <span class="tab">Home</span>
+        <span class="tab">Wardrobe</span>
+        <span class="tab active">Fits</span>
+        <span class="tab">Planner</span>
+        <span class="tab">Profile</span>
+      </div>
+    </div>
+    <div class="caption">Template picker — EXPERIENCE.md Fit builder entry, Key Flow 1 step 6</div>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame">
+      <div class="statusbar"></div>
+      <div class="topbar">
+        <span class="back">‹</span>
+        <span class="title">New Fit</span>
+        <span class="save">Save</span>
+      </div>
+      <div class="canvas">
+        <div class="item jacket">denim jacket</div>
+        <div class="item top selected">black t-shirt</div>
+        <div class="item jeans">blue jeans</div>
+        <div class="item shoes">white sneakers</div>
+      </div>
+      <div class="name-row">
+        <input placeholder="Fit 12" />
+      </div>
+      <div class="tray">
+        <div class="chip active-cat">Tops</div>
+        <div class="chip">Bottoms</div>
+        <div class="chip">Shoes</div>
+        <div class="chip">Outerwear</div>
+        <div class="chip">Accessory</div>
+      </div>
+    </div>
+    <div class="caption">Freeform canvas, item selected (black outline) — EXPERIENCE.md Component Patterns: Fit canvas / Fit save</div>
+  </div>
+
+</body>
+</html>
