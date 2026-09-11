@@ -2,10 +2,11 @@
 title: 'Sign Up for an Account'
 type: 'feature'
 created: '2026-09-10'
-status: 'ready-for-dev'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 context: ['{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md']
+baseline_commit: 'c81473d5c8fc9026aa848a4b54ca3678f28061d5'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
@@ -51,24 +52,24 @@ No existing code — this is a greenfield bootstrap (confirmed: repo currently h
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `package.json`, `app.json`, `tsconfig.json` -- `npx create-expo-app` with TypeScript + Expo Router template, at repo root -- standard bootstrap, matches stack.md
-- [ ] `.env.example` (committed) + `.env.local` (gitignored) -- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `SENTRY_DSN`, `POSTHOG_API_KEY`, `POSTHOG_HOST` placeholders -- unblocks bootstrap before real credentials exist; nothing secret goes to git
-- [ ] `app/_layout.tsx`, `app/(auth)/welcome.tsx` -- Welcome screen: three stacked sign-in-method buttons per DESIGN.md/EXPERIENCE.md -- entry point for all three flows
-- [ ] `lib/supabase.ts` -- Supabase client using a hybrid storage adapter (session encrypted with an AES key held in `expo-secure-store`, encrypted blob stored in `AsyncStorage` — per Supabase's own quickstart, since a bare secure-store value can't hold a full session), `autoRefreshToken: true`, `persistSession: true`, `detectSessionInUrl: false` -- security baseline, never unencrypted AsyncStorage
-- [ ] `supabase/migrations/0001_profiles.sql` -- `profiles` table (`id`, `username` NOT NULL, `display_name` NOT NULL, `avatar_path`, `created_at`, `updated_at`) + explicit per-operation RLS policies (`USING`/`WITH CHECK` split, no DELETE policy) -- first migration, NFR5
-- [ ] `app.json` config plugins -- `expo-apple-authentication` (`usesAppleSignIn: true`), Google Sign-In config plugin with iOS URL scheme, bundle identifier `com.elvinly.fittr` -- required native config, easy to silently omit
-- [ ] Sign-up handler (shared by all three methods) -- on success, inserts the `profiles` row with system-generated `username` and a placeholder `display_name` (identity provider's name claim if present, else a generic default); onboarding (Story 1.3) later overwrites `display_name` -- resolves the username/display_name sequencing gap
-- [ ] Apple Sign-In handler -- `expo-apple-authentication` + a generated nonce (SHA-256-hashed for the Apple request, raw value passed to Supabase `signInWithIdToken`) -- required by Supabase's Apple flow, easy to silently omit
-- [ ] Google Sign-In handler -- `@react-native-google-signin/google-signin` configured with the **Web** OAuth client ID as `webClientId` (`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, not the iOS client ID) + Supabase Auth `signInWithIdToken` -- per I/O matrix; requires EAS dev build
+- [x] `package.json`, `app.json`, `tsconfig.json` -- `npx create-expo-app` with TypeScript + Expo Router template, at repo root -- standard bootstrap, matches stack.md
+- [x] `.env.example` (committed) + `.env.local` (gitignored) -- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `SENTRY_DSN`, `POSTHOG_API_KEY`, `POSTHOG_HOST` placeholders -- unblocks bootstrap before real credentials exist; nothing secret goes to git
+- [x] `app/_layout.tsx`, `app/(auth)/welcome.tsx` -- Welcome screen: three stacked sign-in-method buttons per DESIGN.md/EXPERIENCE.md -- entry point for all three flows
+- [x] `lib/supabase.ts` -- Supabase client using a hybrid storage adapter (session encrypted with an AES key held in `expo-secure-store`, encrypted blob stored in `AsyncStorage` — per Supabase's own quickstart, since a bare secure-store value can't hold a full session), `autoRefreshToken: true`, `persistSession: true`, `detectSessionInUrl: false` -- security baseline, never unencrypted AsyncStorage
+- [x] `supabase/migrations/0001_profiles.sql` -- `profiles` table (`id`, `username` NOT NULL, `display_name` NOT NULL, `avatar_path`, `created_at`, `updated_at`) + explicit per-operation RLS policies (`USING`/`WITH CHECK` split, no DELETE policy) -- first migration, NFR5
+- [x] `app.json` config plugins -- `expo-apple-authentication` (`usesAppleSignIn: true`), Google Sign-In config plugin with iOS URL scheme, bundle identifier `com.elvinly.fittr` -- required native config, easy to silently omit
+- [x] Profile creation -- a `handle_new_user()` trigger on `auth.users` (in `0001_profiles.sql`) inserts the `profiles` row atomically with account creation: system-generated `username`, generic placeholder `display_name`. Each sign-up handler makes a best-effort client-side `UPDATE` afterward if a real provider name claim is available (`lib/auth/providerDisplayName.ts`); onboarding (Story 1.3) overwrites `display_name` regardless -- resolves both the username/display_name sequencing gap and a later-caught atomicity gap (two separate non-atomic calls) between account creation and profile creation
+- [x] Apple Sign-In handler -- `expo-apple-authentication` + a generated nonce (SHA-256-hashed for the Apple request, raw value passed to Supabase `signInWithIdToken`) -- required by Supabase's Apple flow, easy to silently omit
+- [x] Google Sign-In handler -- `@react-native-google-signin/google-signin` configured with the **Web** OAuth client ID as `webClientId` (`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, not the iOS client ID) + Supabase Auth `signInWithIdToken` -- per I/O matrix; requires EAS dev build
 - [ ] Supabase Dashboard: Google provider configured with **both** the Web Client ID and iOS Client ID (comma-separated in the Client IDs field) and "Skip nonce check" enabled for iOS -- per Supabase's dedicated Google auth guide; without this, native iOS ID-token validation can fail even with correct app-side code
-- [ ] Email/password sign-up screen + handler -- Supabase Auth `signUp`, inline validation, duplicate-email error message -- per I/O matrix
-- [ ] Cancellation handling for Apple/Google native sign-in -- catch each SDK's cancellation error and return silently to Welcome, no error UI -- per I/O matrix
-- [ ] `app/(auth)/components/ConnectionErrorNotice.tsx` -- shared "no connection" error state for all three sign-up methods -- per I/O matrix (renamed from the ambiguous `sign-in.tsx` to avoid confusion with the actual sign-in story)
-- [ ] `.github/workflows/ci.yml` -- lint, typecheck, test on every PR -- stack.md CI requirement
-- [ ] Sentry wiring (`@sentry/react-native` + Expo plugin) -- crash reporting from first launch
-- [ ] PostHog wiring (`posthog-react-native` + provider) -- `signed_up` event with a `method` property covering all three auth methods
-- [ ] Unit tests for the duplicate-email, no-connection, and cancellation edge cases from the I/O matrix
-- [ ] Automated cross-user RLS test -- two test accounts, assert the second cannot SELECT the first's `profiles` row -- replaces relying on a one-time manual check for the non-negotiable RLS baseline
+- [x] Email/password sign-up screen + handler -- Supabase Auth `signUp`, inline validation, duplicate-email error message -- per I/O matrix
+- [x] Cancellation handling for Apple/Google native sign-in -- catch each SDK's cancellation error and return silently to Welcome, no error UI -- per I/O matrix
+- [x] `app/(auth)/components/ConnectionErrorNotice.tsx` -- shared "no connection" error state for all three sign-up methods -- per I/O matrix (renamed from the ambiguous `sign-in.tsx` to avoid confusion with the actual sign-in story)
+- [x] `.github/workflows/ci.yml` -- lint, typecheck, test on every PR -- stack.md CI requirement
+- [x] Sentry wiring (`@sentry/react-native` + Expo plugin) -- crash reporting from first launch
+- [x] PostHog wiring (`posthog-react-native` + provider) -- `signed_up` event with a `method` property covering all three auth methods
+- [x] Unit tests for the duplicate-email, no-connection, and cancellation edge cases from the I/O matrix
+- [x] Automated cross-user RLS test -- two test accounts, assert the second cannot SELECT the first's `profiles` row -- replaces relying on a one-time manual check for the non-negotiable RLS baseline
 
 **Acceptance Criteria:**
 - Given the Welcome screen, when I tap "Sign in with Apple," then Supabase Auth creates my account and I land on onboarding, with a `signed_up` event reaching PostHog
@@ -84,6 +85,8 @@ No existing code — this is a greenfield bootstrap (confirmed: repo currently h
 
 **Known residual risk:** Apple and Google Sign-In are built to completion in this story but cannot be device-tested until their respective external developer-console setups exist (Apple Developer Program enrollment + Services ID; Google Cloud OAuth client) — per the Decisions log. The nonce-handling and `signInWithIdToken` token-shape assumptions in this spec are based on current Supabase/Expo documentation, not verified against a live device flow. Flag any mismatch found during first real device test as a fast-follow fix, not a sign the whole approach was wrong.
 
+**Post-implementation fix (found during task-by-task human review, not either automated review pass):** the implementing agent's own report flagged that sign-up and the `profiles` insert were two separate, non-atomic calls (`supabase.auth.signUp()` then a client-side insert) — a crash or lost connection between them could leave an orphaned `auth.users` row with no profile. Fixed by moving profile creation into a `handle_new_user()` trigger on `auth.users` (0001_profiles.sql), so both rows are created in one transaction; the client's three sign-up handlers no longer insert `profiles` directly. A side effect: the "use the provider's real name as the placeholder" nuance moved from the INSERT itself to a best-effort client-side `UPDATE` after sign-in succeeds (`lib/auth/providerDisplayName.ts`) — Apple/Google's real name is applied when available, but is no longer part of the atomicity guarantee, since it's cosmetic and onboarding (Story 1.3) overwrites it regardless. `lib/auth/createProfile.ts` and `lib/auth/username.ts` were deleted (superseded by the trigger); `supabase/tests/rls.test.ts`'s manual profile-insert step was removed since it now collides with the trigger's automatic insert.
+
 ## Spec Change Log
 
 - **Trigger:** independent spec-review subagent (user-requested second opinion before approval).
@@ -94,6 +97,12 @@ No existing code — this is a greenfield bootstrap (confirmed: repo currently h
 - **Amended:** storage-adapter description corrected from "`expo-secure-store`, never `AsyncStorage`" to the actual official pattern (encrypted `AsyncStorage` blob, AES key in `expo-secure-store` — a bare secure-store value can't hold a full session); added the missing Supabase-dashboard step for Google (both Web + iOS Client IDs, comma-separated, plus "Skip nonce check" for iOS).
 - **Avoids:** specifying a storage approach that would fail in practice once a real session object exceeds secure-store's per-item size limit; a Google sign-in that's coded correctly client-side but fails at the Supabase dashboard config layer for want of one undocumented checkbox.
 - **Keep:** the decision to use native `signInWithIdToken` for Google rather than switching to a browser-based `signInWithOAuth()` — checked against Supabase's more specific, native-app-focused guide rather than the simpler general quickstart, and confirmed correct for this native iOS app.
+
+## Human Review Summary
+
+Reviewed task-by-task with the user (not a single whole-diff review) across every file in the diff. One correctness fix applied during review (the auth/profile-creation atomicity gap — now a `handle_new_user()` trigger, see Implementation Notes) and one small cross-cutting fix (a hardcoded light-mode-only background color in `app/(auth)/_layout.tsx`, removed as redundant). Non-blocking notes logged for later, not fixed now: `Button.tsx` doesn't explicitly enforce the 44pt touch-target floor; Sentry's `tracesSampleRate: 1.0` should be dialed down before a real cohort launches; `app/index.tsx`'s signed-in redirect will need onboarding-completion logic once Story 1.3 exists; `ITSAppUsesNonExemptEncryption: false` is worth a two-minute export-compliance sanity check before App Store submission (Epic 6). All verification commands pass clean (`typecheck`, `lint`, `test` — 22 passing, 1 skipped pending real Supabase credentials in CI).
+
+Two items remain outside code, tracked as the user's own follow-up: apply `0001_profiles.sql` to the real Supabase project, and configure its Google provider (both Client IDs + Skip nonce check) — Task 10 stays unchecked for this reason, not because anything is wrong.
 
 ## Review Triage Log
 
