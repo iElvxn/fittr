@@ -22,7 +22,7 @@ Single-surface, iOS only, phone form factor (no tablet layout in Phase 1). Stand
 
 | Surface | Reached from | Purpose |
 |---|---|---|
-| Welcome / Sign up / Sign in | Cold app open, signed out | Sign in with Apple or email/password |
+| Welcome / Sign up / Sign in | Cold app open, signed out | Sign in with Apple, Google, or email/password |
 | Onboarding | First sign-up | Display name, avatar, guided "add 5 items" |
 | Home | Tab bar | Today's planned Fit, quick actions, onboarding progress |
 | Wardrobe | Tab bar | Filterable item grid |
@@ -113,7 +113,7 @@ Behavioral. Visual contrast lives in `DESIGN.md`.
 
 ### Flow 1 — First Fit (Rowan, first session, five minutes after downloading)
 
-1. Rowan signs up with Sign in with Apple.
+1. Rowan signs up with Sign in with Apple (Google and email/password are the other two entry points).
 2. Onboarding asks for a display name, then starts the guided "add your first 5 items" step.
 3. Rowan photographs five pieces with rapid camera capture — the camera stays open, a filmstrip fills up at the bottom.
 4. Rowan reviews the batch once at the end: confirms category and color for each, retakes one poor cutout.

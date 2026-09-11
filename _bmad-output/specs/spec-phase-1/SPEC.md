@@ -15,8 +15,8 @@ Fittr's MVP hypothesis is that people will repeatedly use a digital version of t
 ## Capabilities
 
 - **CAP-1 Accounts**
-  - **intent:** User can create and manage an account — sign in with Apple or email/password, sign out, delete account — with a required display name and optional avatar.
-  - **success:** Sign up, sign in, sign out, and delete account all complete successfully on a dev build.
+  - **intent:** User can create and manage an account — Sign in with Apple, Google, or email/password — sign out, delete account — with a required display name and optional avatar.
+  - **success:** Sign up, sign in, sign out, and delete account all complete successfully on a dev build via each of the three methods.
 
 - **CAP-2 Wardrobe**
   - **intent:** User can add clothing items from camera or library with on-device background removal, category, auto-detected editable color, and optional name/brand/notes, then view them in a filterable grid and edit or delete any item.
@@ -72,6 +72,8 @@ Fittr's MVP hypothesis is that people will repeatedly use a digital version of t
 - No data-export feature in Phase 1 — sync-restore-after-reinstall and account deletion already cover the restore and privacy needs export would have served.
 - No custom backend or serverless functions beyond Supabase, except where a secret or trust boundary requires one.
 - Projected Supabase free-tier storage usage must stay within limits for the launch cohort (M6) — a launch gate, not an aspiration.
+- Auth security baseline: session persisted via an encrypted-`AsyncStorage`-plus-`expo-secure-store`-held-key adapter (a plain `expo-secure-store` value can't hold a full session — its ~2048-byte per-item limit) — never *unencrypted* `AsyncStorage`; RLS enabled from the first migration, never retrofitted; no API keys or secrets embedded in the client bundle; all Supabase traffic over HTTPS; Apple/Google identity tokens verified server-side through Supabase's own OAuth provider flow (native `signInWithIdToken`, not a browser redirect), not a custom trust boundary.
+- Google's Sign-In button keeps its official multi-color "G" logomark per Google's brand guidelines (cannot be recolored) — the one other exception to DESIGN.md's pure-monochrome rule, alongside the existing destructive-red exception; button chrome and text stay monochrome.
 
 ## Non-goals
 

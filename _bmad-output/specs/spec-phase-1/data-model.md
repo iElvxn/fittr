@@ -6,8 +6,8 @@ All tables carry `id uuid` (generated on the client), `user_id`, `created_at`, `
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | Equals `auth.users.id` |
-| username | text | Unique, lowercase, set at onboarding; not surfaced in Phase 1 UI beyond profile settings |
-| display_name | text | Required |
+| username | text | Unique, lowercase, NOT NULL; system-generated at row creation (sign-up), immutable, not surfaced in Phase 1 UI beyond profile settings — "set at onboarding" refers to the user journey phase, not a later schema write |
+| display_name | text | NOT NULL; set to a placeholder at row creation (the identity provider's name claim if Apple/Google supplied one, else a generic default), overwritten by the user during onboarding (Story 1.3) |
 | avatar_path | text null | Storage object path |
 | created_at, updated_at | timestamptz | |
 
@@ -78,7 +78,7 @@ A template only supplies the initial `x, y, scale, rotation, z_index` values whe
 - Deleting the account hard-deletes all rows and all storage objects under the user's prefix, then the auth user.
 
 ### Row-level security
-Every table: `user_id = auth.uid()` for select, insert, update, delete. `profiles`: `id = auth.uid()`. Storage bucket `wardrobe`: object path must start with `auth.uid()/`.
+Every table gets explicit per-operation policies, never one blanket rule: `USING (user_id = auth.uid())` for SELECT/UPDATE/DELETE, `WITH CHECK (user_id = auth.uid())` for INSERT/UPDATE — `USING` alone does not constrain what a client can write. `profiles` uses `id` in place of `user_id` in the same pattern; no client-side DELETE policy on `profiles` (account deletion is a service-role operation, Epic 6). Storage bucket `wardrobe`: object path must start with `auth.uid()/`.
 
 ### Storage layout
 ```
