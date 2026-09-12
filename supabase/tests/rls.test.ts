@@ -34,8 +34,13 @@ describeIfConfigured('profiles RLS: cross-user isolation', () => {
     const stamp = Date.now();
     const password = 'Test-password-123!';
 
+    // mailinator.com, not example.com: Supabase Auth rejects reserved/
+    // documentation domains (example.com, example.org, test.com, ...) as
+    // an anti-abuse measure, regardless of syntax validity. mailinator.com
+    // is a real, MX-valid domain commonly used for exactly this kind of
+    // automated test signup.
     const signUp1 = await client1.auth.signUp({
-      email: `rls-test-1-${stamp}@example.com`,
+      email: `rls-test-1-${stamp}@mailinator.com`,
       password,
     });
     expect(signUp1.error).toBeNull();
@@ -43,7 +48,7 @@ describeIfConfigured('profiles RLS: cross-user isolation', () => {
     expect(user1Id).toBeTruthy();
 
     const signUp2 = await client2.auth.signUp({
-      email: `rls-test-2-${stamp}@example.com`,
+      email: `rls-test-2-${stamp}@mailinator.com`,
       password,
     });
     expect(signUp2.error).toBeNull();
