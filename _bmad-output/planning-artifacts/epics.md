@@ -15,7 +15,7 @@ This document provides the complete epic and story breakdown for fittr, decompos
 
 ### Functional Requirements
 
-FR1: Users can create an account via Sign in with Apple or email/password.
+FR1: Users can create an account via Sign in with Apple, Google, or email/password (Google added post-breakdown, see SPEC.md CAP-1).
 FR2: Users can sign in and sign out of their account.
 FR3: Users can maintain a basic profile: username (assigned at onboarding, not user-facing search), display name, optional avatar image.
 FR4: Users can delete their account, which removes all their data.
@@ -56,7 +56,7 @@ Excluded from this Phase 1 breakdown (present in Fittr MVP Requirements.md but m
 
 NFR1: Minimum supported OS is iOS 17.0, required by the on-device background-removal module.
 NFR2: Background removal runs on-device, not via a network API.
-NFR3: The app requires network connectivity for all reads and writes; there is no offline mode in Phase 1 (open question in SPEC.md: exact failure-handling behavior when the network is unavailable is still undecided).
+NFR3: The app requires network connectivity for all reads and writes; there is no offline mode in Phase 1. Network-failure behavior is block-and-keep: show a clear retry message and keep the user's unsaved input intact, per SPEC.md and EXPERIENCE.md's State Patterns.
 NFR4: Original item photos are discarded once the cutout is confirmed and are never uploaded or retained.
 NFR5: All Supabase tables enforce row-level security scoped to `auth.uid()`; Storage object paths are scoped per user.
 NFR6: Projected Supabase free-tier storage usage must stay within limits for the launch cohort.
@@ -122,7 +122,7 @@ NFR1 (iOS 17 min): Epic 1 | NFR2 (on-device removal): Epic 2 | NFR3 (network req
 ## Epic List
 
 ### Epic 1: Accounts & Foundation
-Users can create an account with Sign in with Apple or email/password, sign in, sign out, and set up a display name and optional avatar — on a working Expo app wired directly to Supabase (Postgres + Auth, RLS from the first table), with CI, Sentry, and PostHog already recording the signup event. Establishes the online-only, no-custom-backend architecture every later epic builds directly against.
+Users can create an account with Sign in with Apple, Google, or email/password, sign in, sign out, and set up a display name and optional avatar — on a working Expo app wired directly to Supabase (Postgres + Auth, RLS from the first table), with CI, Sentry, and PostHog already recording the signup event. Establishes the online-only, no-custom-backend architecture every later epic builds directly against.
 **FRs covered:** FR1, FR2, FR3, FR32, FR33
 **NFRs covered:** NFR1, NFR3, NFR5, NFR9
 
@@ -154,12 +154,12 @@ Users can delete their account and have every row and stored image actually remo
 
 ## Epic 1: Accounts & Foundation
 
-Users can create an account with Sign in with Apple or email/password, sign in, sign out, and set up a display name and optional avatar — on a working Expo app wired directly to Supabase (Postgres + Auth, RLS from the first table), with CI, Sentry, and PostHog already recording the signup event.
+Users can create an account with Sign in with Apple, Google, or email/password, sign in, sign out, and set up a display name and optional avatar — on a working Expo app wired directly to Supabase (Postgres + Auth, RLS from the first table), with CI, Sentry, and PostHog already recording the signup event.
 
 ### Story 1.1: Sign Up for an Account
 
 As a new user,
-I want to create a Fittr account with Sign in with Apple or email/password,
+I want to create a Fittr account with Sign in with Apple, Google, or email/password,
 So that I have a private place to build my digital wardrobe.
 
 **Acceptance Criteria:**
@@ -167,6 +167,10 @@ So that I have a private place to build my digital wardrobe.
 **Given** the Welcome screen
 **When** I tap "Sign in with Apple"
 **Then** Supabase Auth creates my account via Apple's identity token and I land on onboarding
+
+**Given** the Welcome screen
+**When** I tap "Continue with Google"
+**Then** Supabase Auth creates my account via Google's identity token and I land on onboarding
 
 **Given** the Welcome screen
 **When** I choose "Continue with email" and submit a valid email/password
@@ -178,7 +182,7 @@ So that I have a private place to build my digital wardrobe.
 
 **And** a `profiles` row is created for my account with row-level security enforcing `id = auth.uid()`, and a `signed_up` event (with `method`) is recorded and reaches PostHog
 
-*Implementation note: this story also bootstraps the Expo/Router/NativeWind project, the Supabase project with its first migration (`profiles` + RLS) and CI (lint/typecheck/test), and wires the Sentry/PostHog SDKs. Establishes NFR1 (iOS 17 deployment target), NFR5 (RLS), NFR9 (no custom backend).*
+*Implementation note: this story also bootstraps the Expo/Router/NativeWind project, the Supabase project with its first migration (`profiles` + RLS) and CI (lint/typecheck/test), and wires the Sentry/PostHog SDKs. Establishes NFR1 (iOS 17 deployment target), NFR5 (RLS), NFR9 (no custom backend). Google Sign-In requires an EAS development build (Expo Go can't host native Google auth), same constraint as the later background-removal module. Security baseline established here and expected of every later epic: session tokens in platform secure storage, not `AsyncStorage`; RLS from this first migration onward, never retrofitted; no secrets in the client bundle; Apple/Google identity tokens verified server-side via Supabase's own OAuth flow.*
 
 ### Story 1.2: Sign In and Sign Out
 
@@ -189,7 +193,7 @@ So that I can securely access my own data.
 **Acceptance Criteria:**
 
 **Given** a registered account
-**When** I sign in with Apple or with correct email/password
+**When** I sign in with Apple, Google, or correct email/password
 **Then** I land on Home with my data loaded directly from Supabase
 
 **Given** incorrect email/password
