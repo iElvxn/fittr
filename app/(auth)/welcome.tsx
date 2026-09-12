@@ -6,7 +6,7 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { AppleGlyph } from '@/components/ui/AppleGlyph';
 import { GoogleGlyph } from '@/components/ui/GoogleGlyph';
-import { ConnectionErrorNotice } from '@/app/(auth)/components/ConnectionErrorNotice';
+import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { signUpWithApple } from '@/lib/auth/appleSignIn';
 import { signUpWithGoogle } from '@/lib/auth/googleSignIn';
 import { isNoConnectionError, NO_CONNECTION_MESSAGE } from '@/lib/auth/errors';
@@ -25,7 +25,7 @@ export default function Welcome() {
     try {
       const result = await signUpWithApple();
       if (result.status === 'success') {
-        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)/index');
+        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)');
       }
       // 'cancelled' — normal path, silently stay on Welcome, no error shown.
     } catch (error) {
@@ -46,7 +46,7 @@ export default function Welcome() {
     try {
       const result = await signUpWithGoogle();
       if (result.status === 'success') {
-        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)/index');
+        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)');
       }
       // 'cancelled' — normal path, silently stay on Welcome, no error shown.
     } catch (error) {

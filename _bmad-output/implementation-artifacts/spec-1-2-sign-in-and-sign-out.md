@@ -84,6 +84,12 @@ Two issues surfaced during verification, not anticipated in the spec, both fixed
 
 All three verification commands ran clean: `npm run lint`, `npm run typecheck`, `npm test` (32 passed, 1 pre-existing skip unrelated to this story).
 
+**Post-implementation fixes (found during the user's first real device test, not caught by `tsc` or any test):**
+- **`/(tabs)/index` was never a valid runtime route** — Expo Router strips group segments from real URLs, so the flattened path for `app/(tabs)/index.tsx` is `/(tabs)` (or bare `/`), not `/(tabs)/index`. The `.expo/types/router.d.ts` snapshot used during implementation was stale (generated before the dev server had ever run against the finished `(tabs)` group), and it happened to list `/(tabs)/index` as a typed-route leaf while rejecting bare `/(tabs)` — `tsc` passing on `/(tabs)/index` was not evidence it was a real route. Signing in with Google hit exactly this path and produced Expo Router's "Unmatched Route" screen. Fixed by replacing all six occurrences (`sign-in.tsx`, `welcome.tsx` x2, `index.tsx`, `onboarding.tsx`, and the two render tests asserting on it) with `/(tabs)`. **Lesson:** a stale `.expo/types` file can make `tsc` accept a href that doesn't actually resolve at runtime — a real navigation needs to be exercised on a live dev server at least once, typecheck passing is not sufficient proof for router hrefs specifically.
+- **`ConnectionErrorNotice` under `app/(auth)/components/` produced a real runtime warning**, not just the cosmetic code-organization nit this spec's Review Triage Log rejected it as ("low, reject... moving it ripples import paths for marginal benefit"): Expo Router scans every `.tsx` file under `app/` as a route candidate regardless of subfolder name, and warned that this file (a named export, not a route) was "missing the required default export." That earlier triage verdict is superseded by this evidence. Fixed by moving the component to `components/ConnectionErrorNotice.tsx` (sibling to the existing `components/ui/`, outside `app/` entirely) and updating all four importers (`welcome.tsx`, `email-sign-up.tsx`, `sign-in.tsx`, `profile.tsx`).
+
+Re-verified after both fixes: `npm run lint`, `npm run typecheck`, `npm test` (45 passed) all clean.
+
 ## Spec Change Log
 
 ## Review Triage Log

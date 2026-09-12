@@ -4,7 +4,7 @@ import { Stack, router } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { ConnectionErrorNotice } from '@/app/(auth)/components/ConnectionErrorNotice';
+import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { signInWithEmail } from '@/lib/auth/emailSignIn';
 import { INVALID_CREDENTIALS_MESSAGE, NO_CONNECTION_MESSAGE, SignUpError } from '@/lib/auth/errors';
 
@@ -29,7 +29,7 @@ export default function SignIn() {
       await signInWithEmail(email, password);
       // Input stays intact until we know the outcome; on success we leave
       // the screen entirely, so there's nothing further to reset.
-      router.replace('/(tabs)/index');
+      router.replace('/(tabs)');
     } catch (error) {
       if (error instanceof SignUpError && error.kind === 'no_connection') {
         setConnectionError(true);

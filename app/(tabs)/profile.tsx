@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { ConnectionErrorNotice } from '@/app/(auth)/components/ConnectionErrorNotice';
+import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/auth/useSession';
 import { NO_CONNECTION_MESSAGE } from '@/lib/auth/errors';

@@ -4,7 +4,7 @@ import { Link, Stack, router } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { ConnectionErrorNotice } from '@/app/(auth)/components/ConnectionErrorNotice';
+import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { signUpWithEmail, validateEmailSignUp } from '@/lib/auth/emailSignUp';
 import { NO_CONNECTION_MESSAGE, SignUpError } from '@/lib/auth/errors';
 

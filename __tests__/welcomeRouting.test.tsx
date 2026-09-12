@@ -35,7 +35,7 @@ describe('Welcome routing on successful sign-in', () => {
     await render(<Welcome />);
     await user.press(screen.getByText('Sign in with Apple'));
 
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)/index');
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)');
   });
 
   it('routes a new Google user to onboarding', async () => {
@@ -55,6 +55,6 @@ describe('Welcome routing on successful sign-in', () => {
     await render(<Welcome />);
     await user.press(screen.getByText('Continue with Google'));
 
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)/index');
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)');
   });
 });

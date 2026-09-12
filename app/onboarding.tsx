@@ -19,7 +19,7 @@ export default function Onboarding() {
         Your account is ready. Onboarding (display name, avatar, first items) is coming in the next
         update.
       </Text>
-      <Button title="Continue to Fittr" onPress={() => router.replace('/(tabs)/index')} />
+      <Button title="Continue to Fittr" onPress={() => router.replace('/(tabs)')} />
     </View>
   );
 }

@@ -55,6 +55,6 @@ describe('Sign-in screen error-kind-to-message wiring', () => {
     await render(<SignIn />);
     await fillAndSubmit(user);
 
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)/index');
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)');
   });
 });
