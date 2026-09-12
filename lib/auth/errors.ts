@@ -1,7 +1,11 @@
 import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
 import { isErrorWithCode, statusCodes } from '@react-native-google-signin/google-signin';
 
-export type SignUpErrorKind = 'duplicate_email' | 'no_connection' | 'unknown';
+export type SignUpErrorKind =
+  | 'duplicate_email'
+  | 'no_connection'
+  | 'invalid_credentials'
+  | 'unknown';
 
 export class SignUpError extends Error {
   kind: SignUpErrorKind;
@@ -84,5 +88,25 @@ export function isDuplicateEmailError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Wrong email/password on sign-in. Supabase returns this as an
+ * `AuthApiError` with `status: 400` and message "Invalid login
+ * credentials" — same shape-checking approach as `isDuplicateEmailError`.
+ */
+export function isInvalidCredentialsError(error: unknown): boolean {
+  if (error instanceof AuthApiError) {
+    return error.status === 400 && /invalid login credentials/i.test(error.message);
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    return /invalid login credentials/i.test(
+      String((error as { message?: unknown }).message ?? ''),
+    );
+  }
+
+  return false;
+}
+
 export const DUPLICATE_EMAIL_MESSAGE = 'Account already exists — sign in instead.';
 export const NO_CONNECTION_MESSAGE = 'Check your connection and try again.';
+export const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password.';

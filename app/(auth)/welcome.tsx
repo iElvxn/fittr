@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View } from 'react-native';
-import { Stack, router } from 'expo-router';
+import { Link, Stack, router } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -25,7 +25,7 @@ export default function Welcome() {
     try {
       const result = await signUpWithApple();
       if (result.status === 'success') {
-        router.replace('/onboarding');
+        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)/index');
       }
       // 'cancelled' — normal path, silently stay on Welcome, no error shown.
     } catch (error) {
@@ -46,7 +46,7 @@ export default function Welcome() {
     try {
       const result = await signUpWithGoogle();
       if (result.status === 'success') {
-        router.replace('/onboarding');
+        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)/index');
       }
       // 'cancelled' — normal path, silently stay on Welcome, no error shown.
     } catch (error) {
@@ -107,6 +107,12 @@ export default function Welcome() {
           onPress={() => router.push('/(auth)/email-sign-up')}
         />
       </View>
+
+      <Link href="/(auth)/sign-in" className="mt-6 self-center">
+        <Text variant="label" className="text-ink-secondary underline dark:text-ink-secondaryDark">
+          Already have an account? Sign in
+        </Text>
+      </Link>
     </View>
   );
 }

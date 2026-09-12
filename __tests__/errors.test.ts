@@ -3,6 +3,7 @@ import { statusCodes } from '@react-native-google-signin/google-signin';
 
 import {
   isDuplicateEmailError,
+  isInvalidCredentialsError,
   isNoConnectionError,
   isUserCancellationError,
 } from '@/lib/auth/errors';
@@ -16,6 +17,18 @@ describe('isDuplicateEmailError', () => {
   it('is false for unrelated errors', () => {
     const error = new AuthApiError('Invalid login credentials', 400, 'invalid_credentials');
     expect(isDuplicateEmailError(error)).toBe(false);
+  });
+});
+
+describe('isInvalidCredentialsError', () => {
+  it('recognizes Supabase\'s "Invalid login credentials" AuthApiError', () => {
+    const error = new AuthApiError('Invalid login credentials', 400, 'invalid_credentials');
+    expect(isInvalidCredentialsError(error)).toBe(true);
+  });
+
+  it('is false for unrelated errors', () => {
+    const error = new AuthApiError('User already registered', 400, 'user_already_exists');
+    expect(isInvalidCredentialsError(error)).toBe(false);
   });
 });
 
