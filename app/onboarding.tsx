@@ -1,7 +1,8 @@
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
+import { router } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
-import { supabase } from '@/lib/supabase';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Placeholder landing screen after a successful sign-up. Story 1.3 builds
@@ -14,17 +15,11 @@ export default function Onboarding() {
       <Text variant="display" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
         Welcome to Fittr
       </Text>
-      <Text variant="body" className="text-center text-ink-secondary dark:text-ink-secondaryDark">
+      <Text variant="body" className="mb-6 text-center text-ink-secondary dark:text-ink-secondaryDark">
         Your account is ready. Onboarding (display name, avatar, first items) is coming in the next
         update.
       </Text>
-      {__DEV__ && (
-        <Pressable onPress={() => supabase.auth.signOut()} className="mt-6">
-          <Text variant="body" className="text-ink-secondary underline dark:text-ink-secondaryDark">
-            [dev] Sign out
-          </Text>
-        </Pressable>
-      )}
+      <Button title="Continue to Fittr" onPress={() => router.replace('/(tabs)')} />
     </View>
   );
 }

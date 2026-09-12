@@ -4,8 +4,9 @@ import { supabase } from '@/lib/supabase';
 import { isUserCancellationError } from '@/lib/auth/errors';
 import { trackSignedUp } from '@/lib/analytics/posthog';
 import { applyProviderDisplayName } from '@/lib/auth/providerDisplayName';
+import { isNewAccount } from '@/lib/auth/isNewAccount';
 
-export type GoogleSignInResult = { status: 'success' } | { status: 'cancelled' };
+export type GoogleSignInResult = { status: 'success'; isNewUser: boolean } | { status: 'cancelled' };
 
 let configured = false;
 
@@ -66,13 +67,19 @@ export async function signUpWithGoogle(): Promise<GoogleSignInResult> {
     throw error;
   }
 
-  const providerNameClaim = [givenName, familyName].filter(Boolean).join(' ').trim();
+  const isNewUser = isNewAccount(data.user);
 
-  // Best-effort only: see the comment in appleSignIn.ts — the profiles row
-  // already exists via the auth.users trigger.
-  await applyProviderDisplayName(data.user.id, providerNameClaim || null);
+  if (isNewUser) {
+    const providerNameClaim = [givenName, familyName].filter(Boolean).join(' ').trim();
 
-  trackSignedUp('google');
+    // Best-effort only: see the comment in appleSignIn.ts — the profiles
+    // row already exists via the auth.users trigger. Only applied for a
+    // new account, so a returning user's own display_name edit (Story
+    // 1.3) is never silently overwritten on a later sign-in.
+    await applyProviderDisplayName(data.user.id, providerNameClaim || null);
 
-  return { status: 'success' };
+    trackSignedUp('google');
+  }
+
+  return { status: 'success', isNewUser };
 }

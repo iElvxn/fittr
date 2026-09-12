@@ -3,9 +3,11 @@ import { View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 
 /**
- * Shared "no connection" state for all three sign-up methods. Renamed from
- * the ambiguous `sign-in.tsx` in the spec's first draft — this is a shared
- * component, not the (future, Story 1.2) sign-in screen.
+ * Shared "no connection" state for all sign-up/sign-in methods and any
+ * authenticated screen's data fetches. Lives outside `app/` (unlike its
+ * original location under `app/(auth)/components/`) because Expo Router
+ * treats every `.tsx` file under `app/` as a route candidate regardless of
+ * subfolder name, and this component has no default export.
  */
 export function ConnectionErrorNotice({ message }: { message: string }) {
   return (

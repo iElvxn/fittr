@@ -5,8 +5,9 @@ import { supabase } from '@/lib/supabase';
 import { isUserCancellationError } from '@/lib/auth/errors';
 import { trackSignedUp } from '@/lib/analytics/posthog';
 import { applyProviderDisplayName } from '@/lib/auth/providerDisplayName';
+import { isNewAccount } from '@/lib/auth/isNewAccount';
 
-export type AppleSignInResult = { status: 'success' } | { status: 'cancelled' };
+export type AppleSignInResult = { status: 'success'; isNewUser: boolean } | { status: 'cancelled' };
 
 /**
  * Sign in with Apple, via Supabase Auth's native `signInWithIdToken` — no
@@ -51,19 +52,25 @@ export async function signUpWithApple(): Promise<AppleSignInResult> {
     throw error;
   }
 
-  const providerNameClaim = [credential.fullName?.givenName, credential.fullName?.familyName]
-    .filter(Boolean)
-    .join(' ')
-    .trim();
+  const isNewUser = isNewAccount(data.user);
 
-  // Best-effort only: the profiles row (with a placeholder display_name)
-  // already exists via the auth.users trigger. This just upgrades the
-  // placeholder to Apple's real name when available — if it fails, the
-  // user still has a working account, and onboarding overwrites this
-  // regardless.
-  await applyProviderDisplayName(data.user.id, providerNameClaim || null);
+  if (isNewUser) {
+    const providerNameClaim = [credential.fullName?.givenName, credential.fullName?.familyName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
 
-  trackSignedUp('apple');
+    // Best-effort only: the profiles row (with a placeholder display_name)
+    // already exists via the auth.users trigger. This just upgrades the
+    // placeholder to Apple's real name when available — if it fails, the
+    // user still has a working account, and onboarding overwrites this
+    // regardless. Only applied for a new account: a returning user may
+    // have since set their own display_name (Story 1.3), which this must
+    // not silently overwrite on every later sign-in.
+    await applyProviderDisplayName(data.user.id, providerNameClaim || null);
 
-  return { status: 'success' };
+    trackSignedUp('apple');
+  }
+
+  return { status: 'success', isNewUser };
 }

@@ -14,5 +14,8 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={session ? '/onboarding' : '/(auth)/welcome'} />;
+  // No onboarding-completion flag exists yet (Story 1.3's scope), so any
+  // existing session on cold start is treated as a returning user and goes
+  // straight to Home rather than back through onboarding.
+  return <Redirect href={session ? '/(tabs)' : '/(auth)/welcome'} />;
 }
