@@ -14,10 +14,13 @@ function ensureConfigured() {
     return;
   }
 
-  // Must be the **Web** OAuth client ID — this is the audience Supabase
-  // actually validates via `signInWithIdToken`, not the iOS client ID.
+  // webClientId must be the **Web** OAuth client ID — this is the audience
+  // Supabase actually validates via `signInWithIdToken`. iosClientId is
+  // required separately on iOS since we don't ship a GoogleService-Info.plist
+  // for the native SDK to read it from.
   GoogleSignin.configure({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
   });
   configured = true;
 }

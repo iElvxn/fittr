@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-const describeIfConfigured = supabaseUrl && supabaseAnonKey ? describe : describe.skip;
+const describeIfConfigured = supabaseUrl && supabasePublishableKey ? describe : describe.skip;
 
 /**
  * Automated cross-user RLS check for `profiles` (per the spec: "an
@@ -17,8 +17,8 @@ const describeIfConfigured = supabaseUrl && supabaseAnonKey ? describe : describ
  * skipped — not failed — when Supabase credentials aren't present in the
  * environment, so it doesn't block `npm test` for contributors who haven't
  * configured `.env.local` yet; wire `EXPO_PUBLIC_SUPABASE_URL` /
- * `EXPO_PUBLIC_SUPABASE_ANON_KEY` into CI secrets to make this test actually
- * run there.
+ * `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` into CI secrets to make this test
+ * actually run there.
  *
  * No manual `profiles` insert here: the `handle_new_user` trigger on
  * `auth.users` (0001_profiles.sql) creates the row automatically as part of
@@ -28,8 +28,8 @@ describeIfConfigured('profiles RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's profiles row", async () => {
-    const client1 = createClient(supabaseUrl!, supabaseAnonKey!);
-    const client2 = createClient(supabaseUrl!, supabaseAnonKey!);
+    const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+    const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';

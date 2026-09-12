@@ -38,13 +38,20 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID"
+          "iosUrlScheme": "com.googleusercontent.apps.873379067038-sqj4nk03ma6lmtn19hp532usomtgir47"
         }
       ],
       "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "98601fda-12e4-444b-aeac-5683b0298186"
+      }
+    },
+    "owner": "elvinly323"
   }
 }

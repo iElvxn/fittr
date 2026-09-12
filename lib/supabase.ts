@@ -62,18 +62,18 @@ class LargeSecureStore {
 }
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabasePublishableKey) {
   // Fails loudly in dev rather than silently hitting `undefined.supabase.co`.
   // Real values come from `.env.local` (gitignored, self-managed by the developer).
   console.warn(
-    'Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY. ' +
+    'Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY. ' +
       'Copy .env.example to .env.local and fill in your Supabase project values.',
   );
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '', {
+export const supabase = createClient(supabaseUrl ?? '', supabasePublishableKey ?? '', {
   auth: {
     storage: new LargeSecureStore(),
     autoRefreshToken: true,
