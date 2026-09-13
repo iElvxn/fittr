@@ -41,6 +41,12 @@
           "iosUrlScheme": "com.googleusercontent.apps.873379067038-sqj4nk03ma6lmtn19hp532usomtgir47"
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Fittr accesses your photo library so you can choose a profile avatar."
+        }
+      ],
       "@sentry/react-native"
     ],
     "experiments": {

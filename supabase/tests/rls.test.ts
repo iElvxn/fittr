@@ -87,3 +87,73 @@ describeIfConfigured('profiles RLS: cross-user isolation', () => {
     }
   });
 });
+
+/**
+ * Story 1.3: cross-user isolation for the `wardrobe` Storage bucket's
+ * per-operation RLS (0002_avatar_storage.sql), mirroring the `profiles`
+ * check above -- same rationale for hitting a real project, the Admin API
+ * fixture pattern, and being skippable without credentials.
+ */
+describeIfConfigured('wardrobe storage RLS: cross-user isolation', () => {
+  jest.setTimeout(30000);
+
+  it("a second user cannot read or overwrite the first user's avatar object", async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-storage-1-${stamp}@mailinator.com`;
+    const email2 = `rls-storage-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({
+      email: email1,
+      password,
+      email_confirm: true,
+    });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({
+      email: email2,
+      password,
+      email_confirm: true,
+    });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const objectPath = `${user1Id}/avatar.jpg`;
+
+    try {
+      // User 1 uploads their own avatar, exactly as the app does.
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      const uploadResult = await client1.storage
+        .from('wardrobe')
+        .upload(objectPath, new Uint8Array([1, 2, 3, 4]), { contentType: 'image/jpeg', upsert: true });
+      expect(uploadResult.error).toBeNull();
+
+      // User 2 -- a normal signed-in client, not the admin client -- tries
+      // to read and overwrite user 1's object.
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      const signedUrlResult = await client2.storage.from('wardrobe').createSignedUrl(objectPath, 60);
+      expect(signedUrlResult.error).not.toBeNull();
+
+      const overwriteResult = await client2.storage
+        .from('wardrobe')
+        .upload(objectPath, new Uint8Array([9, 9, 9, 9]), { contentType: 'image/jpeg', upsert: true });
+      expect(overwriteResult.error).not.toBeNull();
+    } finally {
+      // Don't let throwaway RLS-check accounts/objects accumulate in a real project.
+      await admin.storage.from('wardrobe').remove([objectPath]);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+});
