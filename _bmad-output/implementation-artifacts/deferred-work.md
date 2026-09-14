@@ -17,3 +17,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-set-up-and-edit-profile.md`
   summary: No way to remove a previously-set avatar and revert to having none.
   evidence: Review finding (blind-hunter): not required by any of Story 1.3's ACs, and the frozen `Never` boundary explicitly forbids a Storage DELETE policy — a clean removal feature would need one (or a distinct null-avatar sentinel), which is a real design decision beyond this story's scope.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-sign-up-for-an-account.md`
+  summary: Email sign-up never checks whether Supabase actually returned a session (it only checks `data.user`), so with "Confirm email" on (the project's deliberate setting), a brand-new email/password account has no session and silently can't do anything on the next screen — no error, no "check your email" messaging, just a dead Continue button on onboarding.
+  evidence: Found during live device testing of Story 1.3's onboarding screen: `email-sign-up.tsx` unconditionally routes to `/onboarding` after `signUpWithEmail` resolves, and `handleContinue`'s `if (!userId) return;` guard silently no-ops with no session. Root cause is in Story 1.1's sign-up flow, not Story 1.3.
