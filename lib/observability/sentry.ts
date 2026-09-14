@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/react-native';
 
-const dsn = process.env.SENTRY_DSN;
+const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
 /**
  * Crash reporting from first launch. With no DSN configured, `Sentry.init`
