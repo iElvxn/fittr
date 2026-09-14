@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-10-2026 22:05
-last_updated: 09-14-2026 09:00
+last_updated: 09-14-2026 01:15
 project: fittr
 project_key: NOKEY
 tracking_system: file-system
@@ -39,7 +39,7 @@ development_status:
   1-1-sign-up-for-an-account: done
   1-2-sign-in-and-sign-out: done
   1-3-set-up-and-edit-profile: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   epic-2: backlog
   2-1-add-a-single-wardrobe-item: backlog
@@ -73,3 +73,64 @@ development_status:
   6-3-loading-empty-and-error-states-everywhere: backlog
   6-4-pre-launch-verification: backlog
   epic-6-retrospective: optional
+action_items:
+  - id: "epic-1-retro-item-1-fix-analytics-env-var-prefix"
+    epic: 1
+    action: "Rename SENTRY_DSN/POSTHOG_API_KEY/POSTHOG_HOST to their EXPO_PUBLIC_
+      forms so analytics/crash reporting actually activate in real builds; re-verify
+      with one real event reaching each dashboard."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-1-retro-item-2-fix-email-confirmation-onboarding-deadend"
+    epic: 1
+    action: "Fix email sign-up: branch on returned session, show a check-your-email
+      state instead of routing to onboarding when absent; add a session guard to onboarding.tsx."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-1-retro-item-3-profiles-db-level-invariants"
+    epic: 1
+    action: "Add database-level enforcement (trigger or column-privilege scoping)
+      for profiles invariants currently only enforced client-side: username/created_at
+      immutability, avatar_path shape, display_name non-blank/length cap."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-1-retro-item-4-signout-error-handling"
+    epic: 1
+    action: "Decide and implement handleSignOut's behavior when supabase.auth.signOut()
+      returns an error (retry, surface an error, or explicitly document local-sign-out-always-wins)."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-1-retro-item-5-epic6-avatar-storage-cleanup"
+    epic: 1
+    action: "Epic 6 (Delete Account): build wardrobe/{uid}/avatar.jpg Storage cleanup
+      into the account-deletion flow from the start."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-1-retro-item-6-document-ci-supabase-separation"
+    epic: 1
+    action: "Document (or enforce via a distinct secret name) that CI's Supabase project
+      is separate from production, so RLS test runs never touch real user data."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-1-retro-item-7-avatar-picker-duplication"
+    epic: 1
+    action: "Consolidate the duplicated avatar-picker logic/AVATAR_SIZE constant between
+      onboarding.tsx and profile.tsx into a shared hook or component before a third
+      screen needs it."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-1-retro-item-8-signuperror-rename"
+    epic: 1
+    action: "Consider renaming the SignUpError class (now covering sign-up, sign-in,
+      and profile/avatar errors) to something like AuthError before Epic 2 inherits
+      or forks it further."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
