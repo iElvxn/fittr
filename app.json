@@ -44,8 +44,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Fittr accesses your photo library so you can choose a profile avatar or add wardrobe items.",
-          "cameraPermission": "Fittr uses your camera to photograph clothing items to add to your wardrobe."
+          "photosPermission": "Fittr accesses your photo library so you can choose a profile avatar or add wardrobe items."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Fittr uses your camera to photograph clothing items to add to your wardrobe.",
+          "microphonePermission": false
         }
       ],
       "@sentry/react-native"

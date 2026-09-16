@@ -27,7 +27,7 @@ export function trackSignedUp(method: SignUpMethod) {
   posthog.capture('signed_up', { method });
 }
 
-/** Fired once per successful item save, per the epic's analytics plumbing (source: camera/library, category). */
-export function trackItemAdded(source: CaptureSource, category: WardrobeItemCategory) {
-  posthog.capture('item_added', { source, category });
+/** Fired once per successful item save, per the epic's analytics plumbing (source: camera/library, category, batch_size). */
+export function trackItemAdded(source: CaptureSource, category: WardrobeItemCategory, batchSize: number) {
+  posthog.capture('item_added', { source, category, batch_size: batchSize });
 }

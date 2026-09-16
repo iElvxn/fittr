@@ -1,132 +1,134 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActionSheetIOS, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActionSheetIOS, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useNavigation, type NativeStackNavigationProp } from 'expo-router';
-import { Image } from 'expo-image';
+import { CameraView } from 'expo-camera';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
+import { BatchQueueRow } from '@/components/wardrobe/BatchQueueRow';
+import { CameraFilmstrip } from '@/components/wardrobe/CameraFilmstrip';
 import { useSession } from '@/lib/auth/useSession';
-import { useWardrobeCaptureStore } from '@/stores/wardrobeCapture';
-import { captureFromCamera, pickFromLibrary, type CaptureSource } from '@/lib/wardrobe/capture';
+import { useWardrobeCaptureStore, type BatchItem } from '@/stores/wardrobeCapture';
+import { pickFromLibrary } from '@/lib/wardrobe/capture';
+import { ensureCameraPermission, capturePhoto, type CameraRef } from '@/lib/wardrobe/rapidCamera';
 import { processWardrobePhoto } from '@/lib/wardrobe/processImage';
-import { uploadItem, insertWardrobeItem, CATEGORY_OPTIONS } from '@/lib/wardrobe/addItem';
+import { saveBatch } from '@/lib/wardrobe/addItem';
 import { WardrobeItemError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/wardrobe/errors';
 import { trackItemAdded } from '@/lib/analytics/posthog';
 import { Sentry } from '@/lib/observability/sentry';
 
-/**
- * A small curated palette, not a full color picker -- matches the spec's
- * Code Map wording ("color swatches"). The auto-detected color is applied
- * to `colorHex` as soon as processing finishes; tapping a swatch here just
- * overrides it before Save, per the "user-editable" boundary.
- *
- * Each swatch carries a human-readable name for its accessibility label --
- * without one, a screen reader would read the raw hex digits aloud.
- */
-const COLOR_SWATCHES: { hex: string; name: string }[] = [
-  { hex: '#0C0A09', name: 'Black' },
-  { hex: '#FFFFFF', name: 'White' },
-  { hex: '#78716C', name: 'Gray' },
-  { hex: '#1E3A8A', name: 'Navy' },
-  { hex: '#DBEAFE', name: 'Light blue' },
-  { hex: '#78350F', name: 'Brown' },
-  { hex: '#D6D3D1', name: 'Beige' },
-  { hex: '#7F1D1D', name: 'Red' },
-  { hex: '#EA580C', name: 'Orange' },
-  { hex: '#CA8A04', name: 'Yellow' },
-  { hex: '#166534', name: 'Green' },
-  { hex: '#4C1D95', name: 'Purple' },
-  { hex: '#DB2777', name: 'Pink' },
-];
+/** Past this many items in one session, a non-blocking note appears -- never a block (per spec's Boundaries). */
+const SOFT_BATCH_SIZE_WARNING = 20;
+const SOFT_BATCH_SIZE_MESSAGE = "That's a lot of items for one batch, but you can keep going.";
+/** Balances the header/footer row against the text on its other side -- same value everywhere so the two screens don't drift. */
+const HEADER_SPACER_WIDTH = 60;
+
+type ScreenMode = 'choosing' | 'camera' | 'reviewing' | 'permission-error';
 
 export default function AddItem() {
   const { session } = useSession();
   const userId = session?.user.id;
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
+  const insets = useSafeAreaInsets();
 
-  const source = useWardrobeCaptureStore((state) => state.source);
-  const status = useWardrobeCaptureStore((state) => state.status);
-  const errorMessage = useWardrobeCaptureStore((state) => state.errorMessage);
-  const cutoutUri = useWardrobeCaptureStore((state) => state.cutoutUri);
-  const thumbUri = useWardrobeCaptureStore((state) => state.thumbUri);
-  const itemId = useWardrobeCaptureStore((state) => state.itemId);
-  const category = useWardrobeCaptureStore((state) => state.category);
-  const colorHex = useWardrobeCaptureStore((state) => state.colorHex);
-  const name = useWardrobeCaptureStore((state) => state.name);
-  const brand = useWardrobeCaptureStore((state) => state.brand);
-  const notes = useWardrobeCaptureStore((state) => state.notes);
-
-  const startCapture = useWardrobeCaptureStore((state) => state.startCapture);
-  const setProcessed = useWardrobeCaptureStore((state) => state.setProcessed);
-  const setProcessingFailed = useWardrobeCaptureStore((state) => state.setProcessingFailed);
-  const retake = useWardrobeCaptureStore((state) => state.retake);
-  const setCategory = useWardrobeCaptureStore((state) => state.setCategory);
-  const setColorHex = useWardrobeCaptureStore((state) => state.setColorHex);
-  const setName = useWardrobeCaptureStore((state) => state.setName);
-  const setBrand = useWardrobeCaptureStore((state) => state.setBrand);
-  const setNotes = useWardrobeCaptureStore((state) => state.setNotes);
+  const items = useWardrobeCaptureStore((state) => state.items);
+  const addCaptured = useWardrobeCaptureStore((state) => state.addCaptured);
+  const setItemProcessed = useWardrobeCaptureStore((state) => state.setItemProcessed);
+  const setItemProcessingFailed = useWardrobeCaptureStore((state) => state.setItemProcessingFailed);
+  const replaceItemPhoto = useWardrobeCaptureStore((state) => state.replaceItemPhoto);
+  const setItemCategory = useWardrobeCaptureStore((state) => state.setItemCategory);
+  const setItemColorHex = useWardrobeCaptureStore((state) => state.setItemColorHex);
+  const setItemName = useWardrobeCaptureStore((state) => state.setItemName);
+  const setItemBrand = useWardrobeCaptureStore((state) => state.setItemBrand);
+  const setItemNotes = useWardrobeCaptureStore((state) => state.setItemNotes);
+  const toggleExpanded = useWardrobeCaptureStore((state) => state.toggleExpanded);
   const reset = useWardrobeCaptureStore((state) => state.reset);
 
+  const [mode, setMode] = useState<ScreenMode>('choosing');
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [retakingId, setRetakingId] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
-  // `processWardrobePhoto` can take real time (on-device background
-  // removal); if the user backs out while it's still running, the promise
-  // still resolves after this screen unmounts. Since the store is global,
-  // an unguarded `setProcessed`/`setProcessingFailed` at that point would
-  // silently repopulate a future, unrelated capture session with this
-  // abandoned one's result. Checked after every await in `runCapture`.
+  const cameraRef = useRef<CameraView>(null) as CameraRef;
+  // Guards against a fast double-tap firing two overlapping native
+  // `takePictureAsync` calls -- during a retake this could otherwise read
+  // `retakingId` after the first tap already cleared it, silently turning
+  // an intended retake into an unrelated new batch item.
+  const capturingRef = useRef(false);
+
+  const allReady = items.length > 0 && items.every((item) => item.status === 'ready');
+
+  // A photo's background removal can take real time; if the user backs out
+  // while one is still in flight, its eventual `setItemProcessed`/
+  // `setItemProcessingFailed` call still lands on the *global* store and can
+  // corrupt the next capture session's state. Checked after every await.
   const mountedRef = useRef(true);
 
-  /** Runs the pipeline for a freshly picked/captured photo -- shared by the initial source choice and by Retake (which reuses the same source). */
-  async function runCapture(pickedSource: CaptureSource) {
+  async function processItem(id: string, photoUri: string) {
     try {
-      const result = pickedSource === 'camera' ? await captureFromCamera() : await pickFromLibrary();
-      if ('cancelled' in result) {
-        // Nothing captured yet -- matches the "user backs out" matrix row.
-        router.back();
-        return;
-      }
-
-      startCapture(pickedSource, result.uri);
-      const processed = await processWardrobePhoto(result.uri);
+      const processed = await processWardrobePhoto(photoUri);
       if (!mountedRef.current) {
         return;
       }
-      setProcessed(processed);
+      setItemProcessed(id, processed);
     } catch (error) {
       if (!mountedRef.current) {
         return;
       }
       if (!(error instanceof WardrobeItemError)) {
-        // An unclassified failure -- everything expected (no connection,
-        // no subject found) is already a WardrobeItemError by this point,
-        // so anything else here is worth seeing rather than silently
-        // collapsing into the generic message.
-        console.error('[add-item] capture pipeline failed:', error);
+        console.error('[add-item] processing failed:', error);
         Sentry.captureException(error);
       }
       const message = error instanceof WardrobeItemError ? error.message : UNKNOWN_ERROR_MESSAGE;
-      setProcessingFailed(message);
+      setItemProcessingFailed(id, message);
     }
   }
 
-  // The action sheet is this screen's entry point -- it opens once the
-  // modal has actually finished sliding into view, matching "source choice
-  // -> processing -> review." Firing it synchronously on mount races this
-  // screen's own native modal-presentation animation: the sheet can be
-  // asked to attach to a view controller that's still mid-transition and
-  // never properly display, leaving only the blank content view behind it.
-  // `InteractionManager` doesn't help here -- it tracks JS-thread/Animated
-  // API activity, not a native-stack screen's UIKit-driven transition --
-  // so this waits on native-stack's own `transitionEnd` event instead,
-  // which fires only once the real animation has completed.
-  //
-  // The unmount cleanup guarantees no orphaned session state survives any
-  // exit path (Save success, Cancel, swipe-to-dismiss, or the sheet's own
-  // Cancel), without every exit handler having to remember to call reset().
+  async function handleChooseCamera() {
+    try {
+      await ensureCameraPermission();
+      setMode('camera');
+    } catch (error) {
+      if (!(error instanceof WardrobeItemError)) {
+        console.error('[add-item] camera permission request failed:', error);
+        Sentry.captureException(error);
+      }
+      const message = error instanceof WardrobeItemError ? error.message : UNKNOWN_ERROR_MESSAGE;
+      setPermissionError(message);
+      setMode('permission-error');
+    }
+  }
+
+  /** Processes picked photos one at a time -- background removal must stay sequential across a batch (epic's Technical Decision), never run concurrently. */
+  async function processSequentially(pairs: { id: string; photoUri: string }[]) {
+    for (const { id, photoUri } of pairs) {
+      await processItem(id, photoUri);
+    }
+  }
+
+  async function handleChooseLibrary() {
+    const result = await pickFromLibrary();
+    if ('cancelled' in result) {
+      router.back();
+      return;
+    }
+    // Items are added to the store up front so the queue screen shows all of
+    // them immediately (each starts in 'processing'); only the actual
+    // background-removal work is chained sequentially in the background.
+    const pairs = result.uris.map((uri) => ({ id: addCaptured('library', uri), photoUri: uri }));
+    setMode('reviewing');
+    void processSequentially(pairs);
+  }
+
+  // The action sheet is this screen's entry point -- it opens once the modal
+  // has actually finished sliding into view. Firing it synchronously on
+  // mount races this screen's own native modal-presentation animation, so
+  // this waits on native-stack's own `transitionEnd` event instead.
   const hasPromptedRef = useRef(false);
   useEffect(() => {
     const unsubscribe = navigation.addListener('transitionEnd', (event) => {
@@ -142,7 +144,7 @@ export default function AddItem() {
             router.back();
             return;
           }
-          void runCapture(buttonIndex === 0 ? 'camera' : 'library');
+          void (buttonIndex === 0 ? handleChooseCamera() : handleChooseLibrary());
         },
       );
     });
@@ -155,29 +157,60 @@ export default function AddItem() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount by design; navigation/reset are stable.
   }, []);
 
-  function handleRetake() {
-    if (!source) {
-      router.back();
+  async function handleShutterPress() {
+    if (capturingRef.current) {
       return;
     }
-    retake();
-    void runCapture(source);
+    capturingRef.current = true;
+    try {
+      const photoUri = await capturePhoto(cameraRef);
+      setCaptureError(null);
+      if (retakingId) {
+        const id = retakingId;
+        setRetakingId(null);
+        replaceItemPhoto(id, photoUri);
+        void processItem(id, photoUri);
+        setMode('reviewing');
+        return;
+      }
+      const id = addCaptured('camera', photoUri);
+      void processItem(id, photoUri);
+    } catch (error) {
+      if (!(error instanceof WardrobeItemError)) {
+        console.error('[add-item] shutter capture failed:', error);
+        Sentry.captureException(error);
+      }
+      setCaptureError(error instanceof WardrobeItemError ? error.message : UNKNOWN_ERROR_MESSAGE);
+    } finally {
+      capturingRef.current = false;
+    }
   }
 
-  async function handleSave() {
-    if (submitting) {
+  async function handleRetake(id: string) {
+    const item = items.find((candidate) => candidate.id === id);
+    if (!item) {
       return;
     }
+    if (item.source === 'library') {
+      const result = await pickFromLibrary({ allowsMultipleSelection: false });
+      if ('cancelled' in result) {
+        return;
+      }
+      const [photoUri] = result.uris;
+      replaceItemPhoto(id, photoUri);
+      void processItem(id, photoUri);
+      return;
+    }
+    setRetakingId(id);
+    setMode('camera');
+  }
 
-    // Session expiry mid-flow is the one condition here a real user can
-    // actually hit -- the rest (missing cutout/thumb/itemId/source) can't
-    // happen while status is 'ready', so only this one gets user-facing
-    // feedback instead of a silent no-op.
+  async function handleSaveAll() {
+    if (submitting || !allReady) {
+      return;
+    }
     if (!userId) {
       setFieldError(UNKNOWN_ERROR_MESSAGE);
-      return;
-    }
-    if (!cutoutUri || !thumbUri || !itemId || !source) {
       return;
     }
 
@@ -186,25 +219,29 @@ export default function AddItem() {
     setFieldError(null);
 
     try {
-      const { cutoutPath, thumbPath } = await uploadItem(userId, itemId, cutoutUri, thumbUri);
-      await insertWardrobeItem(userId, itemId, {
-        category,
-        colorHex,
-        name,
-        brand,
-        notes,
-        cutoutPath,
-        thumbPath,
-      });
+      await saveBatch(
+        userId,
+        items.map((item) => ({
+          itemId: item.itemId as string,
+          cutoutUri: item.cutoutUri as string,
+          thumbUri: item.thumbUri as string,
+          category: item.category,
+          colorHex: item.colorHex,
+          name: item.name,
+          brand: item.brand,
+          notes: item.notes,
+        })),
+      );
 
-      trackItemAdded(source, category);
+      const batchSize = items.length;
+      items.forEach((item) => trackItemAdded(item.source, item.category, batchSize));
       router.dismissTo({ pathname: '/(tabs)/wardrobe', params: { itemAdded: '1' } });
     } catch (error) {
       if (error instanceof WardrobeItemError && error.kind === 'no_connection') {
         setConnectionError(true);
       } else {
         if (!(error instanceof WardrobeItemError)) {
-          console.error('[add-item] save failed:', error);
+          console.error('[add-item] batch save failed:', error);
           Sentry.captureException(error);
         }
         setFieldError(UNKNOWN_ERROR_MESSAGE);
@@ -214,27 +251,81 @@ export default function AddItem() {
     }
   }
 
-  if (status === 'idle') {
+  if (mode === 'choosing') {
     return <View className="flex-1 bg-surface-base dark:bg-surface-baseDark" />;
   }
 
-  if (status === 'processing') {
+  if (mode === 'permission-error') {
     return (
-      <View className="flex-1 items-center justify-center bg-surface-base px-gutter dark:bg-surface-baseDark">
-        <Text variant="body" className="text-ink-secondary dark:text-ink-secondaryDark">
-          Removing background…
-        </Text>
+      <View className="flex-1 justify-center bg-surface-base px-gutter dark:bg-surface-baseDark">
+        <View className="mb-6">
+          <ConnectionErrorNotice message={permissionError ?? UNKNOWN_ERROR_MESSAGE} />
+        </View>
+        <Button title="Try Again" variant="primary" onPress={handleChooseCamera} />
+        <View className="mt-3">
+          <Button title="Cancel" onPress={() => router.back()} />
+        </View>
       </View>
     );
   }
 
-  if (status === 'error') {
+  if (mode === 'camera') {
+    const filmstripShots = items.map((item: BatchItem) => ({
+      id: item.id,
+      photoUri: item.cutoutUri ?? item.photoUri,
+      status: item.status,
+    }));
+
     return (
-      <View className="flex-1 justify-center bg-surface-base px-gutter dark:bg-surface-baseDark">
-        <View className="mb-6">
-          <ConnectionErrorNotice message={errorMessage ?? UNKNOWN_ERROR_MESSAGE} />
+      <View className="flex-1 bg-black">
+        <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
+        <View className="absolute bottom-0 left-0 right-0 px-gutter pb-4" style={{ paddingBottom: insets.bottom + 16 }}>
+          <CameraFilmstrip shots={filmstripShots} />
+          {items.length > SOFT_BATCH_SIZE_WARNING ? (
+            <Text variant="meta" className="mt-2 text-center text-surface-raised">
+              {SOFT_BATCH_SIZE_MESSAGE}
+            </Text>
+          ) : null}
+          {captureError ? (
+            <Text variant="meta" className="mt-2 text-center text-destructive dark:text-destructiveDark">
+              {captureError}
+            </Text>
+          ) : null}
+          <View className="mt-4 flex-row items-center justify-between">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              onPress={() => {
+                if (retakingId) {
+                  setRetakingId(null);
+                  setMode('reviewing');
+                  return;
+                }
+                router.back();
+              }}
+            >
+              <Text variant="label" className="text-surface-raised">
+                Cancel
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Take photo"
+              onPress={handleShutterPress}
+              hitSlop={8}
+              className="h-[72px] w-[72px] items-center justify-center rounded-full border-4 border-surface-raised"
+            />
+            {items.length > 0 ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Review" onPress={() => setMode('reviewing')}>
+                <Text variant="label" className="text-surface-raised">
+                  Review
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={{ width: HEADER_SPACER_WIDTH }} />
+            )}
+          </View>
         </View>
-        <Button title="Retake" variant="primary" onPress={handleRetake} />
       </View>
     );
   }
@@ -244,143 +335,53 @@ export default function AddItem() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       className="flex-1 bg-surface-base dark:bg-surface-baseDark"
     >
-      <ScrollView className="flex-1">
-        <View className="px-gutter pb-10 pt-6">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-            onPress={() => router.back()}
-            className="mb-4 self-end"
-          >
-            <Text variant="label" className="text-ink-secondary dark:text-ink-secondaryDark">
-              Cancel
-            </Text>
-          </Pressable>
+      <View className="flex-row items-center justify-between px-gutter pb-4 pt-6">
+        <Pressable accessibilityRole="button" accessibilityLabel="Cancel" onPress={() => router.back()}>
+          <Text variant="label" className="text-ink-secondary dark:text-ink-secondaryDark">
+            Cancel
+          </Text>
+        </Pressable>
+        <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
+          {items.length} {items.length === 1 ? 'item' : 'items'}
+        </Text>
+        <View style={{ width: HEADER_SPACER_WIDTH }} />
+      </View>
 
-          {cutoutUri ? (
-            <Image
-              testID="item-cutout-preview"
-              accessibilityLabel="Captured item"
-              source={{ uri: cutoutUri }}
-              style={{ width: '100%', height: 280 }}
-              contentFit="contain"
-            />
-          ) : null}
+      {items.length > SOFT_BATCH_SIZE_WARNING ? (
+        <Text variant="meta" className="px-gutter pb-2 text-ink-secondary dark:text-ink-secondaryDark">
+          {SOFT_BATCH_SIZE_MESSAGE}
+        </Text>
+      ) : null}
 
-          <View className="mt-6">
-            <Text variant="label" className="mb-2 text-ink-secondary dark:text-ink-secondaryDark">
-              Category
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {CATEGORY_OPTIONS.map((option) => {
-                const selected = option.value === category;
-                return (
-                  <Pressable
-                    key={option.value}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => setCategory(option.value)}
-                    className={[
-                      'rounded-sm border px-4 py-2',
-                      selected
-                        ? 'border-ink-primary bg-ink-primary dark:border-ink-primaryDark dark:bg-ink-primaryDark'
-                        : 'border-border-hairline dark:border-border-hairlineDark',
-                    ].join(' ')}
-                  >
-                    <Text
-                      variant="body"
-                      className={
-                        selected
-                          ? 'text-surface-raised dark:text-surface-baseDark'
-                          : 'text-ink-primary dark:text-ink-primaryDark'
-                      }
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View className="mt-6">
-            <Text variant="label" className="mb-2 text-ink-secondary dark:text-ink-secondaryDark">
-              Color
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {COLOR_SWATCHES.map(({ hex, name }) => {
-                const selected = hex.toLowerCase() === colorHex?.toLowerCase();
-                return (
-                  <Pressable
-                    key={hex}
-                    accessibilityRole="button"
-                    accessibilityLabel={name}
-                    accessibilityState={{ selected }}
-                    onPress={() => setColorHex(hex)}
-                    hitSlop={8}
-                    className={[
-                      'h-8 w-8 rounded-full border',
-                      selected
-                        ? 'border-2 border-ink-primary dark:border-ink-primaryDark'
-                        : 'border-border-hairline dark:border-border-hairlineDark',
-                    ].join(' ')}
-                    style={{ backgroundColor: hex }}
-                  />
-                );
-              })}
-            </View>
-          </View>
-
-          <View className="mt-6">
-            <Text variant="label" className="mb-1 text-ink-secondary dark:text-ink-secondaryDark">
-              Name (optional)
-            </Text>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              accessibilityLabel="Item name"
-              className="mb-4 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
-            />
-
-            <Text variant="label" className="mb-1 text-ink-secondary dark:text-ink-secondaryDark">
-              Brand (optional)
-            </Text>
-            <TextInput
-              value={brand}
-              onChangeText={setBrand}
-              accessibilityLabel="Item brand"
-              className="mb-4 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
-            />
-
-            <Text variant="label" className="mb-1 text-ink-secondary dark:text-ink-secondaryDark">
-              Notes (optional)
-            </Text>
-            <TextInput
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              accessibilityLabel="Item notes"
-              className="mb-4 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
-            />
-          </View>
-
-          {connectionError ? (
-            <View className="mb-4">
-              <ConnectionErrorNotice message={NO_CONNECTION_MESSAGE} />
-            </View>
-          ) : null}
-          {fieldError ? (
-            <Text variant="meta" className="mb-4 text-destructive dark:text-destructiveDark">
-              {fieldError}
-            </Text>
-          ) : null}
-
-          <Button title="Save" variant="primary" loading={submitting} onPress={handleSave} />
-          <View className="mt-3">
-            <Button title="Retake" onPress={handleRetake} disabled={submitting} />
-          </View>
-        </View>
+      <ScrollView className="flex-1 px-gutter">
+        {items.map((item) => (
+          <BatchQueueRow
+            key={item.id}
+            item={item}
+            onToggleExpand={toggleExpanded}
+            onRetake={handleRetake}
+            onCategoryChange={setItemCategory}
+            onColorChange={setItemColorHex}
+            onNameChange={setItemName}
+            onBrandChange={setItemBrand}
+            onNotesChange={setItemNotes}
+          />
+        ))}
       </ScrollView>
+
+      <View className="px-gutter pb-10 pt-4">
+        {connectionError ? (
+          <View className="mb-4">
+            <ConnectionErrorNotice message={NO_CONNECTION_MESSAGE} />
+          </View>
+        ) : null}
+        {fieldError ? (
+          <Text variant="meta" className="mb-4 text-destructive dark:text-destructiveDark">
+            {fieldError}
+          </Text>
+        ) : null}
+        <Button title="Save all" variant="primary" loading={submitting} disabled={!allReady} onPress={handleSaveAll} />
+      </View>
     </KeyboardAvoidingView>
   );
 }

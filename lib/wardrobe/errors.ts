@@ -34,6 +34,6 @@ export const NO_SUBJECT_FOUND_MESSAGE =
 /** Generic fallback for anything else unexpected in the capture/save pipeline. */
 export const UNKNOWN_ERROR_MESSAGE = 'Something went wrong. Please try again.';
 
-/** Camera permission was never granted (or was denied) when `captureFromCamera` needed it. */
+/** Camera permission was never granted (or was denied) when `rapidCamera.ts` needed it. */
 export const CAMERA_PERMISSION_MESSAGE =
   'Fittr needs camera access to take a photo. Enable it in Settings, or choose from your library instead.';
