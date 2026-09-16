@@ -18,7 +18,7 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
 
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Wardrobe from '@/app/(tabs)/wardrobe';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
@@ -91,6 +91,18 @@ describe('Wardrobe', () => {
 
     expect(screen.getByLabelText('Sneakers, Shoes')).toBeTruthy();
     expect(screen.queryByLabelText('Blue tee, Top')).toBeNull();
+  });
+
+  it('navigates to the item detail screen when a grid cell is tapped', async () => {
+    mockWardrobeItems({
+      data: [item({ id: 'a', category: 'top' }), item({ id: 'b', category: 'shoes', name: 'Sneakers' })],
+    });
+    const user = userEvent.setup();
+
+    await render(<Wardrobe />);
+    await user.press(await screen.findByLabelText('Sneakers, Shoes'));
+
+    expect(router.push).toHaveBeenCalledWith('/item/b');
   });
 
   it('shows a message when the selected category has no matching items', async () => {

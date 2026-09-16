@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -179,6 +179,11 @@ export default function Wardrobe() {
               name={item.name}
               thumbnailUrl={thumbnailUrls?.[item.thumb_path] ?? null}
               size={cellSize}
+              // `Href` cast: this app's first dynamic route, so the local
+              // (gitignored) `.expo/types/router.d.ts` union hasn't been
+              // regenerated to include `/item/[id]` yet -- it picks this up
+              // automatically the next time `expo start`/`export` runs.
+              onPress={() => router.push(`/item/${item.id}` as Href)}
             />
           )}
         />

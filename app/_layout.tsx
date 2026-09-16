@@ -43,6 +43,7 @@ function RootLayout() {
             <Stack.Screen name="onboarding" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="add-item" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="item/[id]" />
           </Stack>
         </QueryClientProvider>
       </PostHogProvider>

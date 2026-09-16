@@ -19,6 +19,11 @@ export const CATEGORY_OPTIONS: { value: WardrobeItemCategory; label: string }[] 
   { value: 'accessory', label: 'Accessory' },
 ];
 
+/** Single source of truth for category value -> display label, shared by every screen/component that shows a category. */
+export const CATEGORY_LABELS = Object.fromEntries(
+  CATEGORY_OPTIONS.map((option) => [option.value, option.label]),
+) as Record<WardrobeItemCategory, string>;
+
 export type NewWardrobeItemInput = {
   category: WardrobeItemCategory;
   colorHex: string | null;
