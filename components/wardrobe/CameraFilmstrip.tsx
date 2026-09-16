@@ -14,7 +14,8 @@ type Props = {
   shots: FilmstripShot[];
 };
 
-const THUMB_SIZE = 56;
+const THUMB_SIZE = 64;
+const BADGE_SIZE = 24;
 
 /**
  * The rapid-camera view's row of captured shots -- each one shows its own
@@ -44,15 +45,26 @@ export function CameraFilmstrip({ shots }: Props) {
             contentFit="cover"
             className="rounded-sm"
           />
-          <View className="absolute bottom-1 right-1 h-5 w-5 items-center justify-center rounded-full bg-surface-base dark:bg-surface-baseDark">
+          <View
+            className="absolute bottom-1 right-1 items-center justify-center rounded-full bg-surface-base dark:bg-surface-baseDark"
+            style={{ width: BADGE_SIZE, height: BADGE_SIZE }}
+          >
             {shot.status === 'processing' ? <ActivityIndicator size="small" /> : null}
             {shot.status === 'ready' ? (
-              <Text variant="label" className="text-ink-primary dark:text-ink-primaryDark">
+              <Text
+                variant="label"
+                className="text-ink-primary dark:text-ink-primaryDark"
+                style={{ fontSize: 16, lineHeight: 18 }}
+              >
                 ✓
               </Text>
             ) : null}
             {shot.status === 'error' ? (
-              <Text variant="label" className="text-destructive dark:text-destructiveDark">
+              <Text
+                variant="label"
+                className="text-destructive dark:text-destructiveDark"
+                style={{ fontSize: 16, lineHeight: 18 }}
+              >
                 !
               </Text>
             ) : null}

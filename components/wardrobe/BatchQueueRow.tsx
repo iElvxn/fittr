@@ -11,7 +11,7 @@ const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS.map((option) => [opt
   string
 >;
 
-const THUMB_SIZE = 72;
+const THUMB_SIZE = 88;
 
 /**
  * A small curated palette, not a full color picker -- matches Story 2.1's
@@ -57,10 +57,19 @@ type Props = {
 function RemoveButton({ onPress }: { onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel="Remove" onPress={onPress} hitSlop={12} className="p-1">
-      <Text variant="label" className="text-destructive dark:text-destructiveDark">
+      <Text variant="label" className="text-destructive dark:text-destructiveDark" style={{ fontSize: 24, lineHeight: 24 }}>
         ×
       </Text>
     </Pressable>
+  );
+}
+
+/** Uppercase, tracked-out section label -- the spec-sheet convention fashion catalog layouts use for "Category," "Color," etc. */
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <Text variant="label" className="mb-2 uppercase tracking-wide text-ink-secondary dark:text-ink-secondaryDark">
+      {children}
+    </Text>
   );
 }
 
@@ -91,7 +100,7 @@ export function BatchQueueRow({
 
   if (item.status === 'processing') {
     return (
-      <View className="mb-3 flex-row items-center justify-between rounded-md bg-surface-raised p-4 dark:bg-surface-raisedDark">
+      <View className="mb-4 flex-row items-center justify-between rounded-md bg-surface-raised p-5 dark:bg-surface-raisedDark">
         <View accessible accessibilityLabel="Processing photo" className="flex-row items-center">
           <ActivityIndicator />
           <Text variant="meta" className="ml-3 text-ink-secondary dark:text-ink-secondaryDark">
@@ -105,7 +114,7 @@ export function BatchQueueRow({
 
   if (item.status === 'error') {
     return (
-      <View className="mb-3 rounded-md bg-surface-raised p-4 dark:bg-surface-raisedDark">
+      <View className="mb-4 rounded-md bg-surface-raised p-5 dark:bg-surface-raisedDark">
         <View className="flex-row items-start justify-between">
           <Text variant="meta" className="mb-3 flex-1 text-destructive dark:text-destructiveDark">
             {item.errorMessage}
@@ -118,7 +127,7 @@ export function BatchQueueRow({
   }
 
   return (
-    <View className="mb-3 rounded-md bg-surface-raised p-4 dark:bg-surface-raisedDark">
+    <View className="mb-4 rounded-md bg-surface-raised p-5 dark:bg-surface-raisedDark">
       <View className="flex-row items-center justify-between">
         <Pressable
           accessibilityRole="button"
@@ -136,10 +145,14 @@ export function BatchQueueRow({
               contentFit="contain"
             />
           ) : null}
-          <Text variant="body" className="ml-3 flex-1 text-ink-primary dark:text-ink-primaryDark">
+          <Text variant="title" className="ml-4 flex-1 text-ink-primary dark:text-ink-primaryDark">
             {label}
           </Text>
-          <Text variant="label" className="mr-2 text-ink-secondary dark:text-ink-secondaryDark">
+          <Text
+            variant="label"
+            className="mr-1 text-ink-secondary dark:text-ink-secondaryDark"
+            style={{ fontSize: 20, lineHeight: 22 }}
+          >
             {item.expanded ? '▴' : '▾'}
           </Text>
         </Pressable>
@@ -147,7 +160,8 @@ export function BatchQueueRow({
       </View>
 
       {item.expanded ? (
-        <View className="mt-4">
+        <View className="mt-5">
+          <SectionLabel>Category</SectionLabel>
           <View className="flex-row flex-wrap gap-2">
             {CATEGORY_OPTIONS.map((option) => {
               const selected = option.value === item.category;
@@ -179,7 +193,10 @@ export function BatchQueueRow({
             })}
           </View>
 
-          <View className="mt-4 flex-row flex-wrap gap-2">
+          <View className="mt-5">
+            <SectionLabel>Color</SectionLabel>
+          </View>
+          <View className="flex-row flex-wrap gap-2">
             {COLOR_SWATCHES.map(({ hex, name }) => {
               const selected = hex.toLowerCase() === item.colorHex?.toLowerCase();
               return (
@@ -191,7 +208,7 @@ export function BatchQueueRow({
                   onPress={() => onColorChange(item.id, hex)}
                   hitSlop={8}
                   className={[
-                    'h-8 w-8 rounded-full border',
+                    'h-9 w-9 rounded-full border',
                     selected
                       ? 'border-2 border-ink-primary dark:border-ink-primaryDark'
                       : 'border-border-hairline dark:border-border-hairlineDark',
@@ -202,7 +219,7 @@ export function BatchQueueRow({
             })}
           </View>
 
-          <View className="mt-4">
+          <View className="mt-5">
             <TextInput
               value={item.name}
               onChangeText={(value) => onNameChange(item.id, value)}
