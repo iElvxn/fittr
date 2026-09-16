@@ -6,6 +6,16 @@ module.exports = {
       preset: 'jest-expo',
       setupFiles: ['<rootDir>/jest.setup.js'],
       testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/supabase/'],
+      // `jest-expo`'s default pattern doesn't cover these two -- both ship an
+      // untranspiled ESM build that Jest resolves ahead of their CommonJS
+      // one, so anything importing them (transitively, via lib/wardrobe/processImage.ts)
+      // fails with "Cannot use import statement outside a module" unless
+      // they're carved out of the default node_modules exclusion here too.
+      transformIgnorePatterns: [
+        '/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation|@shopify/react-native-skia|@six33/react-native-bg-removal))',
+        '/node_modules/react-native-reanimated/plugin/',
+        '/node_modules/@react-native/babel-preset/',
+      ],
     },
     {
       // `@react-native/jest-preset` (pulled in by `jest-expo` above) mocks
