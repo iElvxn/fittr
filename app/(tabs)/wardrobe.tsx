@@ -105,7 +105,7 @@ export default function Wardrobe() {
       ) : null}
       <View className="flex-row items-center justify-between">
         <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
-          Wardrobe
+          My Closet
         </Text>
         <Button title="Add item" variant="primary" onPress={() => router.push('/add-item')} />
       </View>

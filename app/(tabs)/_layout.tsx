@@ -1,10 +1,11 @@
-import { ActivityIndicator, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Redirect, Tabs, router } from 'expo-router';
 
 import { AddItemTabButton } from '@/components/navigation/AddItemTabButton';
 import { TabBarButton } from '@/components/navigation/TabBarButton';
 import { PillGlassBackground } from '@/components/navigation/PillGlassBackground';
+import { AnimatedActiveIndicator } from '@/components/navigation/AnimatedActiveIndicator';
 import { HomeIcon } from '@/components/ui/icons/HomeIcon';
 import { HangerIcon } from '@/components/ui/icons/HangerIcon';
 import { ShirtIcon } from '@/components/ui/icons/ShirtIcon';
@@ -14,6 +15,7 @@ import { TAB_BAR_HEIGHT } from '@/lib/theme/tabBar';
 import { useSession } from '@/lib/auth/useSession';
 
 const PILL_MARGIN = 16;
+const ITEM_INSET = 6;
 
 /**
  * Hand-drawn thin-stroke icons (react-native-svg, already a dependency --
@@ -37,6 +39,8 @@ export default function TabsLayout() {
   const scheme = useColorScheme();
   const palette = scheme === 'dark' ? colors.dark : colors.light;
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const barWidth = width - PILL_MARGIN * 2;
   const { session, loading } = useSession();
 
   if (loading) {
@@ -61,11 +65,16 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: palette.inkPrimary,
         tabBarInactiveTintColor: palette.inkSecondary,
-        // A translucent tint (not the opaque hairline color) so the active
-        // pill still reads as "glass" rather than a flat gray shape sitting
-        // on top of the blur.
-        tabBarActiveBackgroundColor: scheme === 'dark' ? 'rgba(245,243,241,0.14)' : 'rgba(28,25,23,0.08)',
-        tabBarBackground: () => <PillGlassBackground radius={TAB_BAR_HEIGHT / 2} />,
+        // No per-item `tabBarActiveBackgroundColor` -- that's a static,
+        // instant on/off toggle per tab, which can't slide or morph between
+        // positions. `AnimatedActiveIndicator` (a single shared element)
+        // replaces it entirely; see its own doc comment.
+        tabBarBackground: () => (
+          <>
+            <PillGlassBackground radius={TAB_BAR_HEIGHT / 2} />
+            <AnimatedActiveIndicator barWidth={barWidth} barHeight={TAB_BAR_HEIGHT} inset={ITEM_INSET} />
+          </>
+        ),
         tabBarStyle: {
           position: 'absolute',
           left: 0,
@@ -92,17 +101,6 @@ export default function TabsLayout() {
           shadowRadius: 12,
           shadowOffset: { width: 0, height: 4 },
           elevation: 6,
-        },
-        // `overflow: 'hidden'` clips the active tab's background rectangle
-        // (drawn square by the underlying tab item, not itself rounded) down
-        // to this shape. `margin` insets it from its slot's edges on all
-        // sides, so the active highlight reads as a smaller chip rather
-        // than a block filling the full slot.
-        tabBarItemStyle: {
-          marginVertical: 6,
-          marginHorizontal: 2,
-          borderRadius: TAB_BAR_HEIGHT / 2,
-          overflow: 'hidden',
         },
       }}
     >
