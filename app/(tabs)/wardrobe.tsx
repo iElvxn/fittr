@@ -13,6 +13,7 @@ import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, filterByCategory } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/wardrobe/errors';
+import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { Sentry } from '@/lib/observability/sentry';
 
 const ACK_DURATION_MS = 2500;
@@ -41,6 +42,7 @@ export default function Wardrobe() {
   const userId = session?.user.id;
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('all');
 
   const { data: items, isLoading, isError, error, refetch, isRefetching } = useWardrobeItems(userId);
@@ -169,7 +171,8 @@ export default function Wardrobe() {
           key={GRID_COLUMNS}
           numColumns={GRID_COLUMNS}
           keyExtractor={(item) => item.id}
-          contentContainerClassName="px-gutter pb-6"
+          contentContainerClassName="px-gutter"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ gap: GRID_GAP, marginBottom: GRID_GAP }}
           refreshing={isRefetching}
           onRefresh={() => refetch()}

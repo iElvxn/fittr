@@ -26,6 +26,8 @@ module.exports = {
         },
         destructive: '#DC2626',
         destructiveDark: '#F87171',
+        accent: '#7A2E36',
+        accentDark: '#B0555E',
       },
       borderRadius: {
         sm: '8px',

@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, TextInput, View, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ActionSheetIOS,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { BackHeader } from '@/components/ui/BackHeader';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { CategoryPicker } from '@/components/wardrobe/CategoryPicker';
 import { ColorSwatchPicker, colorLabel } from '@/components/wardrobe/ColorSwatchPicker';
@@ -26,13 +34,11 @@ import {
 import { Sentry } from '@/lib/observability/sentry';
 
 const GUTTER = 16;
-const BACK_TOUCH_TARGET = 44;
 
 export default function ItemDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useSession();
   const userId = session?.user.id;
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const queryClient = useQueryClient();
   const cutoutSize = width - GUTTER * 2;
@@ -144,22 +150,7 @@ export default function ItemDetail() {
     );
   }
 
-  const header = (
-    <View style={{ paddingTop: insets.top + 12 }} className="flex-row items-center px-gutter pb-3">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Back"
-        onPress={() => router.back()}
-        disabled={saving || deleting}
-        hitSlop={12}
-        style={{ minWidth: BACK_TOUCH_TARGET, minHeight: BACK_TOUCH_TARGET, justifyContent: 'center' }}
-      >
-        <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
-          ‹
-        </Text>
-      </Pressable>
-    </View>
-  );
+  const header = <BackHeader disabled={saving || deleting} />;
 
   if (!userId || isLoading) {
     return (
@@ -202,7 +193,7 @@ export default function ItemDetail() {
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       {header}
       <ScrollView contentContainerClassName="px-gutter pb-10">
-        <View style={{ width: cutoutSize, height: cutoutSize }} className="mb-10 self-center">
+        <View style={{ width: cutoutSize, height: cutoutSize }} className="mb-12 self-center">
           {cutoutUrl ? (
             <Image
               testID="item-detail-cutout"
@@ -267,10 +258,10 @@ export default function ItemDetail() {
           </View>
         ) : (
           <View>
-            <Text variant="display" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
+            <Text variant="display" className="mb-2 text-accent dark:text-accentDark">
               {item.name?.trim() || CATEGORY_LABELS[item.category]}
             </Text>
-            <Text variant="label" className="mb-8 uppercase tracking-wide text-ink-secondary dark:text-ink-secondaryDark">
+            <Text variant="meta" className="mb-9 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">
               {[
                 item.name ? CATEGORY_LABELS[item.category] : null,
                 colorLabel(item.color_hex) ?? 'No color set',
@@ -287,14 +278,12 @@ export default function ItemDetail() {
             ) : null}
 
             <SectionLabel>Fits</SectionLabel>
-            <Text variant="body" className="mb-8 text-ink-secondary dark:text-ink-secondaryDark">
+            <Text variant="body" className="mb-6 text-ink-secondary dark:text-ink-secondaryDark">
               Not in any Fit yet.
             </Text>
 
-            <View className="mb-4 flex-row gap-3">
-              <View className="flex-1">
-                <Button title="Edit" onPress={handleStartEdit} disabled={deleting} />
-              </View>
+            <View className="mb-6 flex-row items-stretch gap-3 border-t border-border-hairline pt-6 dark:border-border-hairlineDark">
+              <Button title="Edit" onPress={handleStartEdit} disabled={deleting} />
               <View className="flex-1">
                 <Button title="Create Fit With This" disabled />
               </View>
@@ -304,9 +293,9 @@ export default function ItemDetail() {
               accessibilityLabel="Delete item"
               onPress={handleDeletePress}
               disabled={deleting}
-              className="items-center py-3"
+              className="items-center py-2"
             >
-              <Text variant="body" className="text-destructive dark:text-destructiveDark">
+              <Text variant="label" className="uppercase tracking-widest text-destructive dark:text-destructiveDark">
                 {deleting ? 'Deleting…' : 'Delete'}
               </Text>
             </Pressable>

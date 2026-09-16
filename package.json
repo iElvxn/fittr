@@ -12,7 +12,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@expo-google-fonts/cormorant": "^0.4.2",
+    "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/montserrat": "^0.4.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
@@ -25,6 +25,7 @@
     "expo": "~57.0.21",
     "expo-apple-authentication": "~57.0.1",
     "expo-application": "^57.0.2",
+    "expo-blur": "~57.0.3",
     "expo-build-properties": "~57.0.17",
     "expo-camera": "~57.0.5",
     "expo-constants": "~57.0.17",

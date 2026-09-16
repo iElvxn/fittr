@@ -15,7 +15,7 @@ jest.mock('@/lib/auth/useSession', () => ({
 }));
 
 import { router } from 'expo-router';
-import Profile from '@/app/(tabs)/profile';
+import Profile from '@/app/profile';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/auth/useSession';
 

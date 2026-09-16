@@ -22,7 +22,7 @@ jest.mock('@/lib/profile/updateProfile', () => ({
   updateProfile: jest.fn(),
 }));
 
-import Profile from '@/app/(tabs)/profile';
+import Profile from '@/app/profile';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/auth/useSession';
 import { pickAvatar, uploadAvatar } from '@/lib/profile/avatar';
