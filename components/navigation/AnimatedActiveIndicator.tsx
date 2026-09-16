@@ -5,7 +5,8 @@ import { BlurView } from 'expo-blur';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 const TAB_COUNT = 5;
-const STRETCH_FACTOR = 1.2;
+const WIDTH_SQUEEZE = 0.6;
+const HEIGHT_STRETCH = 1.3;
 const POP_MS = 110;
 const SETTLE_MS = 150;
 const EASE = Easing.out(Easing.cubic);
@@ -35,9 +36,11 @@ type Props = {
  * Plain eased `withTiming` throughout, not `withSpring` -- a spring's
  * oscillation read as "too bouncy" and dragged out the total transition;
  * timing with an ease-out curve gets a snappier, fully predictable motion
- * with no overshoot. Width and height both pop briefly larger then settle
- * back (not just a horizontal stretch), scaled from the same center point
- * so the shape grows/shrinks symmetrically in both axes.
+ * with no overshoot. Width and height move opposite ways during the first
+ * phase (width squeezes narrow, height stretches tall -- a "pinch" rather
+ * than a uniform pop), then both settle back to their real size in the
+ * second phase, scaled from the same center point so it stays symmetric
+ * in both axes throughout.
  *
  * Rendered inside the same `tabBarBackground` slot as `PillGlassBackground`
  * (see `(tabs)/_layout.tsx`), behind the row of tab buttons -- that slot is
@@ -60,12 +63,13 @@ export function AnimatedActiveIndicator({ barWidth, barHeight, inset }: Props) {
 
   useEffect(() => {
     translateX.value = withTiming(targetX, { duration: POP_MS + SETTLE_MS, easing: EASE });
+    // Pinch (narrow + tall), then stretch into the real destination size.
     width.value = withSequence(
-      withTiming(slotWidth * STRETCH_FACTOR, { duration: POP_MS, easing: EASE }),
+      withTiming(slotWidth * WIDTH_SQUEEZE, { duration: POP_MS, easing: EASE }),
       withTiming(slotWidth, { duration: SETTLE_MS, easing: EASE }),
     );
     height.value = withSequence(
-      withTiming(slotHeight * STRETCH_FACTOR, { duration: POP_MS, easing: EASE }),
+      withTiming(slotHeight * HEIGHT_STRETCH, { duration: POP_MS, easing: EASE }),
       withTiming(slotHeight, { duration: SETTLE_MS, easing: EASE }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs, not reactive deps
