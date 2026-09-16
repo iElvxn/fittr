@@ -41,6 +41,7 @@ type WardrobeCaptureState = {
   setItemProcessed: (id: string, result: { cutoutUri: string; thumbUri: string; colorHex: string | null }) => void;
   setItemProcessingFailed: (id: string, message: string) => void;
   replaceItemPhoto: (id: string, photoUri: string) => void;
+  removeItem: (id: string) => void;
   setItemCategory: (id: string, category: WardrobeItemCategory) => void;
   setItemColorHex: (id: string, colorHex: string) => void;
   setItemName: (id: string, name: string) => void;
@@ -135,6 +136,8 @@ export const useWardrobeCaptureStore = create<WardrobeCaptureState>((set) => ({
         errorMessage: null,
       })),
     })),
+
+  removeItem: (id) => set((state) => ({ items: state.items.filter((item) => item.id !== id) })),
 
   setItemCategory: (id, category) =>
     set((state) => ({ items: mapItem(state.items, id, (item) => ({ ...item, category })) })),

@@ -28,6 +28,7 @@ function makeItem(overrides: Partial<BatchItem> = {}): BatchItem {
 const baseProps = {
   onToggleExpand: jest.fn(),
   onRetake: jest.fn(),
+  onRemove: jest.fn(),
   onCategoryChange: jest.fn(),
   onColorChange: jest.fn(),
   onNameChange: jest.fn(),
@@ -42,6 +43,16 @@ describe('BatchQueueRow, processing status', () => {
     expect(screen.getByText(/processing/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Top' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Retake' })).toBeNull();
+  });
+
+  it('still allows removal while processing', async () => {
+    const onRemove = jest.fn();
+    await render(<BatchQueueRow item={makeItem({ status: 'processing' })} {...baseProps} onRemove={onRemove} />);
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(onRemove).toHaveBeenCalledWith('row-1');
   });
 });
 
@@ -62,6 +73,22 @@ describe('BatchQueueRow, error status', () => {
     await user.press(screen.getByRole('button', { name: 'Retake' }));
     expect(onRetake).toHaveBeenCalledWith('row-1');
   });
+
+  it('still allows removal while errored', async () => {
+    const onRemove = jest.fn();
+    await render(
+      <BatchQueueRow
+        item={makeItem({ status: 'error', errorMessage: 'boom' })}
+        {...baseProps}
+        onRemove={onRemove}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(onRemove).toHaveBeenCalledWith('row-1');
+  });
 });
 
 describe('BatchQueueRow, ready status, collapsed', () => {
@@ -79,20 +106,39 @@ describe('BatchQueueRow, ready status, collapsed', () => {
     expect(screen.queryByLabelText('Item name')).toBeNull();
   });
 
-  it('calls onToggleExpand with the item id when the row is tapped', async () => {
+  it('shows a collapsed chevron and calls onToggleExpand with the item id when the row is tapped', async () => {
     const onToggleExpand = jest.fn();
     await render(
       <BatchQueueRow
-        item={makeItem({ status: 'ready', cutoutUri: 'file://cutout-1.png' })}
+        item={makeItem({ status: 'ready', cutoutUri: 'file://cutout-1.png', expanded: false })}
         {...baseProps}
         onToggleExpand={onToggleExpand}
       />,
     );
 
+    expect(screen.getByText('▾')).toBeTruthy();
+
     const user = userEvent.setup();
     await user.press(screen.getByRole('button', { name: /expand|top/i }));
 
     expect(onToggleExpand).toHaveBeenCalledWith('row-1');
+  });
+
+  it('calls onRemove with the item id, with no confirmation dialog', async () => {
+    const onRemove = jest.fn();
+    await render(
+      <BatchQueueRow
+        item={makeItem({ status: 'ready', cutoutUri: 'file://cutout-1.png' })}
+        {...baseProps}
+        onRemove={onRemove}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(onRemove).toHaveBeenCalledWith('row-1');
   });
 });
 
@@ -111,6 +157,17 @@ describe('BatchQueueRow, ready status, expanded', () => {
     expect(screen.getByLabelText('Item brand')).toBeTruthy();
     expect(screen.getByLabelText('Item notes')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Retake' })).toBeTruthy();
+  });
+
+  it('shows an expanded chevron', async () => {
+    await render(
+      <BatchQueueRow
+        item={makeItem({ status: 'ready', cutoutUri: 'file://cutout-1.png', expanded: true })}
+        {...baseProps}
+      />,
+    );
+
+    expect(screen.getByText('▴')).toBeTruthy();
   });
 
   it('calls onCategoryChange with the item id and the tapped category', async () => {

@@ -38,6 +38,7 @@ export default function AddItem() {
   const setItemProcessed = useWardrobeCaptureStore((state) => state.setItemProcessed);
   const setItemProcessingFailed = useWardrobeCaptureStore((state) => state.setItemProcessingFailed);
   const replaceItemPhoto = useWardrobeCaptureStore((state) => state.replaceItemPhoto);
+  const removeItem = useWardrobeCaptureStore((state) => state.removeItem);
   const setItemCategory = useWardrobeCaptureStore((state) => state.setItemCategory);
   const setItemColorHex = useWardrobeCaptureStore((state) => state.setItemColorHex);
   const setItemName = useWardrobeCaptureStore((state) => state.setItemName);
@@ -205,6 +206,17 @@ export default function AddItem() {
     setMode('camera');
   }
 
+  function handleRemove(id: string) {
+    // Removing the batch's last item leaves nothing to review -- treat it
+    // the same as the "nothing captured" case rather than showing an empty
+    // queue screen with a permanently-disabled Save button.
+    if (items.length <= 1) {
+      router.back();
+      return;
+    }
+    removeItem(id);
+  }
+
   async function handleSaveAll() {
     if (submitting || !allReady) {
       return;
@@ -360,6 +372,7 @@ export default function AddItem() {
             item={item}
             onToggleExpand={toggleExpanded}
             onRetake={handleRetake}
+            onRemove={handleRemove}
             onCategoryChange={setItemCategory}
             onColorChange={setItemColorHex}
             onNameChange={setItemName}

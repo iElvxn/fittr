@@ -11,6 +11,8 @@ const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS.map((option) => [opt
   string
 >;
 
+const THUMB_SIZE = 72;
+
 /**
  * A small curated palette, not a full color picker -- matches Story 2.1's
  * "color swatches" wording. Each swatch carries a human-readable name for
@@ -37,6 +39,7 @@ type Props = {
   item: BatchItem;
   onToggleExpand: (id: string) => void;
   onRetake: (id: string) => void;
+  onRemove: (id: string) => void;
   onCategoryChange: (id: string, category: WardrobeItemCategory) => void;
   onColorChange: (id: string, colorHex: string) => void;
   onNameChange: (id: string, name: string) => void;
@@ -45,17 +48,39 @@ type Props = {
 };
 
 /**
+ * A small "x" -- not a swipe gesture, and not behind a confirmation dialog
+ * (unlike deleting a *saved* wardrobe item elsewhere in the app): nothing
+ * here is persisted yet, and removing a photo by mistake is trivially
+ * undone by recapturing/re-picking it. Available regardless of the item's
+ * status, including mid-processing or errored.
+ */
+function RemoveButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel="Remove" onPress={onPress} hitSlop={12} className="p-1">
+      <Text variant="label" className="text-destructive dark:text-destructiveDark">
+        ×
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
  * One item in the batch queue/review screen -- collapsed by default to a
  * thumbnail + status, expandable to the full category/color/fields editor.
  * Showing every item's full editor open at once (as Story 2.1's single-item
  * screen does) would overwhelm a 10-item batch; this is progressive
  * disclosure instead. Reused for both single-item (batch-of-one) and
  * multi-item review.
+ *
+ * Renders as a raised card (tonal-difference elevation, `rounded.md` per
+ * DESIGN.md) rather than a flat hairline-divided list row -- a visible card
+ * reads as an interactive surface the way a 1px divider doesn't.
  */
 export function BatchQueueRow({
   item,
   onToggleExpand,
   onRetake,
+  onRemove,
   onCategoryChange,
   onColorChange,
   onNameChange,
@@ -66,52 +91,60 @@ export function BatchQueueRow({
 
   if (item.status === 'processing') {
     return (
-      <View
-        accessible
-        accessibilityLabel="Processing photo"
-        className="flex-row items-center border-b border-border-hairline py-4 dark:border-border-hairlineDark"
-      >
-        <ActivityIndicator />
-        <Text variant="meta" className="ml-3 text-ink-secondary dark:text-ink-secondaryDark">
-          Processing…
-        </Text>
+      <View className="mb-3 flex-row items-center justify-between rounded-md bg-surface-raised p-4 dark:bg-surface-raisedDark">
+        <View accessible accessibilityLabel="Processing photo" className="flex-row items-center">
+          <ActivityIndicator />
+          <Text variant="meta" className="ml-3 text-ink-secondary dark:text-ink-secondaryDark">
+            Processing…
+          </Text>
+        </View>
+        <RemoveButton onPress={() => onRemove(item.id)} />
       </View>
     );
   }
 
   if (item.status === 'error') {
     return (
-      <View className="border-b border-border-hairline py-4 dark:border-border-hairlineDark">
-        <Text variant="meta" className="mb-3 text-destructive dark:text-destructiveDark">
-          {item.errorMessage}
-        </Text>
+      <View className="mb-3 rounded-md bg-surface-raised p-4 dark:bg-surface-raisedDark">
+        <View className="flex-row items-start justify-between">
+          <Text variant="meta" className="mb-3 flex-1 text-destructive dark:text-destructiveDark">
+            {item.errorMessage}
+          </Text>
+          <RemoveButton onPress={() => onRemove(item.id)} />
+        </View>
         <Button title="Retake" onPress={() => onRetake(item.id)} />
       </View>
     );
   }
 
   return (
-    <View className="border-b border-border-hairline py-4 dark:border-border-hairlineDark">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={item.expanded ? `Collapse ${label}` : `Expand ${label}`}
-        accessibilityState={{ expanded: item.expanded }}
-        onPress={() => onToggleExpand(item.id)}
-        className="flex-row items-center"
-      >
-        {item.cutoutUri ? (
-          <Image
-            testID="batch-row-cutout"
-            accessibilityLabel="Captured item"
-            source={{ uri: item.cutoutUri }}
-            style={{ width: 56, height: 56 }}
-            contentFit="contain"
-          />
-        ) : null}
-        <Text variant="body" className="ml-3 text-ink-primary dark:text-ink-primaryDark">
-          {label}
-        </Text>
-      </Pressable>
+    <View className="mb-3 rounded-md bg-surface-raised p-4 dark:bg-surface-raisedDark">
+      <View className="flex-row items-center justify-between">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={item.expanded ? `Collapse ${label}` : `Expand ${label}`}
+          accessibilityState={{ expanded: item.expanded }}
+          onPress={() => onToggleExpand(item.id)}
+          className="flex-1 flex-row items-center"
+        >
+          {item.cutoutUri ? (
+            <Image
+              testID="batch-row-cutout"
+              accessibilityLabel="Captured item"
+              source={{ uri: item.cutoutUri }}
+              style={{ width: THUMB_SIZE, height: THUMB_SIZE }}
+              contentFit="contain"
+            />
+          ) : null}
+          <Text variant="body" className="ml-3 flex-1 text-ink-primary dark:text-ink-primaryDark">
+            {label}
+          </Text>
+          <Text variant="label" className="mr-2 text-ink-secondary dark:text-ink-secondaryDark">
+            {item.expanded ? '▴' : '▾'}
+          </Text>
+        </Pressable>
+        <RemoveButton onPress={() => onRemove(item.id)} />
+      </View>
 
       {item.expanded ? (
         <View className="mt-4">

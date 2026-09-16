@@ -146,6 +146,26 @@ describe('toggleExpanded', () => {
   });
 });
 
+describe('removeItem', () => {
+  it('drops only the matching item, leaving the rest in order', () => {
+    const id1 = getState().addCaptured('camera', 'file://photo-1.jpg');
+    const id2 = getState().addCaptured('camera', 'file://photo-2.jpg');
+    const id3 = getState().addCaptured('camera', 'file://photo-3.jpg');
+
+    getState().removeItem(id2);
+
+    expect(getState().items.map((item) => item.id)).toEqual([id1, id3]);
+  });
+
+  it('results in an empty batch when the only item is removed', () => {
+    const id = getState().addCaptured('camera', 'file://photo-1.jpg');
+
+    getState().removeItem(id);
+
+    expect(getState().items).toEqual([]);
+  });
+});
+
 describe('reset', () => {
   it('clears all items back to an empty batch', () => {
     getState().addCaptured('camera', 'file://photo-1.jpg');
