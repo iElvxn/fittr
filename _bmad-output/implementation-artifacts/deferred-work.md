@@ -21,3 +21,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-sign-up-for-an-account.md`
   summary: Email sign-up never checks whether Supabase actually returned a session (it only checks `data.user`), so with "Confirm email" on (the project's deliberate setting), a brand-new email/password account has no session and silently can't do anything on the next screen — no error, no "check your email" messaging, just a dead Continue button on onboarding.
   evidence: Found during live device testing of Story 1.3's onboarding screen: `email-sign-up.tsx` unconditionally routes to `/onboarding` after `signUpWithEmail` resolves, and `handleContinue`'s `if (!userId) return;` guard silently no-ops with no session. Root cause is in Story 1.1's sign-up flow, not Story 1.3.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3-browse-and-filter-the-wardrobe.md`
+  summary: Add a repo-wide convention (and initial coverage) for testing `Sentry.captureException` calls -- no test anywhere in the codebase currently mocks `@/lib/observability/sentry` or asserts these calls fire/don't fire.
+  evidence: Verification-gap finding on this story's new `Sentry.captureException(error)` call in `app/(tabs)/wardrobe.tsx` for unknown wardrobe-load errors: untested, and a regression removing or inverting it would ship undetected. The identical gap already exists for the two pre-existing `Sentry.captureException` calls in `app/add-item.tsx` (Story 2.1), so fixing it only here would be an inconsistent, one-off convention rather than closing the actual gap.
