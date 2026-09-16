@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
@@ -39,6 +40,7 @@ export default function Wardrobe() {
   const { session } = useSession();
   const userId = session?.user.id;
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('all');
 
   const { data: items, isLoading, isError, error, refetch, isRefetching } = useWardrobeItems(userId);
@@ -86,7 +88,10 @@ export default function Wardrobe() {
   const cellSize = (width - GUTTER * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
   const header = (
-    <View className="px-gutter pb-4 pt-2">
+    <View
+      style={{ paddingTop: insets.top + 12 }}
+      className="border-b border-border-hairline px-gutter pb-4 dark:border-border-hairlineDark"
+    >
       {showAck ? (
         <Text
           accessibilityRole="alert"

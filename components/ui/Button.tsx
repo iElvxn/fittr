@@ -26,7 +26,7 @@ export function Button({ title, variant = 'secondary', loading, leftIcon, disabl
       accessibilityRole="button"
       disabled={isDisabled}
       className={[
-        'w-full flex-row items-center justify-center rounded-sm px-6 py-3',
+        'flex-row items-center justify-center rounded-sm px-6 py-3',
         isPrimary
           ? 'bg-ink-primary dark:bg-ink-primaryDark'
           : 'border border-ink-primary bg-transparent dark:border-ink-primaryDark',

@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PostHogProvider } from 'posthog-react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { appFonts } from '@/lib/theme/fonts';
 import { initSentry, Sentry } from '@/lib/observability/sentry';
@@ -33,17 +34,19 @@ function RootLayout() {
   }
 
   return (
-    <PostHogProvider client={posthog}>
-      <QueryClientProvider client={queryClient}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="onboarding" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="add-item" options={{ presentation: 'modal' }} />
-        </Stack>
-      </QueryClientProvider>
-    </PostHogProvider>
+    <SafeAreaProvider>
+      <PostHogProvider client={posthog}>
+        <QueryClientProvider client={queryClient}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="onboarding" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="add-item" options={{ presentation: 'modal' }} />
+          </Stack>
+        </QueryClientProvider>
+      </PostHogProvider>
+    </SafeAreaProvider>
   );
 }
 
