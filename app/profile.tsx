@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Image } from 'expo-image';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -14,6 +14,7 @@ import { NO_CONNECTION_MESSAGE, SignUpError } from '@/lib/auth/errors';
 import { validateDisplayName } from '@/lib/profile/validation';
 import { pickAvatar, uploadAvatar } from '@/lib/profile/avatar';
 import { updateProfile } from '@/lib/profile/updateProfile';
+import { useProfile } from '@/lib/profile/useProfile';
 import { useAvatarUrl } from '@/lib/profile/avatarUrl';
 
 const AVATAR_SIZE = 96;
@@ -23,25 +24,7 @@ export default function Profile() {
   const userId = session?.user.id;
   const queryClient = useQueryClient();
 
-  const {
-    data: profile,
-    isLoading,
-    isError,
-  } = useQuery({
-    queryKey: ['profile', userId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('display_name, avatar_path')
-        .eq('id', userId as string)
-        .single();
-      if (error) {
-        throw error;
-      }
-      return data;
-    },
-    enabled: Boolean(userId),
-  });
+  const { data: profile, isLoading, isError } = useProfile(userId);
 
   const { data: avatarUrl } = useAvatarUrl(profile?.avatar_path);
 
