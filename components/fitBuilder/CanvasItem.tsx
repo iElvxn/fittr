@@ -11,6 +11,13 @@ const RADIANS_TO_DEGREES = 180 / Math.PI;
 /** Keeps a dragged item's center on the visible canvas -- past this, it'd be recoverable only via a full reset. */
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 3;
+const SELECTED_SHADOW = {
+  shadowColor: '#000',
+  shadowOpacity: 0.15,
+  shadowRadius: 8,
+  shadowOffset: { width: 0, height: 3 },
+  elevation: 4,
+};
 
 function clamp(value: number, min: number, max: number): number {
   'worklet';
@@ -137,9 +144,11 @@ export function CanvasItem({
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View
-        style={animatedStyle}
+        style={[animatedStyle, isSelected ? SELECTED_SHADOW : undefined]}
         hitSlop={hitSlop}
-        className={isSelected ? 'border-2 border-ink-primary dark:border-ink-primaryDark' : undefined}
+        className={
+          isSelected ? 'rounded-sm border-2 border-ink-primary dark:border-ink-primaryDark' : undefined
+        }
       >
         {imageUrl ? (
           <Image source={{ uri: imageUrl }} style={{ width: '100%', height: '100%' }} contentFit="contain" />

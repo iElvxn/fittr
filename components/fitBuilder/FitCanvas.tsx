@@ -10,6 +10,13 @@ import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 
 /** Cutout render size on the canvas -- independent of the tray's smaller chip thumbnails. */
 const CANVAS_ITEM_SIZE = 140;
+const CANVAS_SHADOW = {
+  shadowColor: '#000',
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 3,
+};
 
 type Props = {
   cutoutUrls: ThumbnailUrlMap;
@@ -17,7 +24,9 @@ type Props = {
 };
 
 /**
- * Full-bleed surface-base canvas. Items are bare cutouts with no card/shadow
+ * The canvas renders as an inset, rounded, shadowed card floating on the
+ * screen's own background -- distinguishes the working surface from the
+ * chrome around it. Items are bare cutouts with no card/shadow of their own
  * -- the only selection cue is `CanvasItem`'s 2px outline, applied here based
  * on the store's `selectedId`. Any template category-slot with no placed
  * item yet shows a non-interactive ghost-silhouette "+" placeholder -- the
@@ -64,38 +73,44 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths }: Props) {
     : [];
 
   return (
-    <View className="flex-1 bg-surface-base dark:bg-surface-baseDark" onLayout={handleLayout}>
-      {size.width > 0 &&
-        unfilledSlots.map((slot, index) => (
-          <GhostSlot
-            key={`${slot.category}-${index}`}
-            category={slot.category}
-            containerWidth={size.width}
-            containerHeight={size.height}
-            x={slot.x}
-            y={slot.y}
-            width={slot.width}
-            height={slot.height}
-          />
-        ))}
-      {size.width > 0 &&
-        items.map((item) => {
-          const cutoutPath = wardrobeItemCutoutPaths[item.wardrobeItemId];
-          const imageUrl = cutoutPath ? (cutoutUrls[cutoutPath] ?? null) : null;
-          return (
-            <CanvasItem
-              key={item.id}
-              item={item}
-              imageUrl={imageUrl}
-              canvasWidth={size.width}
-              canvasHeight={size.height}
-              itemSize={CANVAS_ITEM_SIZE}
-              isSelected={item.id === selectedId}
-              onSelect={() => handleSelect(item.id)}
-              onTransformEnd={(transform) => updateItemTransform(item.id, transform)}
+    <View className="flex-1 bg-surface-base px-gutter pt-4 pb-3 dark:bg-surface-baseDark">
+      <View
+        className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
+        style={CANVAS_SHADOW}
+        onLayout={handleLayout}
+      >
+        {size.width > 0 &&
+          unfilledSlots.map((slot, index) => (
+            <GhostSlot
+              key={`${slot.category}-${index}`}
+              category={slot.category}
+              containerWidth={size.width}
+              containerHeight={size.height}
+              x={slot.x}
+              y={slot.y}
+              width={slot.width}
+              height={slot.height}
             />
-          );
-        })}
+          ))}
+        {size.width > 0 &&
+          items.map((item) => {
+            const cutoutPath = wardrobeItemCutoutPaths[item.wardrobeItemId];
+            const imageUrl = cutoutPath ? (cutoutUrls[cutoutPath] ?? null) : null;
+            return (
+              <CanvasItem
+                key={item.id}
+                item={item}
+                imageUrl={imageUrl}
+                canvasWidth={size.width}
+                canvasHeight={size.height}
+                itemSize={CANVAS_ITEM_SIZE}
+                isSelected={item.id === selectedId}
+                onSelect={() => handleSelect(item.id)}
+                onTransformEnd={(transform) => updateItemTransform(item.id, transform)}
+              />
+            );
+          })}
+      </View>
     </View>
   );
 }

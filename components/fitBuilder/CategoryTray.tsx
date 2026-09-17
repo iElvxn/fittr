@@ -8,6 +8,13 @@ import type { WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 
 const CHIP_SIZE = 60;
+const TRAY_SHADOW = {
+  shadowColor: '#000',
+  shadowOpacity: 0.06,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: -3 },
+  elevation: 4,
+};
 
 type Props = {
   items: WardrobeItemRow[];
@@ -26,11 +33,14 @@ export function CategoryTray({ items, thumbnailUrls, onAddItem }: Props) {
   const itemsInCategory = items.filter((item) => item.category === activeCategory);
 
   return (
-    <View className="border-t border-border-hairline dark:border-border-hairlineDark">
+    <View
+      style={TRAY_SHADOW}
+      className="rounded-t-lg border-t border-border-hairline bg-surface-raised pt-3 dark:border-border-hairlineDark dark:bg-surface-raisedDark"
+    >
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerClassName="flex-row gap-2 px-gutter py-2"
+        contentContainerClassName="flex-row gap-2 px-gutter pb-3"
       >
         {CATEGORY_OPTIONS.map((option) => {
           const isActive = option.value === activeCategory;
@@ -42,19 +52,15 @@ export function CategoryTray({ items, thumbnailUrls, onAddItem }: Props) {
               onPress={() => setActiveCategory(option.value)}
               hitSlop={8}
               className={[
-                'rounded-sm border px-4 py-2',
+                'rounded-full border px-4 py-2',
                 isActive
-                  ? 'border-ink-primary bg-ink-primary dark:border-ink-primaryDark dark:bg-ink-primaryDark'
+                  ? 'border-accent bg-accent dark:border-accentDark dark:bg-accentDark'
                   : 'border-border-hairline bg-transparent dark:border-border-hairlineDark',
               ].join(' ')}
             >
               <Text
                 variant="label"
-                className={
-                  isActive
-                    ? 'text-surface-raised dark:text-surface-baseDark'
-                    : 'text-ink-secondary dark:text-ink-secondaryDark'
-                }
+                className={isActive ? 'text-surface-raised' : 'text-ink-secondary dark:text-ink-secondaryDark'}
               >
                 {option.label}
               </Text>
@@ -63,7 +69,7 @@ export function CategoryTray({ items, thumbnailUrls, onAddItem }: Props) {
         })}
       </ScrollView>
 
-      <View style={{ height: CHIP_SIZE + 16 }}>
+      <View style={{ height: CHIP_SIZE + 24 }} className="border-t border-border-hairline dark:border-border-hairlineDark">
         {itemsInCategory.length === 0 ? (
           <View className="flex-1 items-center justify-center px-gutter">
             <Text variant="meta" className="text-ink-secondary dark:text-ink-secondaryDark">
@@ -74,7 +80,7 @@ export function CategoryTray({ items, thumbnailUrls, onAddItem }: Props) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerClassName="flex-row gap-2 px-gutter"
+            contentContainerClassName="flex-row gap-3 px-gutter pt-3"
           >
             {itemsInCategory.map((item, index) => {
               const thumbnailUrl = thumbnailUrls[item.thumb_path] ?? null;
@@ -90,16 +96,15 @@ export function CategoryTray({ items, thumbnailUrls, onAddItem }: Props) {
                   accessibilityLabel={label}
                   onPress={() => onAddItem(item)}
                   style={{ width: CHIP_SIZE, height: CHIP_SIZE }}
+                  className="overflow-hidden rounded-md border border-border-hairline bg-surface-base dark:border-border-hairlineDark dark:bg-surface-baseDark"
                 >
                   {thumbnailUrl ? (
                     <Image
                       source={{ uri: thumbnailUrl }}
-                      style={{ width: CHIP_SIZE, height: CHIP_SIZE }}
+                      style={{ width: '100%', height: '100%' }}
                       contentFit="contain"
                     />
-                  ) : (
-                    <View className="h-full w-full rounded-sm bg-surface-raised dark:bg-surface-raisedDark" />
-                  )}
+                  ) : null}
                 </Pressable>
               );
             })}

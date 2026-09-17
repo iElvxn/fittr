@@ -50,13 +50,22 @@ export function GhostSlot({ category, containerWidth, containerHeight, x, y, wid
           />
         </View>
       ) : null}
-      <View style={{ alignItems: 'center', width: 80, marginLeft: -40 }}>
-        <View className="h-10 w-10 items-center justify-center rounded-full border border-ink-secondary bg-surface-base dark:border-ink-secondaryDark dark:bg-surface-baseDark">
+      <View style={{ alignItems: 'center', width: 84, marginLeft: -42 }}>
+        <View
+          style={{
+            shadowColor: '#000',
+            shadowOpacity: 0.08,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: 2,
+          }}
+          className="h-11 w-11 items-center justify-center rounded-full border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark"
+        >
           <Text variant="title" className="text-ink-secondary dark:text-ink-secondaryDark">
             +
           </Text>
         </View>
-        <Text variant="meta" className="mt-1 text-center text-ink-secondary dark:text-ink-secondaryDark">
+        <Text variant="label" className="mt-2 text-center text-ink-secondary dark:text-ink-secondaryDark">
           {CATEGORY_LABELS[category]}
         </Text>
       </View>

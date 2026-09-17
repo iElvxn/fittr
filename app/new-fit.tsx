@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
+import { CloseIcon } from '@/components/ui/icons/CloseIcon';
 import { TemplatePicker } from '@/components/fitBuilder/TemplatePicker';
 import { FitCanvas } from '@/components/fitBuilder/FitCanvas';
 import { CategoryTray } from '@/components/fitBuilder/CategoryTray';
@@ -11,7 +12,10 @@ import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
+import { colors } from '@/lib/theme/colors';
 import type { TemplateId } from '@/lib/fitBuilder/templates';
+
+const CLOSE_BUTTON_SIZE = 36;
 
 type ScreenMode = 'template' | 'canvas';
 
@@ -22,6 +26,7 @@ type ScreenMode = 'template' | 'canvas';
  */
 export default function NewFit() {
   const insets = useSafeAreaInsets();
+  const scheme = useColorScheme();
   const { session } = useSession();
   const userId = session?.user.id;
 
@@ -73,15 +78,20 @@ export default function NewFit() {
         style={{ paddingTop: insets.top + 12 }}
         className="flex-row items-center justify-between border-b border-border-hairline px-gutter pb-3 dark:border-border-hairlineDark"
       >
-        <Pressable accessibilityRole="button" accessibilityLabel="Cancel" onPress={() => router.back()} hitSlop={8}>
-          <Text variant="label" className="text-ink-secondary dark:text-ink-secondaryDark">
-            Cancel
-          </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          onPress={() => router.back()}
+          hitSlop={8}
+          style={{ width: CLOSE_BUTTON_SIZE, height: CLOSE_BUTTON_SIZE, borderRadius: CLOSE_BUTTON_SIZE / 2 }}
+          className="items-center justify-center border border-border-hairline dark:border-border-hairlineDark"
+        >
+          <CloseIcon size={16} color={scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary} />
         </Pressable>
         <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
           New Fit
         </Text>
-        <View style={{ width: 60 }} />
+        <View style={{ width: CLOSE_BUTTON_SIZE }} />
       </View>
 
       {mode === 'template' ? (

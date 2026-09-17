@@ -13,8 +13,15 @@ import { Button } from '@/components/ui/Button';
 import { GhostSlot } from '@/components/fitBuilder/GhostSlot';
 import { FIT_TEMPLATES, TEMPLATE_OPTIONS, type TemplateId } from '@/lib/fitBuilder/templates';
 
-const CARD_HEIGHT = 420;
+const CARD_HEIGHT = 440;
 const GUTTER = 16;
+const CARD_SHADOW = {
+  shadowColor: '#000',
+  shadowOpacity: 0.1,
+  shadowRadius: 16,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 4,
+};
 
 type Props = {
   onSelectTemplate: (templateId: TemplateId) => void;
@@ -52,6 +59,9 @@ export function TemplatePicker({ onSelectTemplate, onSkip }: Props) {
   return (
     <View className="flex-1 justify-between">
       <View>
+        <Text variant="meta" className="mb-1 px-gutter text-center uppercase text-ink-secondary dark:text-ink-secondaryDark">
+          Choose a template
+        </Text>
         <Text variant="title" className="mb-4 px-gutter text-center text-ink-primary dark:text-ink-primaryDark">
           {activeTemplate.label}
         </Text>
@@ -74,32 +84,36 @@ export function TemplatePicker({ onSelectTemplate, onSkip }: Props) {
             return (
               <View
                 key={template.id}
-                style={{ width: previewWidth, height: CARD_HEIGHT, marginRight: GUTTER }}
-                className="overflow-hidden rounded-md border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark"
+                // Shadow lives on this outer view -- `overflow-hidden` (needed
+                // below to clip ghost-slot silhouettes to the rounded corner)
+                // would clip the shadow too if applied on the same node.
+                style={[{ width: previewWidth, height: CARD_HEIGHT, marginRight: GUTTER }, CARD_SHADOW]}
               >
-                {slots.map((slot, index) => (
-                  <GhostSlot
-                    key={`${slot.category}-${index}`}
-                    category={slot.category}
-                    containerWidth={previewWidth}
-                    containerHeight={CARD_HEIGHT}
-                    x={slot.x}
-                    y={slot.y}
-                    width={slot.width}
-                    height={slot.height}
-                  />
-                ))}
+                <View className="flex-1 overflow-hidden rounded-lg border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark">
+                  {slots.map((slot, index) => (
+                    <GhostSlot
+                      key={`${slot.category}-${index}`}
+                      category={slot.category}
+                      containerWidth={previewWidth}
+                      containerHeight={CARD_HEIGHT}
+                      x={slot.x}
+                      y={slot.y}
+                      width={slot.width}
+                      height={slot.height}
+                    />
+                  ))}
+                </View>
               </View>
             );
           })}
         </ScrollView>
-        <View className="mt-4 flex-row justify-center gap-2">
+        <View className="mt-5 flex-row justify-center gap-2">
           {TEMPLATE_OPTIONS.map((template, index) => (
             <View
               key={template.id}
               className={
                 index === pageIndex
-                  ? 'h-2 w-2 rounded-full bg-ink-primary dark:bg-ink-primaryDark'
+                  ? 'h-2 w-2 rounded-full bg-accent dark:bg-accentDark'
                   : 'h-2 w-2 rounded-full bg-border-hairline dark:bg-border-hairlineDark'
               }
             />
@@ -111,7 +125,7 @@ export function TemplatePicker({ onSelectTemplate, onSkip }: Props) {
         <Button title="Use this template" variant="primary" onPress={() => onSelectTemplate(activeTemplate.id)} />
         <View className="mt-4 items-center">
           <Pressable accessibilityRole="button" onPress={onSkip} hitSlop={12}>
-            <Text variant="label" className="text-ink-secondary underline dark:text-ink-secondaryDark">
+            <Text variant="label" className="text-ink-secondary dark:text-ink-secondaryDark">
               Skip for now
             </Text>
           </Pressable>
