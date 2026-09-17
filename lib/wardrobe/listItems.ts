@@ -5,7 +5,7 @@ import type { WardrobeItemCategory } from './addItem';
 
 /**
  * Kept in Supabase's native snake_case (not mapped to camelCase) to match
- * `app/(tabs)/profile.tsx`'s existing pattern of reading `profile.avatar_path`
+ * `app/profile.tsx`'s existing pattern of reading `profile.avatar_path`
  * straight off the query result.
  */
 export type WardrobeItemRow = {

@@ -8,7 +8,7 @@ type Props = TextProps & {
 };
 
 /**
- * Cormorant/Montserrat are custom fonts, so they don't ride iOS Dynamic
+ * Fraunces/Montserrat are custom fonts, so they don't ride iOS Dynamic
  * Type's automatic scaling the way system fonts do — this multiplies the
  * base size by the user's font-scale setting explicitly, per the
  * Accessibility Floor in EXPERIENCE.md.

@@ -3,37 +3,13 @@ import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { CATEGORY_OPTIONS, type WardrobeItemCategory } from '@/lib/wardrobe/addItem';
+import { CategoryPicker } from '@/components/wardrobe/CategoryPicker';
+import { ColorSwatchPicker } from '@/components/wardrobe/ColorSwatchPicker';
+import { SectionLabel } from '@/components/wardrobe/SectionLabel';
+import { CATEGORY_LABELS, type WardrobeItemCategory } from '@/lib/wardrobe/addItem';
 import type { BatchItem } from '@/stores/wardrobeCapture';
 
-const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS.map((option) => [option.value, option.label])) as Record<
-  WardrobeItemCategory,
-  string
->;
-
 const THUMB_SIZE = 88;
-
-/**
- * A small curated palette, not a full color picker -- matches Story 2.1's
- * "color swatches" wording. Each swatch carries a human-readable name for
- * its accessibility label -- without one, a screen reader would read the
- * raw hex digits aloud.
- */
-const COLOR_SWATCHES: { hex: string; name: string }[] = [
-  { hex: '#0C0A09', name: 'Black' },
-  { hex: '#FFFFFF', name: 'White' },
-  { hex: '#78716C', name: 'Gray' },
-  { hex: '#1E3A8A', name: 'Navy' },
-  { hex: '#DBEAFE', name: 'Light blue' },
-  { hex: '#78350F', name: 'Brown' },
-  { hex: '#D6D3D1', name: 'Beige' },
-  { hex: '#7F1D1D', name: 'Red' },
-  { hex: '#EA580C', name: 'Orange' },
-  { hex: '#CA8A04', name: 'Yellow' },
-  { hex: '#166534', name: 'Green' },
-  { hex: '#4C1D95', name: 'Purple' },
-  { hex: '#DB2777', name: 'Pink' },
-];
 
 type Props = {
   item: BatchItem;
@@ -61,15 +37,6 @@ function RemoveButton({ onPress }: { onPress: () => void }) {
         ×
       </Text>
     </Pressable>
-  );
-}
-
-/** Uppercase, tracked-out section label -- the spec-sheet convention fashion catalog layouts use for "Category," "Color," etc. */
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <Text variant="label" className="mb-2 uppercase tracking-wide text-ink-secondary dark:text-ink-secondaryDark">
-      {children}
-    </Text>
   );
 }
 
@@ -162,62 +129,12 @@ export function BatchQueueRow({
       {item.expanded ? (
         <View className="mt-5">
           <SectionLabel>Category</SectionLabel>
-          <View className="flex-row flex-wrap gap-2">
-            {CATEGORY_OPTIONS.map((option) => {
-              const selected = option.value === item.category;
-              return (
-                <Pressable
-                  key={option.value}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => onCategoryChange(item.id, option.value)}
-                  className={[
-                    'rounded-sm border px-4 py-2',
-                    selected
-                      ? 'border-ink-primary bg-ink-primary dark:border-ink-primaryDark dark:bg-ink-primaryDark'
-                      : 'border-border-hairline dark:border-border-hairlineDark',
-                  ].join(' ')}
-                >
-                  <Text
-                    variant="body"
-                    className={
-                      selected
-                        ? 'text-surface-raised dark:text-surface-baseDark'
-                        : 'text-ink-primary dark:text-ink-primaryDark'
-                    }
-                  >
-                    {option.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <CategoryPicker value={item.category} onChange={(category) => onCategoryChange(item.id, category)} />
 
           <View className="mt-5">
             <SectionLabel>Color</SectionLabel>
           </View>
-          <View className="flex-row flex-wrap gap-2">
-            {COLOR_SWATCHES.map(({ hex, name }) => {
-              const selected = hex.toLowerCase() === item.colorHex?.toLowerCase();
-              return (
-                <Pressable
-                  key={hex}
-                  accessibilityRole="button"
-                  accessibilityLabel={name}
-                  accessibilityState={{ selected }}
-                  onPress={() => onColorChange(item.id, hex)}
-                  hitSlop={8}
-                  className={[
-                    'h-9 w-9 rounded-full border',
-                    selected
-                      ? 'border-2 border-ink-primary dark:border-ink-primaryDark'
-                      : 'border-border-hairline dark:border-border-hairlineDark',
-                  ].join(' ')}
-                  style={{ backgroundColor: hex }}
-                />
-              );
-            })}
-          </View>
+          <ColorSwatchPicker value={item.colorHex} onChange={(hex) => onColorChange(item.id, hex)} />
 
           <View className="mt-5">
             <TextInput

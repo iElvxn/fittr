@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,7 @@ import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, filterByCategory } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/wardrobe/errors';
+import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { Sentry } from '@/lib/observability/sentry';
 
 const ACK_DURATION_MS = 2500;
@@ -41,6 +42,7 @@ export default function Wardrobe() {
   const userId = session?.user.id;
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('all');
 
   const { data: items, isLoading, isError, error, refetch, isRefetching } = useWardrobeItems(userId);
@@ -103,7 +105,7 @@ export default function Wardrobe() {
       ) : null}
       <View className="flex-row items-center justify-between">
         <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
-          Wardrobe
+          My Closet
         </Text>
         <Button title="Add item" variant="primary" onPress={() => router.push('/add-item')} />
       </View>
@@ -169,7 +171,8 @@ export default function Wardrobe() {
           key={GRID_COLUMNS}
           numColumns={GRID_COLUMNS}
           keyExtractor={(item) => item.id}
-          contentContainerClassName="px-gutter pb-6"
+          contentContainerClassName="px-gutter"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ gap: GRID_GAP, marginBottom: GRID_GAP }}
           refreshing={isRefetching}
           onRefresh={() => refetch()}
@@ -179,6 +182,11 @@ export default function Wardrobe() {
               name={item.name}
               thumbnailUrl={thumbnailUrls?.[item.thumb_path] ?? null}
               size={cellSize}
+              // `Href` cast: this app's first dynamic route, so the local
+              // (gitignored) `.expo/types/router.d.ts` union hasn't been
+              // regenerated to include `/item/[id]` yet -- it picks this up
+              // automatically the next time `expo start`/`export` runs.
+              onPress={() => router.push(`/item/${item.id}` as Href)}
             />
           )}
         />
