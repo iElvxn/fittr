@@ -49,13 +49,15 @@ type FitBuilderState = {
    * cleared because a persisted Fit carries no template reference of its
    * own (`fits`/`fit_items` don't store one), so re-entering the canvas
    * mid-edit is always blank-canvas semantics regardless of how the Fit
-   * was originally built -- `canvasBackgroundColor` resets to the theme
-   * default for the same reason, and also because a stale value could
-   * otherwise survive into a fresh edit if this fires before the previous
-   * screen's own unmount-triggered `reset()` (React Navigation can keep
-   * both mounted briefly during a transition).
+   * was originally built. `canvasBackgroundColor` restores from the
+   * optional second argument (the saved Fit's own `canvas_background_color`
+   * column) when given, or resets to the theme default otherwise -- either
+   * way this is one atomic `set()`, not a follow-up call, so a stale value
+   * from a still-mounting-out previous screen (React Navigation can keep
+   * both mounted briefly during a transition) can never briefly show
+   * through between the two.
    */
-  loadItems: (items: PlacedItem[]) => void;
+  loadItems: (items: PlacedItem[], canvasBackgroundColor?: string | null) => void;
   reset: () => void;
 };
 
@@ -176,7 +178,7 @@ export const useFitBuilderStore = create<FitBuilderState>((set, get) => ({
 
   setCanvasBackgroundColor: (hex) => set({ canvasBackgroundColor: hex }),
 
-  loadItems: (items) => set({ templateId: null, items, selectedId: null, canvasBackgroundColor: null }),
+  loadItems: (items, canvasBackgroundColor = null) => set({ templateId: null, items, selectedId: null, canvasBackgroundColor }),
 
   reset: () => set({ templateId: null, items: [], selectedId: null, canvasBackgroundColor: null }),
 }));

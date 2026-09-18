@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
+import { cacheBustedCoverUrl } from '@/lib/fits/coverCacheBust';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { useTabBarClearance } from '@/lib/theme/tabBar';
@@ -125,7 +126,8 @@ export default function Fits() {
   }
 
   function renderRow({ item }: { item: FitRow }) {
-    const thumbnailUrl = item.cover_path ? (thumbnailUrls?.[item.cover_path] ?? null) : null;
+    const signedThumbnailUrl = item.cover_path ? (thumbnailUrls?.[item.cover_path] ?? null) : null;
+    const thumbnailUrl = signedThumbnailUrl ? cacheBustedCoverUrl(signedThumbnailUrl, item.updated_at) : null;
     return (
       <Pressable
         accessibilityRole="button"

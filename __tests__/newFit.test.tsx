@@ -145,7 +145,13 @@ describe('New Fit -- Save flow', () => {
 });
 
 describe('New Fit -- edit mode (Story 3.3)', () => {
-  const EDITING_FIT = { id: 'fit-1', name: 'Weekend Look', cover_path: 'user-1/fits/fit-1/cover.png', updated_at: '2026-09-18T00:00:00.000Z' };
+  const EDITING_FIT = {
+    id: 'fit-1',
+    name: 'Weekend Look',
+    cover_path: 'user-1/fits/fit-1/cover.png',
+    canvas_background_color: '#F6DADA',
+    updated_at: '2026-09-18T00:00:00.000Z',
+  };
   const SAVED_PLACEMENT = {
     id: 'placement-1',
     wardrobeItemId: 'wardrobe-item-1',
@@ -196,6 +202,14 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
     expect(getFitItems).toHaveBeenCalledWith('fit-1');
   });
 
+  it("restores the Fit's own saved canvas background color", async () => {
+    (getFitItems as jest.Mock).mockResolvedValue([SAVED_PLACEMENT]);
+
+    await renderNewFit();
+
+    await waitFor(() => expect(useFitBuilderStore.getState().canvasBackgroundColor).toBe('#F6DADA'));
+  });
+
   it("shows a not-found message and never seeds or fetches when fitId doesn't resolve to a visible Fit (deleted, or another user's)", async () => {
     (useFits as jest.Mock).mockReturnValue({ data: [], isLoading: false });
 
@@ -239,7 +253,9 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
 
     await user.press(screen.getByRole('button', { name: 'Save' }));
 
-    await waitFor(() => expect(insertFit).toHaveBeenCalledWith('user-1', 'fit-1', 'Weekend Look', expect.any(String), expect.any(Array)));
+    await waitFor(() =>
+      expect(insertFit).toHaveBeenCalledWith('user-1', 'fit-1', 'Weekend Look', expect.any(String), '#F6DADA', expect.any(Array)),
+    );
     expect(router.dismissTo).toHaveBeenCalledWith({
       pathname: '/fit/[id]',
       params: { id: 'fit-1', fitUpdated: '1' },

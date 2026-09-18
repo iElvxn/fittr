@@ -68,6 +68,7 @@ export async function insertFit(
   fitId: string,
   name: string,
   coverPath: string,
+  canvasBackgroundColor: string | null,
   items: FitItemPlacement[],
 ): Promise<void> {
   const { error: fitError } = await supabase.from('fits').upsert(
@@ -76,6 +77,7 @@ export async function insertFit(
       user_id: userId,
       name,
       cover_path: coverPath,
+      canvas_background_color: canvasBackgroundColor,
       // Explicit, not left to the column default: a retry after
       // `rollbackOrphanedFit` soft-deleted this same row on an earlier
       // attempt must clear that back out, since `upsert` only overwrites

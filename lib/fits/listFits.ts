@@ -6,6 +6,7 @@ export type FitRow = {
   id: string;
   name: string;
   cover_path: string | null;
+  canvas_background_color: string | null;
   updated_at: string;
 };
 
@@ -24,7 +25,7 @@ export function useFits(userId: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('fits')
-        .select('id, name, cover_path, updated_at')
+        .select('id, name, cover_path, canvas_background_color, updated_at')
         .eq('user_id', userId as string)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false });

@@ -146,7 +146,7 @@ export default function NewFit() {
         rotation: placement.rotation,
         zIndex: placement.zIndex,
       }));
-      loadItems(seededItems);
+      loadItems(seededItems, editingFit?.canvas_background_color ?? null);
       setSeeded(true);
     } catch (error) {
       if (error instanceof FitError && error.kind === 'no_connection') {
@@ -258,7 +258,7 @@ export default function NewFit() {
         rotation: item.rotation,
         zIndex: item.zIndex,
       }));
-      await insertFit(userId, pendingSave.fitId, name, coverPath, placements);
+      await insertFit(userId, pendingSave.fitId, name, coverPath, canvasBackgroundColor, placements);
       // Both the Fits tab list and (in edit mode) the Fit detail screen read
       // through `useFits`'s cache -- without this, a just-created or
       // just-edited Fit wouldn't show up until some unrelated refetch.

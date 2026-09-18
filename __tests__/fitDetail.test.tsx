@@ -29,6 +29,7 @@ function makeFit(overrides: Partial<FitRow> = {}): FitRow {
     id: 'fit-1',
     name: 'Weekend Look',
     cover_path: 'user-1/fits/fit-1/cover.png',
+    canvas_background_color: null,
     updated_at: '2026-09-18T00:00:00.000Z',
     ...overrides,
   };

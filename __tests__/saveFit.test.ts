@@ -113,10 +113,17 @@ describe('insertFit', () => {
   it('upserts the fits row then the fit_items rows', async () => {
     const { fitsUpsert, fitItemsUpsert } = mockSupabase({ fitError: null });
 
-    await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM]);
+    await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM]);
 
     expect(fitsUpsert).toHaveBeenCalledWith(
-      { id: 'fit-1', user_id: 'user-1', name: 'My Fit', cover_path: COVER_PATH, deleted_at: null },
+      {
+        id: 'fit-1',
+        user_id: 'user-1',
+        name: 'My Fit',
+        cover_path: COVER_PATH,
+        canvas_background_color: null,
+        deleted_at: null,
+      },
       { onConflict: 'id' },
     );
     expect(fitItemsUpsert).toHaveBeenCalledWith(
@@ -136,10 +143,21 @@ describe('insertFit', () => {
     );
   });
 
+  it("persists the canvas's chosen background color on the fits row", async () => {
+    const { fitsUpsert } = mockSupabase({ fitError: null });
+
+    await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, '#F6DADA', [ITEM]);
+
+    expect(fitsUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ canvas_background_color: '#F6DADA' }),
+      { onConflict: 'id' },
+    );
+  });
+
   it('rolls back the cover upload when the fits row insert fails', async () => {
     const { remove } = mockSupabase({ fitError: new Error('boom') });
 
-    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toThrow('boom');
+    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM])).rejects.toThrow('boom');
 
     expect(remove).toHaveBeenCalledWith([COVER_PATH]);
   });
@@ -147,7 +165,7 @@ describe('insertFit', () => {
   it('rolls back the cover upload and soft-deletes the orphaned fits row when fit_items fails', async () => {
     const { remove, fitsUpdate } = mockSupabase({ fitError: null, itemsError: new Error('boom') });
 
-    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toThrow('boom');
+    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM])).rejects.toThrow('boom');
 
     expect(remove).toHaveBeenCalledWith([COVER_PATH]);
     expect(fitsUpdate).toHaveBeenCalledWith(expect.objectContaining({ deleted_at: expect.any(String) }));
@@ -175,10 +193,10 @@ describe('insertFit', () => {
     });
     (supabase.storage.from as jest.Mock).mockReturnValue({ remove });
 
-    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toThrow('boom');
+    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM])).rejects.toThrow('boom');
     expect(fitsUpdate).toHaveBeenCalledWith(expect.objectContaining({ deleted_at: expect.any(String) }));
 
-    await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM]);
+    await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM]);
 
     expect(fitsUpsert).toHaveBeenLastCalledWith(expect.objectContaining({ deleted_at: null }), { onConflict: 'id' });
   });
@@ -186,7 +204,7 @@ describe('insertFit', () => {
   it('classifies a no-connection failure on the fits upsert', async () => {
     mockSupabase({ fitError: new AuthRetryableFetchError('offline', 0) });
 
-    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toMatchObject({
+    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM])).rejects.toMatchObject({
       name: 'FitError',
       kind: 'no_connection',
     });
@@ -195,7 +213,7 @@ describe('insertFit', () => {
   it('classifies a no-connection failure on the fit_items upsert', async () => {
     mockSupabase({ fitError: null, itemsError: new AuthRetryableFetchError('offline', 0) });
 
-    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toMatchObject({
+    await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM])).rejects.toMatchObject({
       name: 'FitError',
       kind: 'no_connection',
     });
@@ -205,7 +223,7 @@ describe('insertFit', () => {
     const { fitItemsUpsert } = mockSupabase({ fitError: null });
     const secondPlacement: FitItemPlacement = { ...ITEM, id: 'placement-2', x: 0.6, y: 0.6, zIndex: 2 };
 
-    await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM, secondPlacement]);
+    await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM, secondPlacement]);
 
     const rows = fitItemsUpsert.mock.calls[0][0];
     expect(rows).toHaveLength(2);
@@ -218,7 +236,7 @@ describe('insertFit', () => {
     it('deletes fit_items rows for this fitId not present in the new placement set', async () => {
       const { fitItemsDeleteEq, fitItemsDeleteNot } = mockSupabase({ fitError: null });
 
-      await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM]);
+      await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM]);
 
       expect(fitItemsDeleteEq).toHaveBeenCalledWith('fit_id', 'fit-1');
       expect(fitItemsDeleteNot).toHaveBeenCalledWith('id', 'in', `(${ITEM.id})`);
@@ -227,7 +245,7 @@ describe('insertFit', () => {
     it('deletes every fit_items row for this fitId when the new placement set is empty', async () => {
       const { fitItemsDeleteEq, fitItemsDeleteNot } = mockSupabase({ fitError: null });
 
-      await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, []);
+      await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, []);
 
       expect(fitItemsDeleteEq).toHaveBeenCalledWith('fit_id', 'fit-1');
       expect(fitItemsDeleteNot).not.toHaveBeenCalled();
@@ -236,7 +254,7 @@ describe('insertFit', () => {
     it('classifies a no-connection failure during cleanup', async () => {
       mockSupabase({ fitError: null, cleanupError: new AuthRetryableFetchError('offline', 0) });
 
-      await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toMatchObject({
+      await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM])).rejects.toMatchObject({
         name: 'FitError',
         kind: 'no_connection',
       });
@@ -245,7 +263,7 @@ describe('insertFit', () => {
     it('rethrows other cleanup errors', async () => {
       mockSupabase({ fitError: null, cleanupError: new Error('boom') });
 
-      await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toThrow('boom');
+      await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, null, [ITEM])).rejects.toThrow('boom');
     });
   });
 });

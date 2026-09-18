@@ -223,7 +223,7 @@ describe('loadItems', () => {
     expect(useFitBuilderStore.getState().items).toEqual(savedPlacements);
   });
 
-  it('clears templateId, selection, and any chosen canvas background color, since a loaded Fit carries none of its own', () => {
+  it('clears templateId and selection, and defaults the background to the theme default when none is given', () => {
     useFitBuilderStore.getState().selectTemplate('layered-outerwear');
     useFitBuilderStore.getState().selectItem('some-id');
     useFitBuilderStore.getState().setCanvasBackgroundColor('#F6DADA');
@@ -233,6 +233,14 @@ describe('loadItems', () => {
     expect(useFitBuilderStore.getState().templateId).toBeNull();
     expect(useFitBuilderStore.getState().selectedId).toBeNull();
     expect(useFitBuilderStore.getState().canvasBackgroundColor).toBeNull();
+  });
+
+  it("restores the saved Fit's own background color when given", () => {
+    useFitBuilderStore.getState().setCanvasBackgroundColor('#DDD5CC');
+
+    useFitBuilderStore.getState().loadItems(savedPlacements, '#F6DADA');
+
+    expect(useFitBuilderStore.getState().canvasBackgroundColor).toBe('#F6DADA');
   });
 
   it('replaces any items already on the canvas rather than appending', () => {
