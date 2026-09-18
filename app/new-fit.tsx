@@ -9,14 +9,13 @@ import { PlusIcon } from '@/components/ui/icons/PlusIcon';
 import { TemplatePicker } from '@/components/fitBuilder/TemplatePicker';
 import { FitCanvas } from '@/components/fitBuilder/FitCanvas';
 import { CatalogSheet } from '@/components/fitBuilder/CatalogSheet';
-import type { CategoryFilter } from '@/components/wardrobe/CategoryFilterChips';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 import { colors } from '@/lib/theme/colors';
 import type { TemplateId } from '@/lib/fitBuilder/templates';
-import { resolvePlacementCategory } from '@/lib/fitBuilder/placement';
+import type { WardrobeItemCategory } from '@/lib/wardrobe/addItem';
 
 const CLOSE_BUTTON_SIZE = 36;
 
@@ -34,10 +33,15 @@ export default function NewFit() {
   const userId = session?.user.id;
 
   const [mode, setMode] = useState<ScreenMode>('template');
-  // `null` means the catalog sheet is closed. A real category means a ghost
-  // slot's "+" was tapped (sheet opens pre-filtered to it); 'all' means the
-  // bottom "Add item" bar was tapped (sheet opens unfiltered).
-  const [activeSlotCategory, setActiveSlotCategory] = useState<CategoryFilter | null>(null);
+  // `null` means the catalog sheet is closed. An exact { index, category }
+  // means a specific ghost slot's "+" was tapped -- the sheet opens
+  // pre-filtered to that category, and a pick commits to that exact slot
+  // index regardless of the picked item's own category. 'all' means the
+  // bottom "Add item" bar was tapped instead (sheet opens unfiltered, and a
+  // pick falls back to the item's own category with no slot to target).
+  const [activeSlot, setActiveSlot] = useState<{ index: number; category: WardrobeItemCategory } | 'all' | null>(
+    null,
+  );
 
   const selectTemplate = useFitBuilderStore((state) => state.selectTemplate);
   const addItem = useFitBuilderStore((state) => state.addItem);
@@ -75,9 +79,17 @@ export default function NewFit() {
     setMode('canvas');
   }
 
+  function handleSlotPress(index: number, category: WardrobeItemCategory) {
+    setActiveSlot({ index, category });
+  }
+
   function handleSelectItem(item: WardrobeItemRow) {
-    addItem(item.id, resolvePlacementCategory(activeSlotCategory ?? 'all', item.category));
-    setActiveSlotCategory(null);
+    if (activeSlot && activeSlot !== 'all') {
+      addItem(item.id, activeSlot.category, activeSlot.index);
+    } else {
+      addItem(item.id, item.category);
+    }
+    setActiveSlot(null);
   }
 
   const closeButtonColor = scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary;
@@ -135,7 +147,7 @@ export default function NewFit() {
           <FitCanvas
             cutoutUrls={cutoutUrls ?? {}}
             wardrobeItemCutoutPaths={wardrobeItemCutoutPaths}
-            onSlotPress={setActiveSlotCategory}
+            onSlotPress={handleSlotPress}
           />
           <View
             style={{ paddingBottom: insets.bottom + 8 }}
@@ -144,7 +156,7 @@ export default function NewFit() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Add item"
-              onPress={() => setActiveSlotCategory('all')}
+              onPress={() => setActiveSlot('all')}
               hitSlop={8}
               className="flex-row items-center gap-2 px-4 py-2 active:opacity-60"
             >
@@ -154,15 +166,15 @@ export default function NewFit() {
               </Text>
             </Pressable>
           </View>
-          {activeSlotCategory ? (
+          {activeSlot ? (
             <CatalogSheet
-              key={activeSlotCategory}
+              key={activeSlot === 'all' ? 'all' : `slot-${activeSlot.index}`}
               visible
-              category={activeSlotCategory}
+              category={activeSlot === 'all' ? 'all' : activeSlot.category}
               items={items}
               thumbnailUrls={thumbnailUrls ?? {}}
               onSelectItem={handleSelectItem}
-              onClose={() => setActiveSlotCategory(null)}
+              onClose={() => setActiveSlot(null)}
             />
           ) : null}
         </View>

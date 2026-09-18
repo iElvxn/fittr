@@ -67,6 +67,38 @@ describe('addItem', () => {
     expect(second).toMatchObject({ x: secondSlot.x, y: secondSlot.y });
   });
 
+  it('places an item at the exact slot index passed in, ignoring how many same-category items already exist', () => {
+    useFitBuilderStore.getState().selectTemplate('shorts-and-top');
+    const secondAccessorySlot = findSlot('shorts-and-top', 'accessory', 1);
+    const allSlots = [...FIT_TEMPLATES['shorts-and-top']];
+    const secondAccessoryIndex = allSlots.indexOf(secondAccessorySlot);
+
+    // Tapping the *second* accessory ghost first (nothing placed yet) must
+    // still land there, not silently fall back to the first accessory slot.
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'accessory', secondAccessoryIndex);
+
+    const [placed] = useFitBuilderStore.getState().items;
+    expect(placed).toMatchObject({
+      x: secondAccessorySlot.x,
+      y: secondAccessorySlot.y,
+      templateSlotIndex: secondAccessoryIndex,
+    });
+  });
+
+  it('does not let a later general add re-claim a slot an earlier explicit tap already filled', () => {
+    useFitBuilderStore.getState().selectTemplate('shorts-and-top');
+    const secondAccessorySlot = findSlot('shorts-and-top', 'accessory', 1);
+    const secondAccessoryIndex = FIT_TEMPLATES['shorts-and-top'].indexOf(secondAccessorySlot);
+    const firstAccessorySlot = findSlot('shorts-and-top', 'accessory', 0);
+
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'accessory', secondAccessoryIndex);
+    // No explicit index this time -- a plain "Add item" pick.
+    useFitBuilderStore.getState().addItem('wardrobe-item-2', 'accessory');
+
+    const [, second] = useFitBuilderStore.getState().items;
+    expect(second).toMatchObject({ x: firstAccessorySlot.x, y: firstAccessorySlot.y });
+  });
+
   it('spirals a third item past both defined slots near the last slot instead of overlapping it', () => {
     useFitBuilderStore.getState().selectTemplate('shorts-and-top');
     useFitBuilderStore.getState().addItem('wardrobe-item-1', 'accessory');
@@ -89,6 +121,43 @@ describe('addItem', () => {
     expect(items).toHaveLength(12);
     const positions = new Set(items.map((item) => `${item.x.toFixed(4)},${item.y.toFixed(4)}`));
     expect(positions.size).toBe(12);
+  });
+});
+
+describe('removeItem', () => {
+  it('removes only the targeted item', () => {
+    useFitBuilderStore.getState().selectTemplate('shorts-and-top');
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    useFitBuilderStore.getState().addItem('wardrobe-item-2', 'shoes');
+    const [top, shoes] = useFitBuilderStore.getState().items;
+
+    useFitBuilderStore.getState().removeItem(top.id);
+
+    const remaining = useFitBuilderStore.getState().items;
+    expect(remaining).toEqual([shoes]);
+  });
+
+  it('clears the selection when the removed item was selected', () => {
+    useFitBuilderStore.getState().selectTemplate('shorts-and-top');
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    const [top] = useFitBuilderStore.getState().items;
+    useFitBuilderStore.getState().selectItem(top.id);
+
+    useFitBuilderStore.getState().removeItem(top.id);
+
+    expect(useFitBuilderStore.getState().selectedId).toBeNull();
+  });
+
+  it('leaves the selection alone when a different item is removed', () => {
+    useFitBuilderStore.getState().selectTemplate('shorts-and-top');
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    useFitBuilderStore.getState().addItem('wardrobe-item-2', 'shoes');
+    const [top, shoes] = useFitBuilderStore.getState().items;
+    useFitBuilderStore.getState().selectItem(top.id);
+
+    useFitBuilderStore.getState().removeItem(shoes.id);
+
+    expect(useFitBuilderStore.getState().selectedId).toBe(top.id);
   });
 });
 

@@ -1,15 +1,18 @@
-import { View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, View, useColorScheme, type LayoutChangeEvent } from 'react-native';
 import { useState } from 'react';
 
 import { CanvasItem } from '@/components/fitBuilder/CanvasItem';
 import { GhostSlot } from '@/components/fitBuilder/GhostSlot';
+import { TrashIcon } from '@/components/ui/icons/TrashIcon';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 import type { WardrobeItemCategory } from '@/lib/wardrobe/addItem';
 import { FIT_TEMPLATES, type TemplateSlot } from '@/lib/fitBuilder/templates';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
+import { colors } from '@/lib/theme/colors';
 
 /** Cutout render size on the canvas -- independent of the tray's smaller chip thumbnails. */
 const CANVAS_ITEM_SIZE = 190;
+const DELETE_BUTTON_SIZE = 44;
 const CANVAS_SHADOW = {
   shadowColor: '#000',
   shadowOpacity: 0.08,
@@ -21,8 +24,8 @@ const CANVAS_SHADOW = {
 type Props = {
   cutoutUrls: ThumbnailUrlMap;
   wardrobeItemCutoutPaths: Record<string, string>;
-  /** Opens the catalog sheet pre-filtered to the tapped ghost slot's category. */
-  onSlotPress: (category: WardrobeItemCategory) => void;
+  /** Opens the catalog sheet pre-filtered to the tapped ghost slot's own index and category. */
+  onSlotPress: (templateSlotIndex: number, category: WardrobeItemCategory) => void;
 };
 
 /**
@@ -43,6 +46,8 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: 
   const selectItem = useFitBuilderStore((state) => state.selectItem);
   const bringToFront = useFitBuilderStore((state) => state.bringToFront);
   const updateItemTransform = useFitBuilderStore((state) => state.updateItemTransform);
+  const removeItem = useFitBuilderStore((state) => state.removeItem);
+  const scheme = useColorScheme();
 
   const [size, setSize] = useState({ width: 0, height: 0 });
 
@@ -56,23 +61,23 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: 
     bringToFront(id);
   }
 
-  // A slot at category-index N is still unfilled once fewer than N+1 items of
-  // that category exist -- this mirrors `addItem`'s own slot consumption
-  // order exactly, so the ghosts shown are precisely the slots not yet used.
-  const filledCountByCategory = new Map<WardrobeItemCategory, number>();
-  for (const item of items) {
-    filledCountByCategory.set(item.category, (filledCountByCategory.get(item.category) ?? 0) + 1);
-  }
-  const seenIndexByCategory = new Map<WardrobeItemCategory, number>();
-  const unfilledSlots: TemplateSlot[] = templateId
+  // A template slot is unfilled exactly when no placed item's own
+  // `templateSlotIndex` claims it -- identity, not a per-category count, so
+  // whichever specific ghost was tapped (and filled) is the one that
+  // disappears, even out of template order (e.g. the second of two
+  // Accessories slots, filled before the first).
+  const claimedSlotIndexes = new Set(
+    items.map((item) => item.templateSlotIndex).filter((index): index is number => index !== null),
+  );
+  const unfilledSlots: { slot: TemplateSlot; index: number }[] = templateId
     ? FIT_TEMPLATES[templateId]
-        .filter((slot) => {
-          const seen = seenIndexByCategory.get(slot.category) ?? 0;
-          seenIndexByCategory.set(slot.category, seen + 1);
-          return seen >= (filledCountByCategory.get(slot.category) ?? 0);
-        })
-        .sort((a, b) => a.zIndex - b.zIndex)
+        .map((slot, index) => ({ slot, index }))
+        .filter(({ index }) => !claimedSlotIndexes.has(index))
+        .sort((a, b) => a.slot.zIndex - b.slot.zIndex)
     : [];
+
+  const selectedItem = items.find((item) => item.id === selectedId) ?? null;
+  const deleteButtonColor = scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary;
 
   return (
     <View className="flex-1 bg-surface-base px-gutter pt-4 pb-3 dark:bg-surface-baseDark">
@@ -83,9 +88,9 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: 
         onLayout={handleLayout}
       >
         {size.width > 0 &&
-          unfilledSlots.map((slot, index) => (
+          unfilledSlots.map(({ slot, index }) => (
             <GhostSlot
-              key={`${slot.category}-${index}`}
+              key={index}
               category={slot.category}
               containerWidth={size.width}
               containerHeight={size.height}
@@ -93,7 +98,7 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: 
               y={slot.y}
               width={slot.width}
               height={slot.height}
-              onPress={() => onSlotPress(slot.category)}
+              onPress={() => onSlotPress(index, slot.category)}
             />
           ))}
         {size.width > 0 &&
@@ -114,6 +119,30 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: 
               />
             );
           })}
+        {selectedItem ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Delete item"
+            onPress={() => removeItem(selectedItem.id)}
+            hitSlop={8}
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              alignSelf: 'center',
+              width: DELETE_BUTTON_SIZE,
+              height: DELETE_BUTTON_SIZE,
+              borderRadius: DELETE_BUTTON_SIZE / 2,
+              shadowColor: '#000',
+              shadowOpacity: 0.1,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 3 },
+              elevation: 4,
+            }}
+            className="items-center justify-center border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark"
+          >
+            <TrashIcon size={18} color={deleteButtonColor} />
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
