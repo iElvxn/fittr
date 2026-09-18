@@ -1,21 +1,31 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Crypto from 'expo-crypto';
+import { captureRef } from 'react-native-view-shot';
 
 import { Text } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
 import { CloseIcon } from '@/components/ui/icons/CloseIcon';
 import { PlusIcon } from '@/components/ui/icons/PlusIcon';
 import { PaletteIcon } from '@/components/ui/icons/PaletteIcon';
+import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { TemplatePicker } from '@/components/fitBuilder/TemplatePicker';
 import { FitCanvas } from '@/components/fitBuilder/FitCanvas';
 import { CatalogSheet } from '@/components/fitBuilder/CatalogSheet';
 import { CanvasBackgroundSheet } from '@/components/fitBuilder/CanvasBackgroundSheet';
+import { SaveFitSheet } from '@/components/fitBuilder/SaveFitSheet';
+import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 import { colors } from '@/lib/theme/colors';
+import { getNextFitName } from '@/lib/fits/nextFitName';
+import { uploadCover, insertFit, type FitItemPlacement } from '@/lib/fits/saveFit';
+import { FitError, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
+import { Sentry } from '@/lib/observability/sentry';
 import type { TemplateId } from '@/lib/fitBuilder/templates';
 import type { WardrobeItemCategory } from '@/lib/wardrobe/addItem';
 
@@ -23,11 +33,14 @@ const CLOSE_BUTTON_SIZE = 36;
 
 type ScreenMode = 'template' | 'canvas';
 
-/**
- * Entry flow for building a Fit: template carousel, then the freeform
- * canvas. No Save button here -- preview/save/persistence is Story 3.2's
- * scope, and a non-functional Save would be a half-finished UI element.
- */
+/** Pending state between tapping Save and confirming the sheet -- `fitId` stays fixed across a retry so a failed save's upload/insert stay idempotent. */
+type PendingSave = {
+  fitId: string;
+  collageUri: string;
+  defaultName: string;
+};
+
+/** Entry flow for building a Fit: template carousel, freeform canvas, then preview/name/save. */
 export default function NewFit() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
@@ -50,7 +63,17 @@ export default function NewFit() {
   const reset = useFitBuilderStore((state) => state.reset);
   const canvasBackgroundColor = useFitBuilderStore((state) => state.canvasBackgroundColor);
   const setCanvasBackgroundColor = useFitBuilderStore((state) => state.setCanvasBackgroundColor);
+  // Named apart from the wardrobe catalog's own `items` below -- these are the
+  // canvas's placed items (position/scale/rotation), not the tray's source list.
+  const placedItems = useFitBuilderStore((state) => state.items);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
+
+  const canvasRef = useRef<View>(null);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
+  const [captureError, setCaptureError] = useState(false);
 
   const { data: wardrobeItems } = useWardrobeItems(userId);
   const items = useMemo(() => wardrobeItems ?? [], [wardrobeItems]);
@@ -95,6 +118,74 @@ export default function NewFit() {
       addItem(item.id, item.category);
     }
     setActiveSlot(null);
+  }
+
+  /**
+   * Captures the canvas and opens the Save sheet. `fitId` is minted here (not
+   * inside the sheet) so it stays fixed across a retry -- `saveFit`'s upsert
+   * calls key off it for idempotency. The default-name fetch is best-effort:
+   * a failure there shouldn't block the sheet from opening, since the user
+   * can still type their own name -- the real no-connection retry UX is the
+   * actual save below.
+   */
+  async function handleSavePress() {
+    if (opening || saving || placedItems.length === 0 || !userId) {
+      return;
+    }
+    setOpening(true);
+    setCaptureError(false);
+    try {
+      const collageUri = await captureRef(canvasRef, { format: 'png', quality: 1 });
+      let defaultName = 'Fit';
+      try {
+        defaultName = await getNextFitName(userId);
+      } catch (error) {
+        Sentry.captureException(error);
+      }
+      setConnectionError(false);
+      setPendingSave({ fitId: Crypto.randomUUID(), collageUri, defaultName });
+    } catch (error) {
+      console.error('[new-fit] collage capture failed:', error);
+      Sentry.captureException(error);
+      setCaptureError(true);
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  async function handleConfirmSave(name: string) {
+    if (!pendingSave || !userId) {
+      return;
+    }
+    setSaving(true);
+    setConnectionError(false);
+    try {
+      const coverPath = await uploadCover(userId, pendingSave.fitId, pendingSave.collageUri);
+      const placements: FitItemPlacement[] = placedItems.map((item) => ({
+        id: item.id,
+        wardrobeItemId: item.wardrobeItemId,
+        x: item.x,
+        y: item.y,
+        scale: item.scale,
+        rotation: item.rotation,
+        zIndex: item.zIndex,
+      }));
+      await insertFit(userId, pendingSave.fitId, name, coverPath, placements);
+      setPendingSave(null);
+      reset();
+      router.dismissTo({ pathname: '/(tabs)/fits', params: { fitSaved: '1' } });
+    } catch (error) {
+      if (!(error instanceof FitError && error.kind === 'no_connection')) {
+        console.error('[new-fit] save failed:', error);
+        Sentry.captureException(error);
+      }
+      // Block-and-keep for every failure here, not only classified
+      // no-connection ones: the sheet's collage/name stay intact and the
+      // same retry action applies regardless of cause.
+      setConnectionError(true);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const closeButtonColor = scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary;
@@ -149,7 +240,26 @@ export default function NewFit() {
           >
             <CloseIcon size={16} color={closeButtonColor} />
           </Pressable>
+          <View style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 10 }}>
+            <Button
+              title="Save"
+              variant="primary"
+              loading={opening}
+              disabled={placedItems.length === 0}
+              onPress={handleSavePress}
+              leftIcon={<CheckIcon size={14} color={colors.light.surfaceRaised} />}
+              accessibilityLabel="Save Fit"
+            />
+          </View>
+          {captureError ? (
+            <View
+              style={{ position: 'absolute', top: insets.top + 8 + CLOSE_BUTTON_SIZE + 8, left: 16, right: 16, zIndex: 10 }}
+            >
+              <ConnectionErrorNotice message={UNKNOWN_ERROR_MESSAGE} />
+            </View>
+          ) : null}
           <FitCanvas
+            ref={canvasRef}
             cutoutUrls={cutoutUrls ?? {}}
             wardrobeItemCutoutPaths={wardrobeItemCutoutPaths}
             onSlotPress={handleSlotPress}
@@ -203,6 +313,17 @@ export default function NewFit() {
             }}
             onClose={() => setBackgroundPickerOpen(false)}
           />
+          {pendingSave ? (
+            <SaveFitSheet
+              visible
+              collageUri={pendingSave.collageUri}
+              defaultName={pendingSave.defaultName}
+              saving={saving}
+              connectionError={connectionError}
+              onSave={handleConfirmSave}
+              onClose={() => setPendingSave(null)}
+            />
+          ) : null}
         </View>
       )}
     </View>

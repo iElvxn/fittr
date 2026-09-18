@@ -73,3 +73,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
   summary: No test exercises `app/new-fit.tsx`'s unmount-triggered `reset()` -- the sole mechanism implementing "discard the canvas on navigate away" (no persistence exists yet in Story 3.1).
   evidence: Code-review finding (verification-gap). Real regression-detection gap, but no route-lifecycle unmount test exists anywhere in this repo for any screen, including `app/add-item.tsx` (the template this story's route mirrors) -- establishing that test pattern is bigger than this one story.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
+  summary: `fit_items.item_id` (FK to `wardrobe_items`, `on delete cascade`) has no index, unlike `fit_id`; a lookup by `item_id` will full-scan.
+  evidence: Code-review finding (blind-hunter). No query in Story 3.2's diff looks up `fit_items` by `item_id` -- Story 3.4 ("Fit behavior when a wardrobe item is deleted") is the actual consumer of that access path and should add the index alongside the code that needs it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
+  summary: `lib/fits/saveFit.ts`'s rollback helpers swallow their own Storage/DB errors via `.catch(() => {})` with no Sentry logging, so a failed rollback (orphaned Storage object or stuck soft-delete) is undetectable.
+  evidence: Code-review finding (edge-case-hunter). Verified this is the exact pattern already shipped in `lib/wardrobe/addItem.ts`'s own rollback calls (`uploadItem`, `saveBatch`), which this story's spec explicitly required mirroring -- not introduced by this story, and fixing it here alone would leave `addItem.ts` inconsistent. Needs a follow-up covering both files together.

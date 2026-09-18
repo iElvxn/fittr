@@ -1,5 +1,5 @@
 import { Pressable, View, useColorScheme, type LayoutChangeEvent } from 'react-native';
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 
@@ -50,8 +50,16 @@ type Props = {
  * the store's `canvasBackgroundColor` -- one of a curated set of pastel
  * colors, or `null` for the theme default -- which the caller lets the user
  * change via `CanvasBackgroundSheet` (see `app/new-fit.tsx`).
+ *
+ * Forwards `ref` to the canvas card itself (not this wrapper) so
+ * `app/new-fit.tsx` can pass it straight to `react-native-view-shot`'s
+ * `captureRef` when the user taps Save -- capturing just the card, not the
+ * surrounding screen padding/footer.
  */
-export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: Props) {
+export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
+  { cutoutUrls, wardrobeItemCutoutPaths, onSlotPress },
+  ref,
+) {
   const templateId = useFitBuilderStore((state) => state.templateId);
   const items = useFitBuilderStore((state) => state.items);
   const selectedId = useFitBuilderStore((state) => state.selectedId);
@@ -107,6 +115,7 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: 
   return (
     <View className="flex-1 bg-surface-base px-gutter pt-4 pb-3 dark:bg-surface-baseDark">
       <View
+        ref={ref}
         testID="fit-canvas"
         className={`flex-1 overflow-hidden rounded-lg ${
           canvasBackgroundColor ? '' : 'bg-surface-raised dark:bg-surface-raisedDark'
@@ -191,4 +200,4 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: 
       </View>
     </View>
   );
-}
+});
