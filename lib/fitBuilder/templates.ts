@@ -36,12 +36,19 @@ export const FIT_TEMPLATES: Record<TemplateId, TemplateSlot[]> = {
   // exact template. Coats & Jackets sits behind Tops (lower z-index) so
   // their overlapping corner reads the same way as the reference.
   'shorts-and-top': [
-    { category: 'accessory', x: 0.27, y: 0.05, width: 0, height: 0, scale: 1, rotation: 0, zIndex: 1 },
+    // Accessories default smaller -- small items (jewelry, belts, hats)
+    // looked oversized at the same default scale as full garments.
+    { category: 'accessory', x: 0.27, y: 0.09, width: 0, height: 0, scale: 0.6, rotation: 0, zIndex: 1 },
     { category: 'outerwear', x: 0.73, y: 0.2, width: 0.55, height: 0.32, scale: 1, rotation: 0, zIndex: 1 },
-    { category: 'top', x: 0.34, y: 0.36, width: 0.52, height: 0.36, scale: 1, rotation: 0, zIndex: 2 },
-    { category: 'accessory', x: 0.72, y: 0.56, width: 0, height: 0, scale: 1, rotation: 0, zIndex: 1 },
-    { category: 'bottom', x: 0.35, y: 0.75, width: 0.55, height: 0.4, scale: 1, rotation: 0, zIndex: 1 },
-    { category: 'shoes', x: 0.73, y: 0.87, width: 0.32, height: 0.13, scale: 0.8, rotation: 0, zIndex: 1 },
+    { category: 'top', x: 0.29, y: 0.4, width: 0.6, height: 0.41, scale: 1.15, rotation: 0, zIndex: 2 },
+    { category: 'accessory', x: 0.72, y: 0.56, width: 0, height: 0, scale: 0.6, rotation: 0, zIndex: 1 },
+    // Bottoms default larger once placed (see `scale` below), but the ghost
+    // preview itself stays modest -- it's sized as a canvas-relative
+    // fraction while a placed item is capped at a fixed pixel size, so the
+    // two were never on the same basis and the ghost was reading larger
+    // than the actual pants a user places.
+    { category: 'bottom', x: 0.3, y: 0.75, width: 0.42, height: 0.32, scale: 1.5, rotation: 0, zIndex: 1 },
+    { category: 'shoes', x: 0.73, y: 0.83, width: 0.32, height: 0.13, scale: 0.8, rotation: 0, zIndex: 1 },
   ],
   // Only two slots by design (a base layer plus outerwear, no bottoms/shoes)
   // -- centered around the card's vertical midpoint, at a larger size than

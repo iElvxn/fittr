@@ -1,9 +1,13 @@
-import { useEffect } from 'react';
-import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
+import { useColorScheme } from 'react-native';
+import { Image, type ImageLoadEventData } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, runOnJS } from 'react-native-reanimated';
+import Svg, { Rect } from 'react-native-svg';
 
 import type { PlacedItem } from '@/stores/fitBuilder';
+import { containSize } from '@/lib/fitBuilder/aspectFit';
+import { colors } from '@/lib/theme/colors';
 
 /** Touch targets must reach 44x44pt (EXPERIENCE.md Accessibility Floor) even when the cutout itself renders smaller. */
 const MIN_TOUCH_TARGET = 44;
@@ -45,6 +49,22 @@ export function CanvasItem({
   onSelect,
   onTransformEnd,
 }: Props) {
+  // The cutout's own pixel dimensions, once the image reports them -- lets
+  // the box (and therefore the touch/gesture region) hug the garment's real
+  // shape instead of sitting inside a full `itemSize` square of empty
+  // padding, which is especially visible for a tall item like pants or a
+  // wide one like shoes. `null` (not yet loaded) falls back to a square.
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const { width: boxWidth, height: boxHeight } = naturalSize
+    ? containSize(naturalSize.width, naturalSize.height, itemSize)
+    : { width: itemSize, height: itemSize };
+  const scheme = useColorScheme();
+  const selectionColor = scheme === 'dark' ? colors.dark.inkPrimary : colors.light.inkPrimary;
+
+  function handleLoad(event: ImageLoadEventData) {
+    setNaturalSize({ width: event.source.width, height: event.source.height });
+  }
+
   // Position/scale/rotation always track the gesture 1:1 with no spring or
   // easing curve, so there's no motion here for the OS Reduce Motion setting
   // to strip -- the boundary is satisfied by never adding easing, not by
@@ -128,30 +148,61 @@ export function CanvasItem({
 
   const animatedStyle = useAnimatedStyle(() => ({
     position: 'absolute',
-    width: itemSize,
-    height: itemSize,
+    width: boxWidth,
+    height: boxHeight,
     transform: [
-      { translateX: translateX.value - itemSize / 2 },
-      { translateY: translateY.value - itemSize / 2 },
+      { translateX: translateX.value - boxWidth / 2 },
+      { translateY: translateY.value - boxHeight / 2 },
       { scale: scale.value },
       { rotateZ: `${rotationDeg.value}deg` },
     ],
     zIndex: item.zIndex,
   }));
 
-  const hitSlop = Math.max(0, (MIN_TOUCH_TARGET - itemSize) / 2);
+  // Per-axis, since a hugging box is rarely square -- a thin belt still gets
+  // boosted to the accessibility floor on its short axis without inflating
+  // the long one past what the garment itself needs.
+  const hitSlop = {
+    top: Math.max(0, (MIN_TOUCH_TARGET - boxHeight) / 2),
+    bottom: Math.max(0, (MIN_TOUCH_TARGET - boxHeight) / 2),
+    left: Math.max(0, (MIN_TOUCH_TARGET - boxWidth) / 2),
+    right: Math.max(0, (MIN_TOUCH_TARGET - boxWidth) / 2),
+  };
 
   return (
     <GestureDetector gesture={composedGesture}>
-      <Animated.View
-        style={[animatedStyle, isSelected ? SELECTED_SHADOW : undefined]}
-        hitSlop={hitSlop}
-        className={
-          isSelected ? 'rounded-sm border-2 border-ink-primary dark:border-ink-primaryDark' : undefined
-        }
-      >
+      <Animated.View style={[animatedStyle, isSelected ? SELECTED_SHADOW : undefined]} hitSlop={hitSlop}>
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+          <Image
+            source={{ uri: imageUrl }}
+            style={{ width: '100%', height: '100%' }}
+            contentFit="contain"
+            onLoad={handleLoad}
+          />
+        ) : null}
+        {isSelected ? (
+          // A real `border-dashed` View border doesn't render on Android
+          // once `borderRadius` is involved (a long-standing RN/Android
+          // limitation) -- an SVG stroke with `strokeDasharray` draws the
+          // dash pattern itself, so it's correct on both platforms.
+          <Svg
+            width={boxWidth}
+            height={boxHeight}
+            style={{ position: 'absolute', top: 0, left: 0 }}
+            pointerEvents="none"
+          >
+            <Rect
+              x={1}
+              y={1}
+              width={Math.max(0, boxWidth - 2)}
+              height={Math.max(0, boxHeight - 2)}
+              rx={2}
+              fill="none"
+              stroke={selectionColor}
+              strokeWidth={2}
+              strokeDasharray="6,4"
+            />
+          </Svg>
         ) : null}
       </Animated.View>
     </GestureDetector>
