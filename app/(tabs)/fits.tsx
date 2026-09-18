@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { ActivityIndicator, FlatList, Pressable, View } from 'react-native';
+import { ActivityIndicator, FlatList, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
-import { Image } from 'expo-image';
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+  type Href,
+  type NativeStackNavigationProp,
+} from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
+import { FitsGridCell } from '@/components/fits/FitsGridCell';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
@@ -15,20 +22,18 @@ import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { Sentry } from '@/lib/observability/sentry';
 
 const ACK_DURATION_MS = 2500;
-const ROW_THUMB_SIZE = 56;
+const GRID_COLUMNS = 2;
+const GRID_GAP = 8;
+const GUTTER = 16;
 
-/**
- * A minimal, deliberate stopgap for Story 3.3: hairline-separated rows
- * (thumbnail + name, no card chrome, no filter/sort), just enough for a real
- * user to reach a saved Fit's detail screen to edit or delete it. Epic 4
- * replaces this with the real My Fits grid.
- */
 export default function Fits() {
   const insets = useSafeAreaInsets();
   const tabBarClearance = useTabBarClearance();
+  const { width } = useWindowDimensions();
   const { session } = useSession();
   const userId = session?.user.id;
 
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const { fitSaved } = useLocalSearchParams<{ fitSaved?: string }>();
   // Derived directly from the route param, not mirrored into local state --
   // same convention as `wardrobe.tsx`'s `itemAdded` ack.
@@ -39,9 +44,14 @@ export default function Fits() {
       return;
     }
 
-    const timeout = setTimeout(() => router.setParams({ fitSaved: undefined }), ACK_DURATION_MS);
+    // Scoped to this screen's own route via `useNavigation()`, not the
+    // global `router.setParams` -- that one targets whichever screen is
+    // currently focused, so if the user taps into a Fit's detail screen
+    // before this timeout fires, it would clear the wrong screen's params
+    // and leave "Fit saved." stuck here indefinitely.
+    const timeout = setTimeout(() => navigation.setParams({ fitSaved: undefined }), ACK_DURATION_MS);
     return () => clearTimeout(timeout);
-  }, [showAck]);
+  }, [showAck, navigation]);
 
   const { data: fits, isLoading, isError, error, refetch } = useFits(userId);
 
@@ -64,6 +74,7 @@ export default function Fits() {
 
   const coverPaths = useMemo(() => (fits ?? []).map((fit) => fit.cover_path).filter((path): path is string => Boolean(path)), [fits]);
   const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
+  const columnWidth = (width - GUTTER * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
   const header = (
     <View
@@ -124,32 +135,15 @@ export default function Fits() {
     );
   }
 
-  function renderRow({ item }: { item: FitRow }) {
+  function renderCell({ item }: { item: FitRow }) {
     const thumbnailUrl = item.cover_path ? (thumbnailUrls?.[item.cover_path] ?? null) : null;
     return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={item.name}
+      <FitsGridCell
+        name={item.name}
+        thumbnailUrl={thumbnailUrl}
+        columnWidth={columnWidth}
         onPress={() => router.push({ pathname: '/fit/[id]', params: { id: item.id } } as Href)}
-        className="flex-row items-center gap-4 border-b border-border-hairline px-gutter py-3 dark:border-border-hairlineDark"
-      >
-        <View style={{ width: ROW_THUMB_SIZE, height: ROW_THUMB_SIZE }} className="overflow-hidden rounded-sm">
-          {thumbnailUrl ? (
-            <Image
-              testID="fits-row-thumbnail"
-              accessibilityLabel=""
-              source={{ uri: thumbnailUrl }}
-              style={{ width: '100%', height: '100%' }}
-              contentFit="cover"
-            />
-          ) : (
-            <View testID="fits-row-thumbnail-fallback" className="h-full w-full bg-surface-raised dark:bg-surface-raisedDark" />
-          )}
-        </View>
-        <Text variant="body" className="flex-1 text-ink-primary dark:text-ink-primaryDark" numberOfLines={1}>
-          {item.name}
-        </Text>
-      </Pressable>
+      />
     );
   }
 
@@ -157,11 +151,14 @@ export default function Fits() {
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       {header}
       <FlatList
-        testID="fits-list"
+        testID="fits-grid"
         data={fits}
+        numColumns={GRID_COLUMNS}
         keyExtractor={(item) => item.id}
+        contentContainerClassName="px-gutter pt-4"
         contentContainerStyle={{ paddingBottom: tabBarClearance }}
-        renderItem={renderRow}
+        columnWrapperStyle={{ gap: GRID_GAP, marginBottom: GRID_GAP, alignItems: 'flex-start' }}
+        renderItem={renderCell}
       />
     </View>
   );

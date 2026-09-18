@@ -3,12 +3,15 @@ import { render, screen, userEvent } from '@testing-library/react-native';
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
+const mockNavigation = { setParams: jest.fn() };
+
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: jest.fn(() => ({})),
   // No-op mock, same reasoning as `wardrobeGrid.test.tsx`'s -- decouples the
   // focus-triggered refetch from the rest of these tests.
   useFocusEffect: jest.fn(),
+  useNavigation: jest.fn(() => mockNavigation),
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
 
@@ -65,6 +68,24 @@ describe('Fits tab', () => {
       await render(<Fits />);
 
       expect(screen.queryByText('Fit saved.')).toBeNull();
+    });
+
+    it('clears the ack via this screen\'s own navigation, not the global router', async () => {
+      jest.useFakeTimers();
+      (useLocalSearchParams as jest.Mock).mockReturnValue({ fitSaved: '1' });
+      mockFits({ data: [] });
+
+      await render(<Fits />);
+      jest.advanceTimersByTime(2500);
+
+      // Regression test: a global `router.setParams` call here would clear
+      // whatever screen currently has focus rather than this one -- e.g. if
+      // the user tapped into a Fit's detail screen before the ack timed
+      // out, leaving "Fit saved." stuck on this tab forever. Scoping the
+      // clear to this route's own `navigation.setParams` avoids that.
+      expect(mockNavigation.setParams).toHaveBeenCalledWith({ fitSaved: undefined });
+      expect(router.setParams).not.toHaveBeenCalled();
+      jest.useRealTimers();
     });
   });
 
@@ -134,12 +155,12 @@ describe('Fits tab', () => {
     expect(Sentry.captureException).toHaveBeenCalled();
   });
 
-  it('shows a placeholder for a row whose cover has no resolved thumbnail yet', async () => {
+  it('shows a placeholder cell for a Fit whose cover has no resolved thumbnail yet', async () => {
     mockFits({ data: [fit({ id: 'a', cover_path: null })] });
 
     await render(<Fits />);
 
-    expect(screen.getByTestId('fits-row-thumbnail-fallback')).toBeTruthy();
-    expect(screen.queryByTestId('fits-row-thumbnail')).toBeNull();
+    expect(screen.getByTestId('fits-grid-thumbnail-fallback')).toBeTruthy();
+    expect(screen.queryByTestId('fits-grid-thumbnail-image')).toBeNull();
   });
 });

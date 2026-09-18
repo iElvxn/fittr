@@ -7,6 +7,8 @@ jest.mock('@/lib/wardrobe/listItems', () => ({
   useWardrobeItems: jest.fn(),
 }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
+const mockNavigation = { setParams: jest.fn() };
+
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: jest.fn(() => ({})),
@@ -15,10 +17,11 @@ jest.mock('expo-router', () => ({
   // tests below; its own behavior gets one dedicated test that invokes the
   // captured callback directly.
   useFocusEffect: jest.fn(),
+  useNavigation: jest.fn(() => mockNavigation),
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
 
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import Wardrobe from '@/app/(tabs)/wardrobe';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
@@ -57,6 +60,44 @@ describe('Wardrobe', () => {
     jest.clearAllMocks();
     (useSession as jest.Mock).mockReturnValue({ session: { user: { id: 'user-1' } }, loading: false });
     (useThumbnailUrls as jest.Mock).mockReturnValue({ data: {} });
+    (useLocalSearchParams as jest.Mock).mockReturnValue({});
+  });
+
+  describe('save acknowledgement', () => {
+    it('shows "Item added." when returning with itemAdded=1', async () => {
+      (useLocalSearchParams as jest.Mock).mockReturnValue({ itemAdded: '1' });
+      mockWardrobeItems({ data: [] });
+
+      await render(<Wardrobe />);
+
+      expect(screen.getByText('Item added.')).toBeTruthy();
+    });
+
+    it('shows no acknowledgement without the itemAdded param', async () => {
+      mockWardrobeItems({ data: [] });
+
+      await render(<Wardrobe />);
+
+      expect(screen.queryByText('Item added.')).toBeNull();
+    });
+
+    it("clears the ack via this screen's own navigation, not the global router", async () => {
+      jest.useFakeTimers();
+      (useLocalSearchParams as jest.Mock).mockReturnValue({ itemAdded: '1' });
+      mockWardrobeItems({ data: [] });
+
+      await render(<Wardrobe />);
+      jest.advanceTimersByTime(2500);
+
+      // Regression test: a global `router.setParams` call here would clear
+      // whatever screen currently has focus rather than this one -- e.g. if
+      // the user tapped into an item's detail screen before the ack timed
+      // out, leaving "Item added." stuck on this tab forever. Scoping the
+      // clear to this route's own `navigation.setParams` avoids that.
+      expect(mockNavigation.setParams).toHaveBeenCalledWith({ itemAdded: undefined });
+      expect(router.setParams).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
   });
 
   it('shows the empty state when there are no items', async () => {
