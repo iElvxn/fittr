@@ -16,6 +16,7 @@ type Props = {
   width: number;
   height: number;
   color: string;
+  opacity?: number;
 };
 
 /**
@@ -27,7 +28,7 @@ type Props = {
  * read as any of them, so it renders nothing (the reference itself skips a
  * shape for that category too).
  */
-export function GarmentSilhouette({ category, width, height, color }: Props) {
+export function GarmentSilhouette({ category, width, height, color, opacity = 0.5 }: Props) {
   if (category === 'accessory') {
     return null;
   }
@@ -35,7 +36,7 @@ export function GarmentSilhouette({ category, width, height, color }: Props) {
   return (
     <Image
       source={SOURCES[category]}
-      style={{ width, height }}
+      style={{ width, height, opacity }}
       contentFit="contain"
       tintColor={color}
     />

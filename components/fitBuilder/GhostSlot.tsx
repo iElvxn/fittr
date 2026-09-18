@@ -30,8 +30,8 @@ type Props = {
    * `TemplatePicker`'s preview cards never pass this, since they always sit
    * on the theme surface. The silhouette's hairline tint is calibrated for
    * that near-white default and all but disappears against the canvas's own
-   * pastel backdrops, so a custom backdrop switches it to a fixed, more
-   * visible neutral instead.
+   * pastel backdrops, so a custom backdrop switches it to a fixed white
+   * overlay instead.
    */
   canvasBackgroundColor?: string | null;
 };
@@ -57,14 +57,18 @@ export function GhostSlot({
   const scheme = useColorScheme();
   // The pastel backdrops are all light and warm-toned regardless of the
   // active theme (they're fixed hex values, not scheme-adaptive), so a
-  // fixed medium-gray tint reads clearly against every one of them -- unlike
-  // the near-white-calibrated hairline color, which was chosen only for
-  // legibility against the default surface.
+  // fixed white tint reads as a soft highlight against every one of them --
+  // unlike the near-white-calibrated hairline color, which was chosen only
+  // for legibility against the default surface.
   const silhouetteColor = canvasBackgroundColor
-    ? colors.light.inkSecondary
+    ? '#FFFFFF'
     : scheme === 'dark'
       ? colors.dark.borderHairline
       : colors.light.borderHairline;
+  // A white tint at the default 0.5 still washes out against the lighter
+  // pastels -- a bit more opaque keeps it a soft highlight instead of a
+  // stark white cutout.
+  const silhouetteOpacity = canvasBackgroundColor ? 0.75 : 0.5;
 
   return (
     <View style={{ position: 'absolute', left: x * containerWidth, top: y * containerHeight }}>
@@ -82,6 +86,7 @@ export function GhostSlot({
             width={width * containerWidth}
             height={height * containerHeight}
             color={silhouetteColor}
+            opacity={silhouetteOpacity}
           />
         </View>
       ) : null}

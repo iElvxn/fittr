@@ -15,10 +15,24 @@ describe('GarmentSilhouette', () => {
       expect(element?.type).toBe(Image);
       expect(element?.props.tintColor).toBe('#E7E5E4');
       expect(element?.props.contentFit).toBe('contain');
-      expect(element?.props.style).toEqual({ width: 40, height: 20 });
+      expect(element?.props.style).toEqual({ width: 40, height: 20, opacity: 0.5 });
       expect(element?.props.source).toBeTruthy();
     },
   );
+
+  it('defaults to 0.5 opacity but takes an override', () => {
+    const defaulted = GarmentSilhouette({ category: 'top', width: 40, height: 20, color: '#E7E5E4' });
+    expect(defaulted?.props.style).toMatchObject({ opacity: 0.5 });
+
+    const overridden = GarmentSilhouette({
+      category: 'top',
+      width: 40,
+      height: 20,
+      color: '#E7E5E4',
+      opacity: 0.75,
+    });
+    expect(overridden?.props.style).toMatchObject({ opacity: 0.75 });
+  });
 
   it('uses a different image source per category', () => {
     const sources = (['top', 'bottom', 'outerwear', 'shoes'] as const).map(
