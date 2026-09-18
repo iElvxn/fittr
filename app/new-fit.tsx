@@ -359,31 +359,26 @@ export default function NewFit() {
           <TemplatePicker onSelectTemplate={handleSelectTemplate} onSkip={handleSkip} />
         </>
       ) : (
-        // No header bar here -- the canvas is the working surface, and a
-        // titled bar above it just eats vertical space. A bare close button
-        // still floats over the top-left corner (unlike the page-sheet
-        // 'modal' presentation this screen used before, `fullScreenModal`
-        // has no swipe-to-dismiss gesture, so this is the only way out).
-        <View className="flex-1" style={{ paddingTop: insets.top + 8 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Cancel"
-            onPress={() => router.back()}
-            hitSlop={8}
-            style={{
-              position: 'absolute',
-              top: insets.top + 8,
-              left: 16,
-              width: CLOSE_BUTTON_SIZE,
-              height: CLOSE_BUTTON_SIZE,
-              borderRadius: CLOSE_BUTTON_SIZE / 2,
-              zIndex: 10,
-            }}
-            className="items-center justify-center border border-border-hairline bg-surface-base dark:border-border-hairlineDark dark:bg-surface-baseDark"
+        // A proper header row (not floating over the canvas) holds Cancel
+        // and Save, mirroring the template-picker header's own bordered
+        // section above -- the canvas is still the working surface, but it
+        // sits in the space actually left over beneath this row rather than
+        // underneath buttons overlaid on top of it.
+        <View className="flex-1">
+          <View
+            style={{ paddingTop: insets.top + 8 }}
+            className="flex-row items-center justify-between border-b border-border-hairline px-gutter pb-2 dark:border-border-hairlineDark"
           >
-            <CloseIcon size={16} color={closeButtonColor} />
-          </Pressable>
-          <View style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 10 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              onPress={() => router.back()}
+              hitSlop={8}
+              style={{ width: CLOSE_BUTTON_SIZE, height: CLOSE_BUTTON_SIZE, borderRadius: CLOSE_BUTTON_SIZE / 2 }}
+              className="items-center justify-center border border-border-hairline dark:border-border-hairlineDark"
+            >
+              <CloseIcon size={16} color={closeButtonColor} />
+            </Pressable>
             <Button
               title="Save"
               variant="primary"
@@ -395,9 +390,7 @@ export default function NewFit() {
             />
           </View>
           {captureError ? (
-            <View
-              style={{ position: 'absolute', top: insets.top + 8 + CLOSE_BUTTON_SIZE + 8, left: 16, right: 16, zIndex: 10 }}
-            >
+            <View className="px-gutter pt-3">
               <ConnectionErrorNotice message={UNKNOWN_ERROR_MESSAGE} />
             </View>
           ) : null}
