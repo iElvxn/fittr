@@ -8,9 +8,9 @@ module.exports = {
       colors: {
         surface: {
           base: '#FAFAF9',
-          baseDark: '#171412',
+          baseDark: '#000000',
           raised: '#FFFFFF',
-          raisedDark: '#211D1A',
+          raisedDark: '#000000',
         },
         ink: {
           primary: '#1C1917',

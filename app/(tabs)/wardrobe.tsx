@@ -12,6 +12,7 @@ import {
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { CirclePlusButton } from '@/components/ui/CirclePlusButton';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { CategoryFilterChips, type CategoryFilter } from '@/components/wardrobe/CategoryFilterChips';
 import { WardrobeGridCell } from '@/components/wardrobe/WardrobeGridCell';
@@ -118,7 +119,7 @@ export default function Wardrobe() {
         <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
           My Closet
         </Text>
-        <Button title="Add item" variant="primary" onPress={() => router.push('/add-item')} />
+        <CirclePlusButton accessibilityLabel="Add item" onPress={() => router.push('/add-item')} />
       </View>
     </View>
   );

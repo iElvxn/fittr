@@ -12,6 +12,7 @@ import {
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { CirclePlusButton } from '@/components/ui/CirclePlusButton';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { FitsGridCell } from '@/components/fits/FitsGridCell';
 import { useSession } from '@/lib/auth/useSession';
@@ -78,11 +79,11 @@ export default function Fits() {
 
   const header = (
     <View
-      style={{ paddingTop: insets.top + 12 }}
-      className="border-b border-border-hairline px-gutter pb-4 dark:border-border-hairlineDark"
+      style={{ paddingTop: insets.top + 8 }}
+      className="border-b border-border-hairline px-gutter pb-2 dark:border-border-hairlineDark"
     >
       {showAck ? (
-        <Text accessibilityRole="alert" variant="body" className="mb-4 text-ink-primary dark:text-ink-primaryDark">
+        <Text accessibilityRole="alert" variant="body" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
           Fit saved.
         </Text>
       ) : null}
@@ -90,7 +91,7 @@ export default function Fits() {
         <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
           My Fits
         </Text>
-        <Button title="New Fit" variant="primary" onPress={() => router.push('/new-fit')} />
+        <CirclePlusButton accessibilityLabel="New Fit" onPress={() => router.push('/new-fit')} />
       </View>
     </View>
   );

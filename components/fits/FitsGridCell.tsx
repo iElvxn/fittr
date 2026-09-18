@@ -42,7 +42,7 @@ export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress }: Props
     >
       <View
         style={{ width: columnWidth, height }}
-        className="overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
+        className="overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-baseDark"
       >
         {thumbnailUrl ? (
           <Image
@@ -54,12 +54,12 @@ export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress }: Props
             onLoad={handleLoad}
           />
         ) : (
-          <View testID="fits-grid-thumbnail-fallback" className="h-full w-full bg-surface-raised dark:bg-surface-raisedDark" />
+          <View testID="fits-grid-thumbnail-fallback" className="h-full w-full bg-surface-raised dark:bg-surface-baseDark" />
         )}
         <View pointerEvents="none" style={{ paddingHorizontal: LABEL_INSET }} className="absolute inset-x-0 bottom-2 items-center">
           <View
             style={{ maxWidth: columnWidth - LABEL_INSET * 2 }}
-            className="rounded-sm bg-surface-raised/70 px-2 py-0.5 dark:bg-surface-raisedDark/70"
+            className="rounded-sm bg-surface-raised/70 px-2 py-0.5 dark:bg-surface-baseDark/70"
           >
             <Text variant="meta" numberOfLines={1} className="text-ink-secondary dark:text-ink-secondaryDark">
               {name}
