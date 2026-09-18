@@ -5,9 +5,11 @@ import { router } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { CloseIcon } from '@/components/ui/icons/CloseIcon';
+import { PlusIcon } from '@/components/ui/icons/PlusIcon';
 import { TemplatePicker } from '@/components/fitBuilder/TemplatePicker';
 import { FitCanvas } from '@/components/fitBuilder/FitCanvas';
-import { CategoryTray } from '@/components/fitBuilder/CategoryTray';
+import { CatalogSheet } from '@/components/fitBuilder/CatalogSheet';
+import type { CategoryFilter } from '@/components/wardrobe/CategoryFilterChips';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
@@ -31,6 +33,10 @@ export default function NewFit() {
   const userId = session?.user.id;
 
   const [mode, setMode] = useState<ScreenMode>('template');
+  // `null` means the catalog sheet is closed. A real category means a ghost
+  // slot's "+" was tapped (sheet opens pre-filtered to it); 'all' means the
+  // bottom "Add item" bar was tapped (sheet opens unfiltered).
+  const [activeSlotCategory, setActiveSlotCategory] = useState<CategoryFilter | null>(null);
 
   const selectTemplate = useFitBuilderStore((state) => state.selectTemplate);
   const addItem = useFitBuilderStore((state) => state.addItem);
@@ -68,8 +74,9 @@ export default function NewFit() {
     setMode('canvas');
   }
 
-  function handleAddItem(item: WardrobeItemRow) {
+  function handleSelectItem(item: WardrobeItemRow) {
     addItem(item.id, item.category);
+    setActiveSlotCategory(null);
   }
 
   const closeButtonColor = scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary;
@@ -124,8 +131,39 @@ export default function NewFit() {
           >
             <CloseIcon size={16} color={closeButtonColor} />
           </Pressable>
-          <FitCanvas cutoutUrls={cutoutUrls ?? {}} wardrobeItemCutoutPaths={wardrobeItemCutoutPaths} />
-          <CategoryTray items={items} thumbnailUrls={thumbnailUrls ?? {}} onAddItem={handleAddItem} />
+          <FitCanvas
+            cutoutUrls={cutoutUrls ?? {}}
+            wardrobeItemCutoutPaths={wardrobeItemCutoutPaths}
+            onSlotPress={setActiveSlotCategory}
+          />
+          <View
+            style={{ paddingBottom: insets.bottom + 8 }}
+            className="items-center border-t border-border-hairline pt-3 dark:border-border-hairlineDark"
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add item"
+              onPress={() => setActiveSlotCategory('all')}
+              hitSlop={8}
+              className="flex-row items-center gap-2 px-4 py-2 active:opacity-60"
+            >
+              <PlusIcon size={18} color={closeButtonColor} />
+              <Text variant="label" className="text-ink-secondary dark:text-ink-secondaryDark">
+                Add item
+              </Text>
+            </Pressable>
+          </View>
+          {activeSlotCategory ? (
+            <CatalogSheet
+              key={activeSlotCategory}
+              visible
+              category={activeSlotCategory}
+              items={items}
+              thumbnailUrls={thumbnailUrls ?? {}}
+              onSelectItem={handleSelectItem}
+              onClose={() => setActiveSlotCategory(null)}
+            />
+          ) : null}
         </View>
       )}
     </View>

@@ -21,6 +21,8 @@ const CANVAS_SHADOW = {
 type Props = {
   cutoutUrls: ThumbnailUrlMap;
   wardrobeItemCutoutPaths: Record<string, string>;
+  /** Opens the catalog sheet pre-filtered to the tapped ghost slot's category. */
+  onSlotPress: (category: WardrobeItemCategory) => void;
 };
 
 /**
@@ -29,12 +31,12 @@ type Props = {
  * chrome around it. Items are bare cutouts with no card/shadow of their own
  * -- the only selection cue is `CanvasItem`'s 2px outline, applied here based
  * on the store's `selectedId`. Any template category-slot with no placed
- * item yet shows a non-interactive ghost-silhouette "+" placeholder -- the
- * frozen spec's promised visual guidance for what's still unfilled; adding
- * an item for that category (via the tray) still goes through `addItem`'s
- * own slot logic, this is display-only.
+ * item yet shows a ghost-silhouette "+" placeholder -- tapping its badge
+ * calls `onSlotPress` to open the catalog sheet pre-filtered to that
+ * category; the actual placement still goes through the caller's own
+ * `addItem` call once something is picked.
  */
-export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths }: Props) {
+export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths, onSlotPress }: Props) {
   const templateId = useFitBuilderStore((state) => state.templateId);
   const items = useFitBuilderStore((state) => state.items);
   const selectedId = useFitBuilderStore((state) => state.selectedId);
@@ -75,6 +77,7 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths }: Props) {
   return (
     <View className="flex-1 bg-surface-base px-gutter pt-4 pb-3 dark:bg-surface-baseDark">
       <View
+        testID="fit-canvas"
         className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
         style={CANVAS_SHADOW}
         onLayout={handleLayout}
@@ -90,6 +93,7 @@ export function FitCanvas({ cutoutUrls, wardrobeItemCutoutPaths }: Props) {
               y={slot.y}
               width={slot.width}
               height={slot.height}
+              onPress={() => onSlotPress(slot.category)}
             />
           ))}
         {size.width > 0 &&

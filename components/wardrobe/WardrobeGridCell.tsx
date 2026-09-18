@@ -21,6 +21,7 @@ export function WardrobeGridCell({ category, name, thumbnailUrl, size, onPress }
       accessibilityLabel={label}
       onPress={onPress}
       style={{ width: size, height: size }}
+      className="active:opacity-70"
     >
       {thumbnailUrl ? (
         <Image
