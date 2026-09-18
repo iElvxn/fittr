@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, Pressable, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { captureRef } from 'react-native-view-shot';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -20,11 +21,13 @@ import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
-import { useFitBuilderStore } from '@/stores/fitBuilder';
+import { useFitBuilderStore, type PlacedItem } from '@/stores/fitBuilder';
 import { colors } from '@/lib/theme/colors';
 import { getNextFitName } from '@/lib/fits/nextFitName';
+import { getFitItems } from '@/lib/fits/getFitItems';
+import { useFits } from '@/lib/fits/listFits';
 import { uploadCover, insertFit, type FitItemPlacement } from '@/lib/fits/saveFit';
-import { FitError, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
+import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import type { TemplateId } from '@/lib/fitBuilder/templates';
 import type { WardrobeItemCategory } from '@/lib/wardrobe/addItem';
@@ -40,14 +43,26 @@ type PendingSave = {
   defaultName: string;
 };
 
-/** Entry flow for building a Fit: template carousel, freeform canvas, then preview/name/save. */
+/**
+ * Entry flow for building a Fit: template carousel, freeform canvas, then
+ * preview/name/save. An optional `fitId` param (Story 3.3) switches this
+ * same screen into edit mode: skip the template picker, seed the canvas
+ * from that Fit's saved placements, and re-save updates it in place instead
+ * of creating a new one.
+ */
 export default function NewFit() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const { session } = useSession();
   const userId = session?.user.id;
+  const queryClient = useQueryClient();
 
-  const [mode, setMode] = useState<ScreenMode>('template');
+  const { fitId } = useLocalSearchParams<{ fitId?: string }>();
+  const isEditMode = Boolean(fitId);
+
+  const [mode, setMode] = useState<ScreenMode>(fitId ? 'canvas' : 'template');
+  const [seeded, setSeeded] = useState(!isEditMode);
+  const [seedError, setSeedError] = useState<string | null>(null);
   // `null` means the catalog sheet is closed. An exact { index, category }
   // means a specific ghost slot's "+" was tapped -- the sheet opens
   // pre-filtered to that category, and a pick commits to that exact slot
@@ -60,6 +75,7 @@ export default function NewFit() {
 
   const selectTemplate = useFitBuilderStore((state) => state.selectTemplate);
   const addItem = useFitBuilderStore((state) => state.addItem);
+  const loadItems = useFitBuilderStore((state) => state.loadItems);
   const reset = useFitBuilderStore((state) => state.reset);
   const canvasBackgroundColor = useFitBuilderStore((state) => state.canvasBackgroundColor);
   const setCanvasBackgroundColor = useFitBuilderStore((state) => state.setCanvasBackgroundColor);
@@ -75,7 +91,7 @@ export default function NewFit() {
   const [connectionError, setConnectionError] = useState(false);
   const [captureError, setCaptureError] = useState(false);
 
-  const { data: wardrobeItems } = useWardrobeItems(userId);
+  const { data: wardrobeItems, isLoading: wardrobeItemsLoading } = useWardrobeItems(userId);
   const items = useMemo(() => wardrobeItems ?? [], [wardrobeItems]);
 
   const thumbPaths = useMemo(() => items.map((item) => item.thumb_path), [items]);
@@ -88,6 +104,73 @@ export default function NewFit() {
     () => Object.fromEntries(items.map((item) => [item.id, item.cutout_path])),
     [items],
   );
+
+  // Edit mode's own name/cover-path source -- same cached-list convention as
+  // `app/item/[id].tsx`, not a second single-Fit fetch.
+  const { data: fits, isLoading: fitsLoading } = useFits(userId);
+  const editingFit = isEditMode ? fits?.find((candidate) => candidate.id === fitId) : undefined;
+  // Only meaningful once `fits` has actually settled -- `fits?.find` misses
+  // during the brief window before that list loads too, which must not be
+  // mistaken for "this Fit doesn't exist." `fits` filters `deleted_at is
+  // null`, so this is also `true` for a `fitId` the current user already
+  // soft-deleted -- without this check, `getFitItems` would still seed from
+  // its (undeleted) `fit_items` rows, since that table's own RLS policy
+  // checks only `fits.user_id`, not `fits.deleted_at`, and a re-save would
+  // silently resurrect it via `insertFit`'s `deleted_at: null` upsert.
+  const fitNotFound = isEditMode && !fitsLoading && !editingFit;
+
+  /**
+   * Fetches the Fit's saved placements and seeds the canvas directly via
+   * `loadItems` -- never through `addItem`, since these already carry their
+   * final position/scale/rotation/z-index. Callable both from the
+   * mount-time effect below and from the loading screen's Retry action.
+   */
+  async function loadFit(targetFitId: string) {
+    setSeedError(null);
+    try {
+      const placements = await getFitItems(targetFitId);
+      const seededItems: PlacedItem[] = placements.map((placement) => ({
+        id: placement.id,
+        wardrobeItemId: placement.wardrobeItemId,
+        // A Fit whose placement points at a wardrobe item that's since been
+        // deleted (already possible today via `app/item/[id].tsx`'s own
+        // delete flow, independent of Story 3.4) falls back to a placeholder
+        // category rather than crashing; showing a visible gap at that
+        // position instead is Story 3.4's own scope ("Fit behavior when a
+        // wardrobe item is deleted"), not this one's.
+        category: items.find((item) => item.id === placement.wardrobeItemId)?.category ?? 'top',
+        templateSlotIndex: null,
+        x: placement.x,
+        y: placement.y,
+        scale: placement.scale,
+        rotation: placement.rotation,
+        zIndex: placement.zIndex,
+      }));
+      loadItems(seededItems);
+      setSeeded(true);
+    } catch (error) {
+      if (error instanceof FitError && error.kind === 'no_connection') {
+        setSeedError(NO_CONNECTION_MESSAGE);
+      } else {
+        Sentry.captureException(error);
+        setSeedError(UNKNOWN_ERROR_MESSAGE);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!fitId || seeded || !userId || wardrobeItemsLoading || fitsLoading || !editingFit) {
+      return;
+    }
+    // Wrapped in its own async callback (not a bare call to the hoisted
+    // `loadFit`) so its `setState` calls happen inside a callback rather
+    // than synchronously in the effect body -- see
+    // https://react.dev/learn/you-might-not-need-an-effect.
+    void (async () => {
+      await loadFit(fitId);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once wardrobe items/the Fit list are ready; a failure is retried by the Retry button, not by re-running this effect.
+  }, [fitId, seeded, userId, wardrobeItemsLoading, fitsLoading, editingFit]);
 
   // Discards any in-progress arrangement on the way out -- Story 3.1 has no
   // persistence, so backing out (or a future re-entry) must never carry
@@ -136,14 +219,19 @@ export default function NewFit() {
     setCaptureError(false);
     try {
       const collageUri = await captureRef(canvasRef, { format: 'png', quality: 1 });
-      let defaultName = 'Fit';
-      try {
-        defaultName = await getNextFitName(userId);
-      } catch (error) {
-        Sentry.captureException(error);
+      // Editing reuses the Fit's own current name as the sheet's starting
+      // point (still editable) and skips the generated-default fetch
+      // entirely -- that fetch only makes sense for a brand-new Fit.
+      let defaultName = editingFit?.name ?? 'Fit';
+      if (!isEditMode) {
+        try {
+          defaultName = await getNextFitName(userId);
+        } catch (error) {
+          Sentry.captureException(error);
+        }
       }
       setConnectionError(false);
-      setPendingSave({ fitId: Crypto.randomUUID(), collageUri, defaultName });
+      setPendingSave({ fitId: isEditMode && fitId ? fitId : Crypto.randomUUID(), collageUri, defaultName });
     } catch (error) {
       console.error('[new-fit] collage capture failed:', error);
       Sentry.captureException(error);
@@ -171,9 +259,18 @@ export default function NewFit() {
         zIndex: item.zIndex,
       }));
       await insertFit(userId, pendingSave.fitId, name, coverPath, placements);
+      // Both the Fits tab list and (in edit mode) the Fit detail screen read
+      // through `useFits`'s cache -- without this, a just-created or
+      // just-edited Fit wouldn't show up until some unrelated refetch.
+      await queryClient.invalidateQueries({ queryKey: ['fits', userId] });
+      const savedFitId = pendingSave.fitId;
       setPendingSave(null);
       reset();
-      router.dismissTo({ pathname: '/(tabs)/fits', params: { fitSaved: '1' } });
+      if (isEditMode) {
+        router.dismissTo({ pathname: '/fit/[id]', params: { id: savedFitId, fitUpdated: '1' } });
+      } else {
+        router.dismissTo({ pathname: '/(tabs)/fits', params: { fitSaved: '1' } });
+      }
     } catch (error) {
       if (!(error instanceof FitError && error.kind === 'no_connection')) {
         console.error('[new-fit] save failed:', error);
@@ -189,6 +286,34 @@ export default function NewFit() {
   }
 
   const closeButtonColor = scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary;
+
+  if (fitNotFound) {
+    return (
+      <View className="flex-1 items-center justify-center bg-surface-base px-gutter dark:bg-surface-baseDark">
+        <Text variant="body" className="mb-6 text-center text-ink-secondary dark:text-ink-secondaryDark">
+          This Fit is no longer available.
+        </Text>
+        <Button title="Back" variant="primary" onPress={() => router.back()} />
+      </View>
+    );
+  }
+
+  if (isEditMode && !seeded) {
+    return (
+      <View className="flex-1 items-center justify-center bg-surface-base px-gutter dark:bg-surface-baseDark">
+        {seedError ? (
+          <>
+            <View className="mb-6 w-full">
+              <ConnectionErrorNotice message={seedError} />
+            </View>
+            <Button title="Retry" variant="primary" onPress={() => fitId && void loadFit(fitId)} />
+          </>
+        ) : (
+          <ActivityIndicator testID="new-fit-edit-loading" />
+        )}
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">

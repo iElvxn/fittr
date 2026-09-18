@@ -51,6 +51,7 @@ function RootLayout() {
                 <Stack.Screen name="add-item" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="new-fit" options={{ presentation: 'fullScreenModal' }} />
                 <Stack.Screen name="item/[id]" />
+                <Stack.Screen name="fit/[id]" />
                 <Stack.Screen name="profile" />
               </Stack>
             </QueryClientProvider>

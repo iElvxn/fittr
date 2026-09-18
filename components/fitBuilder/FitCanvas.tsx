@@ -124,35 +124,20 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
         onLayout={handleLayout}
       >
         {/*
-         * Ghosts and placed items live in their own layer, separate from the
-         * delete button below -- items carry their own Reanimated-driven
-         * `zIndex` (for reordering among themselves), and relying on a
-         * bigger zIndex number for the button to "win" against that turned
-         * out unreliable in practice. A later sibling *view group* painting
-         * over an earlier one needs no zIndex arithmetic at all.
+         * Placed items live in their own layer, separate from the delete
+         * button below -- items carry their own Reanimated-driven `zIndex`
+         * (for reordering among themselves), and relying on a bigger zIndex
+         * number for the button to "win" against that turned out unreliable
+         * in practice. A later sibling *view group* painting over an earlier
+         * one needs no zIndex arithmetic at all.
          *
          * This layer clears the selection on an empty-space tap (see
-         * `deselectGesture` above) -- a ghost badge's own `Pressable` or an
-         * item's own `GestureDetector` still wins the touch first wherever
-         * they actually sit, so this only ever fires for genuinely empty area.
+         * `deselectGesture` above) -- an item's own `GestureDetector` still
+         * wins the touch first wherever it actually sits, so this only ever
+         * fires for genuinely empty area.
          */}
         <GestureDetector gesture={deselectGesture}>
           <View testID="fit-canvas-background" style={{ flex: 1 }}>
-            {size.width > 0 &&
-              unfilledSlots.map(({ slot, index }) => (
-                <GhostSlot
-                  key={index}
-                  category={slot.category}
-                  containerWidth={size.width}
-                  containerHeight={size.height}
-                  x={slot.x}
-                  y={slot.y}
-                  width={slot.width}
-                  height={slot.height}
-                  onPress={() => onSlotPress(index, slot.category)}
-                  canvasBackgroundColor={canvasBackgroundColor}
-                />
-              ))}
             {size.width > 0 &&
               items.map((item) => {
                 const cutoutPath = wardrobeItemCutoutPaths[item.wardrobeItemId];
@@ -198,6 +183,42 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
           </Pressable>
         ) : null}
       </View>
+      {/*
+       * Ghosts render as a sibling overlay, not inside the `ref`'d card above
+       * -- `captureRef` (see `app/new-fit.tsx`'s Save flow) only ever
+       * captures that card's own subtree, so an unfilled template slot can
+       * never end up baked into a saved Fit's cover image, regardless of
+       * render timing. `position: 'absolute', inset 0` on a sibling within
+       * this same padded parent lands on the identical box the card fills
+       * (React Native positions an absolute child against its containing
+       * block's padding box, same edges a `flex-1` sibling already starts
+       * from), so ghosts still line up exactly where they always have.
+       * `pointerEvents="box-none"` keeps the overlay itself transparent to
+       * touches outside a ghost's own badge, so tapping empty canvas still
+       * reaches the card's deselect gesture underneath.
+       */}
+      {size.width > 0 && unfilledSlots.length > 0 ? (
+        <View
+          pointerEvents="box-none"
+          className="overflow-hidden rounded-lg"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          {unfilledSlots.map(({ slot, index }) => (
+            <GhostSlot
+              key={index}
+              category={slot.category}
+              containerWidth={size.width}
+              containerHeight={size.height}
+              x={slot.x}
+              y={slot.y}
+              width={slot.width}
+              height={slot.height}
+              onPress={() => onSlotPress(index, slot.category)}
+              canvasBackgroundColor={canvasBackgroundColor}
+            />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 });

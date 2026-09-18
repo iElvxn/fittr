@@ -114,4 +114,28 @@ export async function insertFit(
     }
     throw itemsError;
   }
+
+  await deleteOrphanedFitItems(fitId, rows.map((row) => row.id));
+}
+
+/**
+ * Re-saving an edited Fit reuses the same `fitId`, so the upsert above
+ * updates/inserts the current placements but never removes a row for an
+ * item the user took off the canvas -- that row is deleted here, scoped to
+ * this `fitId` so it can never touch another Fit's placements. Ids are our
+ * own client-generated uuids (never containing PostgREST-reserved
+ * characters), so they're safe to inline unescaped, same trust boundary as
+ * `id.eq.<uuid>` filters elsewhere in this codebase.
+ */
+async function deleteOrphanedFitItems(fitId: string, currentItemIds: string[]): Promise<void> {
+  const query = supabase.from('fit_items').delete().eq('fit_id', fitId);
+  const { error } =
+    currentItemIds.length > 0 ? await query.not('id', 'in', `(${currentItemIds.join(',')})`) : await query;
+
+  if (error) {
+    if (isNoConnectionError(error)) {
+      throw new FitError('no_connection', NO_CONNECTION_MESSAGE);
+    }
+    throw error;
+  }
 }

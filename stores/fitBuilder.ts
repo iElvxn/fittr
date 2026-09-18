@@ -41,6 +41,21 @@ type FitBuilderState = {
   bringToFront: (id: string) => void;
   removeItem: (id: string) => void;
   setCanvasBackgroundColor: (hex: string | null) => void;
+  /**
+   * Seeds the canvas directly from a saved Fit's placements (Story 3.3
+   * edit mode) -- unlike `addItem`, this never runs the template-slot-
+   * claiming logic, since each placement already carries its final
+   * position/scale/rotation/z-index from the database. `templateId` is
+   * cleared because a persisted Fit carries no template reference of its
+   * own (`fits`/`fit_items` don't store one), so re-entering the canvas
+   * mid-edit is always blank-canvas semantics regardless of how the Fit
+   * was originally built -- `canvasBackgroundColor` resets to the theme
+   * default for the same reason, and also because a stale value could
+   * otherwise survive into a fresh edit if this fires before the previous
+   * screen's own unmount-triggered `reset()` (React Navigation can keep
+   * both mounted briefly during a transition).
+   */
+  loadItems: (items: PlacedItem[]) => void;
   reset: () => void;
 };
 
@@ -160,6 +175,8 @@ export const useFitBuilderStore = create<FitBuilderState>((set, get) => ({
     })),
 
   setCanvasBackgroundColor: (hex) => set({ canvasBackgroundColor: hex }),
+
+  loadItems: (items) => set({ templateId: null, items, selectedId: null, canvasBackgroundColor: null }),
 
   reset: () => set({ templateId: null, items: [], selectedId: null, canvasBackgroundColor: null }),
 }));

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, userEvent } from '@testing-library/react-native';
+import { render, screen, fireEvent, userEvent, within } from '@testing-library/react-native';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 // Without this, `addItem`'s real `Crypto.randomUUID()` comes back `undefined`
@@ -122,6 +122,22 @@ describe('FitCanvas background tap', () => {
     await user.press(await screen.findByRole('button', { name: 'Add Shoes' }));
 
     expect(onSlotPress).toHaveBeenCalledWith(slotIndex('shoes'), 'shoes');
+  });
+});
+
+describe('FitCanvas ghost capture exclusion', () => {
+  // `app/new-fit.tsx`'s Save flow captures exactly the `fit-canvas` node via
+  // `react-native-view-shot` -- a ghost slot rendered *inside* that subtree
+  // would get baked into the saved collage for any Fit with an unfilled
+  // template slot. Ghosts must render as a sibling overlay instead, so this
+  // asserts the structural guarantee directly rather than trusting render
+  // order not to regress.
+  it('renders ghost slots outside the capturable fit-canvas subtree', async () => {
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    expect(await screen.findByRole('button', { name: 'Add Shoes' })).toBeTruthy();
+    expect(within(screen.getByTestId('fit-canvas')).queryByRole('button', { name: /^Add /i })).toBeNull();
   });
 });
 

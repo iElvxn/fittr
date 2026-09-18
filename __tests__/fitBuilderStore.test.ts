@@ -3,7 +3,7 @@ jest.mock('expo-crypto', () => ({
   randomUUID: jest.fn(() => `uuid-${++mockUuidCounter}`),
 }));
 
-import { useFitBuilderStore } from '@/stores/fitBuilder';
+import { useFitBuilderStore, type PlacedItem } from '@/stores/fitBuilder';
 import { FIT_TEMPLATES } from '@/lib/fitBuilder/templates';
 
 function findSlot(templateId: keyof typeof FIT_TEMPLATES, category: string, index = 0) {
@@ -188,6 +188,59 @@ describe('bringToFront', () => {
 
     const updatedTop = useFitBuilderStore.getState().items.find((item) => item.id === top.id);
     expect(updatedTop?.zIndex).toBeGreaterThan(maxZBefore);
+  });
+});
+
+describe('loadItems', () => {
+  const savedPlacements: PlacedItem[] = [
+    {
+      id: 'placement-1',
+      wardrobeItemId: 'wardrobe-item-1',
+      category: 'top',
+      templateSlotIndex: 3,
+      x: 0.42,
+      y: 0.18,
+      scale: 1.3,
+      rotation: 12,
+      zIndex: 2,
+    },
+    {
+      id: 'placement-2',
+      wardrobeItemId: 'wardrobe-item-2',
+      category: 'shoes',
+      templateSlotIndex: null,
+      x: 0.6,
+      y: 0.8,
+      scale: 0.9,
+      rotation: -4,
+      zIndex: 1,
+    },
+  ];
+
+  it("seeds every item at its saved position, scale, rotation, and stacking order", () => {
+    useFitBuilderStore.getState().loadItems(savedPlacements);
+
+    expect(useFitBuilderStore.getState().items).toEqual(savedPlacements);
+  });
+
+  it('clears templateId, selection, and any chosen canvas background color, since a loaded Fit carries none of its own', () => {
+    useFitBuilderStore.getState().selectTemplate('layered-outerwear');
+    useFitBuilderStore.getState().selectItem('some-id');
+    useFitBuilderStore.getState().setCanvasBackgroundColor('#F6DADA');
+
+    useFitBuilderStore.getState().loadItems(savedPlacements);
+
+    expect(useFitBuilderStore.getState().templateId).toBeNull();
+    expect(useFitBuilderStore.getState().selectedId).toBeNull();
+    expect(useFitBuilderStore.getState().canvasBackgroundColor).toBeNull();
+  });
+
+  it('replaces any items already on the canvas rather than appending', () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-3', 'top');
+
+    useFitBuilderStore.getState().loadItems(savedPlacements);
+
+    expect(useFitBuilderStore.getState().items).toEqual(savedPlacements);
   });
 });
 

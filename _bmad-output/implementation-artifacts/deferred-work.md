@@ -81,3 +81,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
   summary: `lib/fits/saveFit.ts`'s rollback helpers swallow their own Storage/DB errors via `.catch(() => {})` with no Sentry logging, so a failed rollback (orphaned Storage object or stuck soft-delete) is undetectable.
   evidence: Code-review finding (edge-case-hunter). Verified this is the exact pattern already shipped in `lib/wardrobe/addItem.ts`'s own rollback calls (`uploadItem`, `saveBatch`), which this story's spec explicitly required mirroring -- not introduced by this story, and fixing it here alone would leave `addItem.ts` inconsistent. Needs a follow-up covering both files together.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-edit-and-delete-a-fit.md`
+  summary: A saved placement whose wardrobe item was deleted seeds onto the edit canvas as a silent `'top'`-category fallback with no visible indication anything is missing.
+  evidence: Code-review finding (blind-hunter). Real today (deleting a wardrobe item is already possible, not gated on Story 3.4), but epics.md's own Story 3.4 ("Fit behavior when a wardrobe item is deleted") explicitly owns showing a visible gap at the deleted item's canvas position -- that story's own acceptance criterion, not this one's.

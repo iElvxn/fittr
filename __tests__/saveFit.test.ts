@@ -63,31 +63,51 @@ describe('uploadCover', () => {
   });
 });
 
+/**
+ * `fit_items.delete().eq(...)` is itself awaitable (no further chaining) when
+ * there are no surviving placements, or chains one more `.not(...)` when
+ * there are -- this stub supports both call shapes so `insertFit`'s
+ * orphan-cleanup step (which picks the shape based on the new placement
+ * count) resolves either way.
+ */
+function mockFitItemsDeleteChain(result: { error: unknown } = { error: null }) {
+  const not = jest.fn().mockResolvedValue(result);
+  const builder = { not, then: (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve) };
+  const eq = jest.fn().mockReturnValue(builder);
+  const del = jest.fn().mockReturnValue({ eq });
+  return { del, eq, not };
+}
+
 describe('insertFit', () => {
   function mockSupabase({
     fitError,
     itemsError,
+    cleanupError,
   }: {
     fitError: unknown;
     itemsError?: unknown;
+    cleanupError?: unknown;
   }) {
     const fitsUpsert = jest.fn().mockResolvedValue({ error: fitError });
     const fitItemsUpsert = jest.fn().mockResolvedValue({ error: itemsError ?? null });
     const fitsUpdate = jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({ error: null }) });
     const remove = jest.fn().mockResolvedValue({ error: null });
+    const { del: fitItemsDelete, eq: fitItemsDeleteEq, not: fitItemsDeleteNot } = mockFitItemsDeleteChain({
+      error: cleanupError ?? null,
+    });
 
     (supabase.from as jest.Mock).mockImplementation((table: string) => {
       if (table === 'fits') {
         return { upsert: fitsUpsert, update: fitsUpdate };
       }
       if (table === 'fit_items') {
-        return { upsert: fitItemsUpsert };
+        return { upsert: fitItemsUpsert, delete: fitItemsDelete };
       }
       throw new Error(`unexpected table ${table}`);
     });
     (supabase.storage.from as jest.Mock).mockReturnValue({ remove });
 
-    return { fitsUpsert, fitItemsUpsert, fitsUpdate, remove };
+    return { fitsUpsert, fitItemsUpsert, fitsUpdate, remove, fitItemsDelete, fitItemsDeleteEq, fitItemsDeleteNot };
   }
 
   it('upserts the fits row then the fit_items rows', async () => {
@@ -142,12 +162,14 @@ describe('insertFit', () => {
     const fitsUpdate = jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({ error: null }) });
     const remove = jest.fn().mockResolvedValue({ error: null });
 
+    const { del: fitItemsDelete } = mockFitItemsDeleteChain();
+
     (supabase.from as jest.Mock).mockImplementation((table: string) => {
       if (table === 'fits') {
         return { upsert: fitsUpsert, update: fitsUpdate };
       }
       if (table === 'fit_items') {
-        return { upsert: fitItemsUpsert };
+        return { upsert: fitItemsUpsert, delete: fitItemsDelete };
       }
       throw new Error(`unexpected table ${table}`);
     });
@@ -190,5 +212,40 @@ describe('insertFit', () => {
     expect(rows[0].id).not.toBe(rows[1].id);
     expect(rows[0].item_id).toBe('wardrobe-item-1');
     expect(rows[1].item_id).toBe('wardrobe-item-1');
+  });
+
+  describe('orphaned fit_items cleanup (Story 3.3 edit re-save)', () => {
+    it('deletes fit_items rows for this fitId not present in the new placement set', async () => {
+      const { fitItemsDeleteEq, fitItemsDeleteNot } = mockSupabase({ fitError: null });
+
+      await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM]);
+
+      expect(fitItemsDeleteEq).toHaveBeenCalledWith('fit_id', 'fit-1');
+      expect(fitItemsDeleteNot).toHaveBeenCalledWith('id', 'in', `(${ITEM.id})`);
+    });
+
+    it('deletes every fit_items row for this fitId when the new placement set is empty', async () => {
+      const { fitItemsDeleteEq, fitItemsDeleteNot } = mockSupabase({ fitError: null });
+
+      await insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, []);
+
+      expect(fitItemsDeleteEq).toHaveBeenCalledWith('fit_id', 'fit-1');
+      expect(fitItemsDeleteNot).not.toHaveBeenCalled();
+    });
+
+    it('classifies a no-connection failure during cleanup', async () => {
+      mockSupabase({ fitError: null, cleanupError: new AuthRetryableFetchError('offline', 0) });
+
+      await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toMatchObject({
+        name: 'FitError',
+        kind: 'no_connection',
+      });
+    });
+
+    it('rethrows other cleanup errors', async () => {
+      mockSupabase({ fitError: null, cleanupError: new Error('boom') });
+
+      await expect(insertFit('user-1', 'fit-1', 'My Fit', COVER_PATH, [ITEM])).rejects.toThrow('boom');
+    });
   });
 });
