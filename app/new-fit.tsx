@@ -90,6 +90,7 @@ export default function NewFit() {
   const [saving, setSaving] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
   const [captureError, setCaptureError] = useState(false);
+  const [capturingCollage, setCapturingCollage] = useState(false);
 
   const { data: wardrobeItems, isLoading: wardrobeItemsLoading } = useWardrobeItems(userId);
   const items = useMemo(() => wardrobeItems ?? [], [wardrobeItems]);
@@ -218,6 +219,14 @@ export default function NewFit() {
     setOpening(true);
     setCaptureError(false);
     try {
+      // Suppresses the selected item's outline/shadow and the delete
+      // button for the capture -- neither belongs in a saved Fit's cover.
+      // A state change alone isn't enough: `captureRef` reads whatever the
+      // native tree has actually painted, so this waits a couple of frames
+      // (the standard RN pattern for "wait for a just-triggered re-render
+      // to land before screenshotting") before capturing.
+      setCapturingCollage(true);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const collageUri = await captureRef(canvasRef, { format: 'png', quality: 1 });
       // Editing reuses the Fit's own current name as the sheet's starting
       // point (still editable) and skips the generated-default fetch
@@ -237,6 +246,7 @@ export default function NewFit() {
       Sentry.captureException(error);
       setCaptureError(true);
     } finally {
+      setCapturingCollage(false);
       setOpening(false);
     }
   }
@@ -388,6 +398,7 @@ export default function NewFit() {
             cutoutUrls={cutoutUrls ?? {}}
             wardrobeItemCutoutPaths={wardrobeItemCutoutPaths}
             onSlotPress={handleSlotPress}
+            capturing={capturingCollage}
           />
           <View
             style={{ paddingBottom: insets.bottom + 8 }}

@@ -35,6 +35,16 @@ type Props = {
   wardrobeItemCutoutPaths: Record<string, string>;
   /** Opens the catalog sheet pre-filtered to the tapped ghost slot's own index and category. */
   onSlotPress: (templateSlotIndex: number, category: WardrobeItemCategory) => void;
+  /**
+   * True for the brief window `app/new-fit.tsx`'s Save flow spends
+   * capturing the collage -- suppresses `CanvasItem`'s own selection
+   * outline/shadow (the one piece of capture-time chrome that can't be
+   * moved to a sibling overlay like the delete button and ghosts below,
+   * since it has to hug that exact item's own animated bounds) so it never
+   * ends up baked into a saved Fit's cover image just because something
+   * happened to be selected at the moment Save was tapped.
+   */
+  capturing?: boolean;
 };
 
 /**
@@ -57,7 +67,7 @@ type Props = {
  * surrounding screen padding/footer.
  */
 export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
-  { cutoutUrls, wardrobeItemCutoutPaths, onSlotPress },
+  { cutoutUrls, wardrobeItemCutoutPaths, onSlotPress, capturing = false },
   ref,
 ) {
   const templateId = useFitBuilderStore((state) => state.templateId);
@@ -150,7 +160,7 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
                     canvasWidth={size.width}
                     canvasHeight={size.height}
                     itemSize={CANVAS_ITEM_SIZE}
-                    isSelected={item.id === selectedId}
+                    isSelected={!capturing && item.id === selectedId}
                     onSelect={() => handleSelect(item.id)}
                     onTransformEnd={(transform) => updateItemTransform(item.id, transform)}
                   />
@@ -158,46 +168,23 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
               })}
           </View>
         </GestureDetector>
-        {selectedItem ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Delete item"
-            onPress={() => removeItem(selectedItem.id)}
-            hitSlop={8}
-            style={{
-              position: 'absolute',
-              bottom: 12,
-              alignSelf: 'center',
-              width: DELETE_BUTTON_SIZE,
-              height: DELETE_BUTTON_SIZE,
-              borderRadius: DELETE_BUTTON_SIZE / 2,
-              shadowColor: '#000',
-              shadowOpacity: 0.1,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 3 },
-              elevation: DELETE_BUTTON_ELEVATION,
-            }}
-            className="items-center justify-center border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark"
-          >
-            <TrashIcon size={18} color={deleteButtonColor} />
-          </Pressable>
-        ) : null}
       </View>
       {/*
-       * Ghosts render as a sibling overlay, not inside the `ref`'d card above
-       * -- `captureRef` (see `app/new-fit.tsx`'s Save flow) only ever
-       * captures that card's own subtree, so an unfilled template slot can
-       * never end up baked into a saved Fit's cover image, regardless of
-       * render timing. `position: 'absolute', inset 0` on a sibling within
-       * this same padded parent lands on the identical box the card fills
-       * (React Native positions an absolute child against its containing
-       * block's padding box, same edges a `flex-1` sibling already starts
-       * from), so ghosts still line up exactly where they always have.
-       * `pointerEvents="box-none"` keeps the overlay itself transparent to
-       * touches outside a ghost's own badge, so tapping empty canvas still
-       * reaches the card's deselect gesture underneath.
+       * Ghosts and the delete button both render as a sibling overlay, not
+       * inside the `ref`'d card above -- `captureRef` (see
+       * `app/new-fit.tsx`'s Save flow) only ever captures that card's own
+       * subtree, so neither an unfilled template slot nor a leftover
+       * "delete this item" button can end up baked into a saved Fit's cover
+       * image, regardless of render timing. `position: 'absolute', inset 0`
+       * on a sibling within this same padded parent lands on the identical
+       * box the card fills (React Native positions an absolute child
+       * against its containing block's padding box, same edges a `flex-1`
+       * sibling already starts from), so both still line up exactly where
+       * they always have. `pointerEvents="box-none"` keeps the overlay
+       * itself transparent to touches outside its own children, so tapping
+       * empty canvas still reaches the card's deselect gesture underneath.
        */}
-      {size.width > 0 && unfilledSlots.length > 0 ? (
+      {size.width > 0 && (unfilledSlots.length > 0 || selectedItem) ? (
         <View
           pointerEvents="box-none"
           className="overflow-hidden rounded-lg"
@@ -217,6 +204,30 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
               canvasBackgroundColor={canvasBackgroundColor}
             />
           ))}
+          {selectedItem ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete item"
+              onPress={() => removeItem(selectedItem.id)}
+              hitSlop={8}
+              style={{
+                position: 'absolute',
+                bottom: 12,
+                alignSelf: 'center',
+                width: DELETE_BUTTON_SIZE,
+                height: DELETE_BUTTON_SIZE,
+                borderRadius: DELETE_BUTTON_SIZE / 2,
+                shadowColor: '#000',
+                shadowOpacity: 0.1,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 3 },
+                elevation: DELETE_BUTTON_ELEVATION,
+              }}
+              className="items-center justify-center border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark"
+            >
+              <TrashIcon size={18} color={deleteButtonColor} />
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </View>
