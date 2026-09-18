@@ -268,7 +268,15 @@ export default function NewFit() {
         rotation: item.rotation,
         zIndex: item.zIndex,
       }));
-      await insertFit(userId, pendingSave.fitId, name, coverPath, canvasBackgroundColor, placements);
+      await insertFit(
+        userId,
+        pendingSave.fitId,
+        name,
+        coverPath,
+        editingFit?.cover_path ?? null,
+        canvasBackgroundColor,
+        placements,
+      );
       // Both the Fits tab list and (in edit mode) the Fit detail screen read
       // through `useFits`'s cache -- without this, a just-created or
       // just-edited Fit wouldn't show up until some unrelated refetch.

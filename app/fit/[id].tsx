@@ -10,7 +10,6 @@ import { BackHeader } from '@/components/ui/BackHeader';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
-import { cacheBustedCoverUrl } from '@/lib/fits/coverCacheBust';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { deleteFit } from '@/lib/fits/deleteFit';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
@@ -53,8 +52,7 @@ export default function FitDetail() {
   }, [showAck]);
 
   const { data: thumbnailUrls } = useThumbnailUrls(fit?.cover_path ? [fit.cover_path] : []);
-  const signedCoverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
-  const coverUrl = fit && signedCoverUrl ? cacheBustedCoverUrl(signedCoverUrl, fit.updated_at) : null;
+  const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
 
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

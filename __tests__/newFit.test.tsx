@@ -254,7 +254,15 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
     await user.press(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
-      expect(insertFit).toHaveBeenCalledWith('user-1', 'fit-1', 'Weekend Look', expect.any(String), '#F6DADA', expect.any(Array)),
+      expect(insertFit).toHaveBeenCalledWith(
+        'user-1',
+        'fit-1',
+        'Weekend Look',
+        expect.any(String),
+        EDITING_FIT.cover_path,
+        '#F6DADA',
+        expect.any(Array),
+      ),
     );
     expect(router.dismissTo).toHaveBeenCalledWith({
       pathname: '/fit/[id]',
