@@ -12,6 +12,11 @@ jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => `uuid-${Math.random(
 // item, so `CanvasItem` never renders -- but `FitCanvas` still imports it
 // statically, so it must be stubbed here purely to keep the module loadable.
 jest.mock('@/components/fitBuilder/CanvasItem', () => ({ CanvasItem: () => null }));
+// `FitCanvas` itself now imports Reanimated directly for `runOnJS` (used by
+// its background-deselect gesture) -- the library's own official jest mock
+// hits the same broken worklets-split issue as above, so this is a minimal
+// hand-rolled stand-in for just the one export this file actually needs.
+jest.mock('react-native-reanimated', () => ({ runOnJS: (fn: (...args: unknown[]) => unknown) => fn }));
 
 import { FitCanvas } from '@/components/fitBuilder/FitCanvas';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
@@ -30,7 +35,12 @@ function slotIndex(category: string, occurrence = 0) {
 }
 
 beforeEach(() => {
-  useFitBuilderStore.setState({ templateId: 'shorts-and-top', items: [], selectedId: null });
+  useFitBuilderStore.setState({
+    templateId: 'shorts-and-top',
+    items: [],
+    selectedId: null,
+    canvasBackgroundColor: null,
+  });
 });
 
 describe('FitCanvas onSlotPress wiring', () => {
@@ -90,6 +100,31 @@ describe('FitCanvas onSlotPress wiring', () => {
   });
 });
 
+describe('FitCanvas background tap', () => {
+  // `deselectGesture` is a `Gesture.Tap()` (react-native-gesture-handler),
+  // not a plain `Pressable` -- deliberately, since a Pressable ancestor
+  // doesn't reliably get its touch claim blocked by a `CanvasItem`
+  // descendant's own gesture (see the comment on `deselectGesture` in
+  // FitCanvas.tsx for the exact bug this fixed). `userEvent.press` drives
+  // RN's Pressable/Touchable interface, not RNGH's native gesture events, so
+  // it can't exercise this interaction here -- same category of gap as
+  // `CanvasItem`'s untested gestures above. RNGH ships an official
+  // `fireGestureHandler` test utility for this, but wiring in its jest setup
+  // is a project-wide config change bigger than this fix; verified manually
+  // on-device instead.
+  it('still opens the catalog sheet when a ghost badge on that same background is tapped', async () => {
+    const onSlotPress = jest.fn();
+    const user = userEvent.setup();
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={onSlotPress} />);
+    layout();
+
+    await user.press(await screen.findByRole('button', { name: 'Add Shoes' }));
+
+    expect(onSlotPress).toHaveBeenCalledWith(slotIndex('shoes'), 'shoes');
+  });
+});
+
 describe('FitCanvas delete button', () => {
   it('shows no delete button when nothing is selected', async () => {
     await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
@@ -111,5 +146,17 @@ describe('FitCanvas delete button', () => {
 
     expect(useFitBuilderStore.getState().items).toEqual([]);
     expect(useFitBuilderStore.getState().selectedId).toBeNull();
+  });
+});
+
+describe('FitCanvas custom background color', () => {
+  it("paints the canvas card with the store's canvasBackgroundColor when one is set", async () => {
+    useFitBuilderStore.setState({ canvasBackgroundColor: '#F6DADA' });
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    const canvasStyle = screen.getByTestId('fit-canvas').props.style;
+    const flattened = Array.isArray(canvasStyle) ? Object.assign({}, ...canvasStyle) : canvasStyle;
+    expect(flattened.backgroundColor).toBe('#F6DADA');
   });
 });

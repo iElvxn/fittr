@@ -1,8 +1,31 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
+import { processColor } from 'react-native';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 
 import { GhostSlot } from '@/components/fitBuilder/GhostSlot';
+import { colors } from '@/lib/theme/colors';
+
+/** No type-based query in this RNTL version -- walks the rendered JSON tree for the tinted silhouette image's own prop. */
+function findTintColor(node: unknown): string | number | undefined {
+  if (!node) {
+    return undefined;
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findTintColor(child);
+      if (found) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+  const element = node as { props?: { tintColor?: string | number }; children?: unknown };
+  if (element.props?.tintColor) {
+    return element.props.tintColor;
+  }
+  return findTintColor(element.children);
+}
 
 describe('GhostSlot', () => {
   it('renders as an accessible button labeled with its category', async () => {
@@ -38,5 +61,25 @@ describe('GhostSlot', () => {
 
     expect(screen.getByText('Top')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('tints the silhouette with a fixed neutral (not the near-white default) when the canvas has a custom background', async () => {
+    const { toJSON } = await render(
+      <GhostSlot
+        category="top"
+        containerWidth={300}
+        containerHeight={400}
+        x={0.5}
+        y={0.3}
+        width={0.3}
+        height={0.3}
+        canvasBackgroundColor="#F6DADA"
+      />,
+    );
+
+    // The Image mock serializes `tintColor` through RN's native color processing
+    // (a packed int), not the raw hex string, so the expectation goes through
+    // the same `processColor` to compare like with like.
+    expect(findTintColor(toJSON())).toBe(processColor(colors.light.inkSecondary));
   });
 });

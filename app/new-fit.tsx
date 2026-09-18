@@ -6,9 +6,11 @@ import { router } from 'expo-router';
 import { Text } from '@/components/ui/Text';
 import { CloseIcon } from '@/components/ui/icons/CloseIcon';
 import { PlusIcon } from '@/components/ui/icons/PlusIcon';
+import { PaletteIcon } from '@/components/ui/icons/PaletteIcon';
 import { TemplatePicker } from '@/components/fitBuilder/TemplatePicker';
 import { FitCanvas } from '@/components/fitBuilder/FitCanvas';
 import { CatalogSheet } from '@/components/fitBuilder/CatalogSheet';
+import { CanvasBackgroundSheet } from '@/components/fitBuilder/CanvasBackgroundSheet';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
@@ -46,6 +48,9 @@ export default function NewFit() {
   const selectTemplate = useFitBuilderStore((state) => state.selectTemplate);
   const addItem = useFitBuilderStore((state) => state.addItem);
   const reset = useFitBuilderStore((state) => state.reset);
+  const canvasBackgroundColor = useFitBuilderStore((state) => state.canvasBackgroundColor);
+  const setCanvasBackgroundColor = useFitBuilderStore((state) => state.setCanvasBackgroundColor);
+  const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
 
   const { data: wardrobeItems } = useWardrobeItems(userId);
   const items = useMemo(() => wardrobeItems ?? [], [wardrobeItems]);
@@ -151,8 +156,20 @@ export default function NewFit() {
           />
           <View
             style={{ paddingBottom: insets.bottom + 8 }}
-            className="items-center border-t border-border-hairline pt-3 dark:border-border-hairlineDark"
+            className="flex-row items-center justify-center border-t border-border-hairline pt-3 dark:border-border-hairlineDark"
           >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Canvas background"
+              onPress={() => setBackgroundPickerOpen(true)}
+              hitSlop={8}
+              className="flex-row items-center gap-2 px-4 py-2 active:opacity-60"
+            >
+              <PaletteIcon size={18} color={closeButtonColor} />
+              <Text variant="label" className="text-ink-secondary dark:text-ink-secondaryDark">
+                Background
+              </Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Add item"
@@ -177,6 +194,15 @@ export default function NewFit() {
               onClose={() => setActiveSlot(null)}
             />
           ) : null}
+          <CanvasBackgroundSheet
+            visible={backgroundPickerOpen}
+            selectedColor={canvasBackgroundColor}
+            onSelect={(hex) => {
+              setCanvasBackgroundColor(hex);
+              setBackgroundPickerOpen(false);
+            }}
+            onClose={() => setBackgroundPickerOpen(false)}
+          />
         </View>
       )}
     </View>

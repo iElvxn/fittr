@@ -24,6 +24,16 @@ type Props = {
    * view instead of a button nobody can meaningfully press.
    */
   onPress?: () => void;
+  /**
+   * The live canvas's own chosen backdrop (see `canvasBackgroundColor` in
+   * `stores/fitBuilder.ts`), or `null`/omitted for the theme default --
+   * `TemplatePicker`'s preview cards never pass this, since they always sit
+   * on the theme surface. The silhouette's hairline tint is calibrated for
+   * that near-white default and all but disappears against the canvas's own
+   * pastel backdrops, so a custom backdrop switches it to a fixed, more
+   * visible neutral instead.
+   */
+  canvasBackgroundColor?: string | null;
 };
 
 /**
@@ -42,9 +52,19 @@ export function GhostSlot({
   width = 0,
   height = 0,
   onPress,
+  canvasBackgroundColor,
 }: Props) {
   const scheme = useColorScheme();
-  const silhouetteColor = scheme === 'dark' ? colors.dark.borderHairline : colors.light.borderHairline;
+  // The pastel backdrops are all light and warm-toned regardless of the
+  // active theme (they're fixed hex values, not scheme-adaptive), so a
+  // fixed medium-gray tint reads clearly against every one of them -- unlike
+  // the near-white-calibrated hairline color, which was chosen only for
+  // legibility against the default surface.
+  const silhouetteColor = canvasBackgroundColor
+    ? colors.light.inkSecondary
+    : scheme === 'dark'
+      ? colors.dark.borderHairline
+      : colors.light.borderHairline;
 
   return (
     <View style={{ position: 'absolute', left: x * containerWidth, top: y * containerHeight }}>

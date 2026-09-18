@@ -12,7 +12,7 @@ function findSlot(templateId: keyof typeof FIT_TEMPLATES, category: string, inde
 
 beforeEach(() => {
   mockUuidCounter = 0;
-  useFitBuilderStore.setState({ templateId: null, items: [], selectedId: null });
+  useFitBuilderStore.setState({ templateId: null, items: [], selectedId: null, canvasBackgroundColor: null });
 });
 
 describe('selectTemplate', () => {
@@ -200,5 +200,30 @@ describe('reset', () => {
     useFitBuilderStore.getState().reset();
 
     expect(useFitBuilderStore.getState()).toMatchObject({ templateId: null, items: [], selectedId: null });
+  });
+
+  it('also clears a chosen canvas background color', () => {
+    useFitBuilderStore.getState().setCanvasBackgroundColor('#F6DADA');
+
+    useFitBuilderStore.getState().reset();
+
+    expect(useFitBuilderStore.getState().canvasBackgroundColor).toBeNull();
+  });
+});
+
+describe('setCanvasBackgroundColor', () => {
+  it('defaults to no override', () => {
+    expect(useFitBuilderStore.getState().canvasBackgroundColor).toBeNull();
+  });
+
+  it('stores the chosen hex color', () => {
+    useFitBuilderStore.getState().setCanvasBackgroundColor('#F6DADA');
+    expect(useFitBuilderStore.getState().canvasBackgroundColor).toBe('#F6DADA');
+  });
+
+  it('clears back to the default when passed null', () => {
+    useFitBuilderStore.getState().setCanvasBackgroundColor('#F6DADA');
+    useFitBuilderStore.getState().setCanvasBackgroundColor(null);
+    expect(useFitBuilderStore.getState().canvasBackgroundColor).toBeNull();
   });
 });

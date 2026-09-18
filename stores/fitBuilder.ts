@@ -23,6 +23,8 @@ type FitBuilderState = {
   templateId: TemplateId | null;
   items: PlacedItem[];
   selectedId: string | null;
+  /** `null` means the theme's own default canvas surface -- no override applied. */
+  canvasBackgroundColor: string | null;
 
   selectTemplate: (templateId: TemplateId | null) => void;
   /**
@@ -38,6 +40,7 @@ type FitBuilderState = {
   selectItem: (id: string | null) => void;
   bringToFront: (id: string) => void;
   removeItem: (id: string) => void;
+  setCanvasBackgroundColor: (hex: string | null) => void;
   reset: () => void;
 };
 
@@ -71,6 +74,7 @@ export const useFitBuilderStore = create<FitBuilderState>((set, get) => ({
   templateId: null,
   items: [],
   selectedId: null,
+  canvasBackgroundColor: null,
 
   selectTemplate: (templateId) => set({ templateId, items: [], selectedId: null }),
 
@@ -155,5 +159,7 @@ export const useFitBuilderStore = create<FitBuilderState>((set, get) => ({
       selectedId: state.selectedId === id ? null : state.selectedId,
     })),
 
-  reset: () => set({ templateId: null, items: [], selectedId: null }),
+  setCanvasBackgroundColor: (hex) => set({ canvasBackgroundColor: hex }),
+
+  reset: () => set({ templateId: null, items: [], selectedId: null, canvasBackgroundColor: null }),
 }));
