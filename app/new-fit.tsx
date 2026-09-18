@@ -16,6 +16,7 @@ import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 import { colors } from '@/lib/theme/colors';
 import type { TemplateId } from '@/lib/fitBuilder/templates';
+import { resolvePlacementCategory } from '@/lib/fitBuilder/placement';
 
 const CLOSE_BUTTON_SIZE = 36;
 
@@ -75,7 +76,7 @@ export default function NewFit() {
   }
 
   function handleSelectItem(item: WardrobeItemRow) {
-    addItem(item.id, item.category);
+    addItem(item.id, resolvePlacementCategory(activeSlotCategory ?? 'all', item.category));
     setActiveSlotCategory(null);
   }
 
