@@ -344,3 +344,240 @@ describeIfConfigured('wardrobe_items RLS: cross-user isolation', () => {
     }
   });
 });
+
+/**
+ * Story 3.2: cross-user isolation for `fits`/`fit_items` (0004_fits.sql).
+ * `fits` mirrors `wardrobe_items`' own-column RLS exactly, so the first two
+ * tests mirror the block above. `fit_items` has no `user_id` of its own --
+ * ownership is checked through a join to `fits` -- so it gets its own test
+ * covering SELECT, the impersonated INSERT its `WITH CHECK` subquery must
+ * reject, and DELETE (the one hard-delete-capable policy in this schema,
+ * exercised by `saveFit.ts`'s rollback path).
+ */
+describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
+  jest.setTimeout(30000);
+
+  it("a second user cannot SELECT the first user's fits row", async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-fits-1-${stamp}@mailinator.com`;
+    const email2 = `rls-fits-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const fitId = randomUUID();
+
+    try {
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      const insertResult = await client1.from('fits').insert({
+        id: fitId,
+        user_id: user1Id,
+        name: 'Weekend brunch',
+        cover_path: `${user1Id}/fits/${fitId}/cover.png`,
+      });
+      expect(insertResult.error).toBeNull();
+
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      const { data, error } = await client2.from('fits').select('*').eq('id', fitId).maybeSingle();
+
+      // RLS denies the row rather than erroring: an empty result, not a thrown error.
+      expect(error).toBeNull();
+      expect(data).toBeNull();
+    } finally {
+      await admin.from('fits').delete().eq('id', fitId);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+
+  it("a second user cannot INSERT or UPDATE a row under the first user's user_id", async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-fits-write-1-${stamp}@mailinator.com`;
+    const email2 = `rls-fits-write-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const fitId = randomUUID();
+    const otherFitId = randomUUID();
+
+    try {
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      const insertResult = await client1.from('fits').insert({
+        id: fitId,
+        user_id: user1Id,
+        name: 'Weekend brunch',
+        cover_path: `${user1Id}/fits/${fitId}/cover.png`,
+      });
+      expect(insertResult.error).toBeNull();
+
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      // User 2 tries to INSERT a new row impersonating user 1's ownership.
+      const impersonatedInsert = await client2.from('fits').insert({
+        id: otherFitId,
+        user_id: user1Id,
+        name: 'hijacked',
+        cover_path: `${user1Id}/fits/${otherFitId}/cover.png`,
+      });
+      expect(impersonatedInsert.error).not.toBeNull();
+
+      // User 2 tries to UPDATE user 1's existing row.
+      const impersonatedUpdate = await client2.from('fits').update({ name: 'hijacked' }).eq('id', fitId);
+      // RLS's USING clause filters out rows the caller doesn't own rather
+      // than erroring -- zero rows affected, not a thrown error.
+      expect(impersonatedUpdate.error).toBeNull();
+
+      const { data: unchanged } = await admin.from('fits').select('name').eq('id', fitId).maybeSingle();
+      expect(unchanged?.name).toBe('Weekend brunch');
+    } finally {
+      await admin.from('fits').delete().eq('id', fitId);
+      await admin.from('fits').delete().eq('id', otherFitId);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+
+  it("a second user cannot SELECT, INSERT into, UPDATE, or DELETE the first user's fit_items rows", async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-fit-items-1-${stamp}@mailinator.com`;
+    const email2 = `rls-fit-items-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const wardrobeItemId = randomUUID();
+    const fitId = randomUUID();
+    const fitItemId = randomUUID();
+    const otherFitItemId = randomUUID();
+
+    try {
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      // User 1 sets up a real wardrobe item, a Fit, and one placement --
+      // `fit_items.item_id` has a NOT NULL FK to `wardrobe_items`.
+      const itemInsert = await client1.from('wardrobe_items').insert({
+        id: wardrobeItemId,
+        user_id: user1Id,
+        category: 'top',
+        cutout_path: `${user1Id}/items/${wardrobeItemId}/cutout.png`,
+        thumb_path: `${user1Id}/items/${wardrobeItemId}/thumb.webp`,
+      });
+      expect(itemInsert.error).toBeNull();
+
+      const fitInsert = await client1.from('fits').insert({
+        id: fitId,
+        user_id: user1Id,
+        name: 'Weekend brunch',
+        cover_path: `${user1Id}/fits/${fitId}/cover.png`,
+      });
+      expect(fitInsert.error).toBeNull();
+
+      const fitItemInsert = await client1.from('fit_items').insert({
+        id: fitItemId,
+        fit_id: fitId,
+        item_id: wardrobeItemId,
+        x: 0.5,
+        y: 0.5,
+        scale: 1,
+        rotation: 0,
+        z_index: 1,
+      });
+      expect(fitItemInsert.error).toBeNull();
+
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      // SELECT: RLS denies the row rather than erroring.
+      const { data: selected, error: selectError } = await client2
+        .from('fit_items')
+        .select('*')
+        .eq('id', fitItemId)
+        .maybeSingle();
+      expect(selectError).toBeNull();
+      expect(selected).toBeNull();
+
+      // INSERT: user 2 tries to place an item into user 1's Fit -- the
+      // `WITH CHECK` subquery must find fits.user_id doesn't match them.
+      const impersonatedInsert = await client2.from('fit_items').insert({
+        id: otherFitItemId,
+        fit_id: fitId,
+        item_id: wardrobeItemId,
+        x: 0.1,
+        y: 0.1,
+        scale: 1,
+        rotation: 0,
+        z_index: 2,
+      });
+      expect(impersonatedInsert.error).not.toBeNull();
+
+      // UPDATE: user 2 tries to move an item on user 1's Fit -- RLS's USING
+      // clause must filter the row out rather than erroring.
+      const impersonatedUpdate = await client2.from('fit_items').update({ x: 0.9 }).eq('id', fitItemId);
+      expect(impersonatedUpdate.error).toBeNull();
+
+      const { data: unmoved } = await admin.from('fit_items').select('x').eq('id', fitItemId).maybeSingle();
+      expect(unmoved?.x).toBe(0.5);
+
+      // DELETE: the one real hard-delete policy in this schema -- RLS's
+      // USING clause must filter the row out rather than erroring.
+      const impersonatedDelete = await client2.from('fit_items').delete().eq('id', fitItemId);
+      expect(impersonatedDelete.error).toBeNull();
+
+      const { data: stillThere } = await admin.from('fit_items').select('id').eq('id', fitItemId).maybeSingle();
+      expect(stillThere?.id).toBe(fitItemId);
+    } finally {
+      // fit_items first -- FK-dependent on both fits and wardrobe_items.
+      await admin.from('fit_items').delete().eq('id', fitItemId);
+      await admin.from('fit_items').delete().eq('id', otherFitItemId);
+      await admin.from('fits').delete().eq('id', fitId);
+      await admin.from('wardrobe_items').delete().eq('id', wardrobeItemId);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+});
