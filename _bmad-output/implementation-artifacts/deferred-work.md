@@ -33,3 +33,43 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-4-view-edit-and-delete-an-item.md`
   summary: No length limit on wardrobe item name/brand/notes anywhere in the app (add-item's identical fields have never had one either); Story 2.4's item-detail redesign shows the name as a large Cormorant headline, making an extreme-length name cosmetically worse than elsewhere.
   evidence: Blind-hunter finding. The missing validation is pre-existing across the whole wardrobe item data model (Story 2.1 onward), not introduced by this story's diff -- fixing it here alone would mean inventing an arbitrary character cap unilaterally rather than deciding one consistently for the whole model.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-view-edit-and-delete-an-item.md`
+  summary: Soft-deleted wardrobe items (and their `cutout.png`/`thumb.webp` Storage objects) are never actually purged -- rows and files accumulate forever once `deleted_at` is set.
+  evidence: Discussed post-implementation. Not worth building now: a scheduled reaper job is real infra (cron, testing, monitoring) disproportionate to this app's current scale, and industry practice for small/indie apps is to skip it until storage cost or user volume actually justifies it -- a manual one-off cleanup script is enough if/when that day comes. The one exception is Epic 6's "Delete Account" flow, which needs a real hard-delete for privacy reasons regardless of this decision and should not be skipped.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: Undo/redo for canvas edits (item moves, adds, removes) during a Fit-building session.
+  evidence: Surfaced from user-provided UI inspiration during Story 3.1 planning; not in Epic 3's requirements or Story 3.1's acceptance criteria, which only specify drag/pinch/rotate/reorder. Would need session-history state design beyond this story's scope.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: Per-item duplicate and horizontal-flip (mirror) actions on the fit canvas.
+  evidence: Surfaced from the same UI inspiration. Not required by any Epic 3 story; duplicate would need a placement/offset rule and flip would need a rendering-level mirror, neither specified anywhere in planning artifacts.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: A background picker for the fit canvas (custom canvas background beyond the default surface).
+  evidence: Surfaced from the same UI inspiration. No planning artifact mentions customizable canvas backgrounds; would need new storage/rendering support in the collage-save path (Story 3.2) at minimum.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: The fit-builder's category tray can flash "No items in this category" during the initial wardrobe-items fetch, indistinguishable from a genuinely empty category.
+  evidence: Code-review finding (blind-hunter, edge-case-hunter). Real but narrow: the tray reuses the same TanStack Query key as the Wardrobe tab, so cache is normally warm by the time a user reaches this screen; only a cold-start (first-ever fetch) edge case. Fix needs a new loading prop/branch threaded through `app/new-fit.tsx` -> `CategoryTray`, more than a direct correction.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: No PostHog analytics events fire anywhere in the new Fit-builder flow (template pick, skip, item add), unlike `add-item.tsx`'s `trackItemAdded` precedent.
+  evidence: Code-review finding (blind-hunter). No AC or planning artifact requires Fit-builder analytics; a real scope decision (what events, what properties) for product/analytics ownership to make, not a defect in this story.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: Story 2.4's "Create Fit With This" item-detail action (noted as an entry point into Story 3.1 in `epic-3-context.md`'s Cross-Story Dependencies) has no wiring into `app/new-fit.tsx` -- no route params exist to prefill a preselected wardrobe item.
+  evidence: Code-review finding (blind-hunter). Verified: `new-fit.tsx` accepts no params. This story's human-approved frozen Intent scopes entry to the Fits-tab flow only and never mentions item-detail prefill, so it's out of this story's approved scope, not a defect -- needs its own follow-up story/task.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: `CategoryTray`'s empty-category state ("No items in this category.") is a dead end with no call-to-action into the add-item flow, even though the user is actively mid-flow and may own no items in that category.
+  evidence: Code-review finding (blind-hunter). Real UX rough edge, not required by any Story 3.1 acceptance criterion.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: A newly-added canvas item can render invisible-but-interactive (full hit area, no image) for a brief window while its signed cutout URL is still resolving.
+  evidence: Code-review finding (edge-case-hunter). Real but narrow timing window that self-corrects on the next render once the bulk signed-URL query resolves; fix needs a new loading-placeholder branch in `CanvasItem`, more than a direct correction.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: No test exercises `app/new-fit.tsx`'s unmount-triggered `reset()` -- the sole mechanism implementing "discard the canvas on navigate away" (no persistence exists yet in Story 3.1).
+  evidence: Code-review finding (verification-gap). Real regression-detection gap, but no route-lifecycle unmount test exists anywhere in this repo for any screen, including `app/add-item.tsx` (the template this story's route mirrors) -- establishing that test pattern is bigger than this one story.
