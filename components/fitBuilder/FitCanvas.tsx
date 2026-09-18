@@ -9,7 +9,7 @@ import { FIT_TEMPLATES, type TemplateSlot } from '@/lib/fitBuilder/templates';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 
 /** Cutout render size on the canvas -- independent of the tray's smaller chip thumbnails. */
-const CANVAS_ITEM_SIZE = 140;
+const CANVAS_ITEM_SIZE = 190;
 const CANVAS_SHADOW = {
   shadowColor: '#000',
   shadowOpacity: 0.08,

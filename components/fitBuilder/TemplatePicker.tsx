@@ -13,8 +13,10 @@ import { Button } from '@/components/ui/Button';
 import { GhostSlot } from '@/components/fitBuilder/GhostSlot';
 import { FIT_TEMPLATES, TEMPLATE_OPTIONS, type TemplateId } from '@/lib/fitBuilder/templates';
 
-const CARD_HEIGHT = 440;
-const GUTTER = 16;
+/** Inset from the screen edge to each card's edge -- keeping this equal on both sides is what centers the active card. */
+const SIDE_INSET = 40;
+/** Invisible gap between adjacent cards. The difference between this and SIDE_INSET is how much of the next card peeks in. */
+const CARD_GAP = 16;
 const CARD_SHADOW = {
   shadowColor: '#000',
   shadowOpacity: 0.1,
@@ -45,21 +47,29 @@ export function clampPageIndex(rawIndex: number, pageCount: number): number {
  * starting hint, never a requirement, so it doesn't need its own page.
  */
 export function TemplatePicker({ onSelectTemplate, onSkip }: Props) {
-  const { width } = useWindowDimensions();
-  const cardWidth = width - GUTTER * 2;
+  const { width, height } = useWindowDimensions();
+  // Card is centered by construction: equal SIDE_INSET on both sides of the
+  // viewport leaves a matching gap, and CARD_GAP eats into that gap so only
+  // a slight sliver of the next card peeks past the active one.
+  const previewWidth = width - SIDE_INSET * 2;
+  const pageInterval = previewWidth + CARD_GAP;
+  // Tall and slim rather than a fixed square-ish height -- scales with the
+  // screen now that this picker renders full-screen, capped so it doesn't
+  // dwarf the button on very tall devices.
+  const cardHeight = Math.min(600, height * 0.6);
   const [pageIndex, setPageIndex] = useState(0);
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    const rawIndex = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
+    const rawIndex = Math.round(event.nativeEvent.contentOffset.x / pageInterval);
     setPageIndex(clampPageIndex(rawIndex, TEMPLATE_OPTIONS.length));
   }
 
   const activeTemplate = TEMPLATE_OPTIONS[pageIndex];
 
   return (
-    <View className="flex-1 justify-between">
-      <View>
-        <Text variant="meta" className="mb-1 px-gutter text-center uppercase text-ink-secondary dark:text-ink-secondaryDark">
+    <View className="flex-1">
+      <View className="flex-1 justify-center mb-6">
+        <Text variant="meta" className="mt-2 mb-1 px-gutter text-center uppercase text-ink-secondary dark:text-ink-secondaryDark">
           Choose a template
         </Text>
         <Text variant="title" className="mb-4 px-gutter text-center text-ink-primary dark:text-ink-primaryDark">
@@ -71,23 +81,22 @@ export function TemplatePicker({ onSelectTemplate, onSkip }: Props) {
           showsHorizontalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          snapToInterval={cardWidth}
+          snapToInterval={pageInterval}
           decelerationRate="fast"
-          contentContainerStyle={{ paddingHorizontal: GUTTER }}
+          contentContainerStyle={{ paddingHorizontal: SIDE_INSET }}
         >
           {TEMPLATE_OPTIONS.map((template) => {
             // Rendered in ascending z-index so a higher-z slot (e.g. Tops
             // over Coats & Jackets) visually overlaps a lower one behind it,
             // matching the reference layout's overlap.
             const slots = [...FIT_TEMPLATES[template.id]].sort((a, b) => a.zIndex - b.zIndex);
-            const previewWidth = cardWidth - GUTTER;
             return (
               <View
                 key={template.id}
                 // Shadow lives on this outer view -- `overflow-hidden` (needed
                 // below to clip ghost-slot silhouettes to the rounded corner)
                 // would clip the shadow too if applied on the same node.
-                style={[{ width: previewWidth, height: CARD_HEIGHT, marginRight: GUTTER }, CARD_SHADOW]}
+                style={[{ width: previewWidth, height: cardHeight, marginRight: CARD_GAP }, CARD_SHADOW]}
               >
                 <View className="flex-1 overflow-hidden rounded-lg border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark">
                   {slots.map((slot, index) => (
@@ -95,7 +104,7 @@ export function TemplatePicker({ onSelectTemplate, onSkip }: Props) {
                       key={`${slot.category}-${index}`}
                       category={slot.category}
                       containerWidth={previewWidth}
-                      containerHeight={CARD_HEIGHT}
+                      containerHeight={cardHeight}
                       x={slot.x}
                       y={slot.y}
                       width={slot.width}

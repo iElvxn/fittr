@@ -1,31 +1,29 @@
-import { isValidElement, type ReactElement, type ReactNode } from 'react';
-import { Path, Ellipse } from 'react-native-svg';
+import { Image } from 'expo-image';
 
 import { GarmentSilhouette } from '@/components/fitBuilder/GarmentSilhouette';
-
-function countElementsOfType(node: ReactNode, type: unknown): number {
-  if (!isValidElement(node)) {
-    return 0;
-  }
-  const element = node as ReactElement<{ children?: ReactNode }>;
-  const self = element.type === type ? 1 : 0;
-  const children = element.props.children;
-  const childArray = Array.isArray(children) ? children : [children];
-  return self + childArray.reduce((sum: number, child) => sum + countElementsOfType(child, type), 0);
-}
 
 describe('GarmentSilhouette', () => {
   it('renders nothing for accessory -- no single shape represents jewelry/bags/hats/belts', () => {
     expect(GarmentSilhouette({ category: 'accessory', width: 40, height: 40, color: '#E7E5E4' })).toBeNull();
   });
 
-  it('renders a pair of ellipses for shoes', () => {
-    const element = GarmentSilhouette({ category: 'shoes', width: 40, height: 20, color: '#E7E5E4' });
-    expect(countElementsOfType(element, Ellipse)).toBe(2);
-  });
+  it.each(['top', 'bottom', 'outerwear', 'shoes'] as const)(
+    'renders a tinted, contain-fit image for %s',
+    (category) => {
+      const element = GarmentSilhouette({ category, width: 40, height: 20, color: '#E7E5E4' });
 
-  it.each(['top', 'bottom', 'outerwear'] as const)('renders a single path shape for %s', (category) => {
-    const element = GarmentSilhouette({ category, width: 40, height: 40, color: '#E7E5E4' });
-    expect(countElementsOfType(element, Path)).toBe(1);
+      expect(element?.type).toBe(Image);
+      expect(element?.props.tintColor).toBe('#E7E5E4');
+      expect(element?.props.contentFit).toBe('contain');
+      expect(element?.props.style).toEqual({ width: 40, height: 20 });
+      expect(element?.props.source).toBeTruthy();
+    },
+  );
+
+  it('uses a different image source per category', () => {
+    const sources = (['top', 'bottom', 'outerwear', 'shoes'] as const).map(
+      (category) => GarmentSilhouette({ category, width: 40, height: 40, color: '#E7E5E4' })?.props.source,
+    );
+    expect(new Set(sources).size).toBe(sources.length);
   });
 });

@@ -36,16 +36,21 @@ export const FIT_TEMPLATES: Record<TemplateId, TemplateSlot[]> = {
   // exact template. Coats & Jackets sits behind Tops (lower z-index) so
   // their overlapping corner reads the same way as the reference.
   'shorts-and-top': [
-    { category: 'accessory', x: 0.27, y: 0.11, width: 0, height: 0, scale: 1, rotation: 0, zIndex: 1 },
+    { category: 'accessory', x: 0.27, y: 0.05, width: 0, height: 0, scale: 1, rotation: 0, zIndex: 1 },
     { category: 'outerwear', x: 0.73, y: 0.2, width: 0.55, height: 0.32, scale: 1, rotation: 0, zIndex: 1 },
-    { category: 'top', x: 0.34, y: 0.44, width: 0.52, height: 0.36, scale: 1, rotation: 0, zIndex: 2 },
+    { category: 'top', x: 0.34, y: 0.36, width: 0.52, height: 0.36, scale: 1, rotation: 0, zIndex: 2 },
     { category: 'accessory', x: 0.72, y: 0.56, width: 0, height: 0, scale: 1, rotation: 0, zIndex: 1 },
     { category: 'bottom', x: 0.35, y: 0.75, width: 0.55, height: 0.4, scale: 1, rotation: 0, zIndex: 1 },
     { category: 'shoes', x: 0.73, y: 0.87, width: 0.32, height: 0.13, scale: 0.8, rotation: 0, zIndex: 1 },
   ],
+  // Only two slots by design (a base layer plus outerwear, no bottoms/shoes)
+  // -- centered around the card's vertical midpoint, at a larger size than
+  // "shorts-and-top"'s individual slots, so the pair still reads as a
+  // deliberate composition rather than two small shapes stranded near the
+  // top of a much taller card.
   'layered-outerwear': [
-    { category: 'top', x: 0.5, y: 0.35, width: 0.42, height: 0.34, scale: 0.9, rotation: 0, zIndex: 1 },
-    { category: 'outerwear', x: 0.5, y: 0.3, width: 0.5, height: 0.4, scale: 1, rotation: -4, zIndex: 2 },
+    { category: 'top', x: 0.5, y: 0.48, width: 0.5, height: 0.38, scale: 0.9, rotation: 0, zIndex: 1 },
+    { category: 'outerwear', x: 0.5, y: 0.42, width: 0.6, height: 0.46, scale: 1, rotation: -4, zIndex: 2 },
   ],
 };
 

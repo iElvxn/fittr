@@ -72,35 +72,61 @@ export default function NewFit() {
     addItem(item.id, item.category);
   }
 
+  const closeButtonColor = scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary;
+
   return (
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
-      <View
-        style={{ paddingTop: insets.top + 12 }}
-        className="flex-row items-center justify-between border-b border-border-hairline px-gutter pb-3 dark:border-border-hairlineDark"
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Cancel"
-          onPress={() => router.back()}
-          hitSlop={8}
-          style={{ width: CLOSE_BUTTON_SIZE, height: CLOSE_BUTTON_SIZE, borderRadius: CLOSE_BUTTON_SIZE / 2 }}
-          className="items-center justify-center border border-border-hairline dark:border-border-hairlineDark"
-        >
-          <CloseIcon size={16} color={scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary} />
-        </Pressable>
-        <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
-          New Fit
-        </Text>
-        <View style={{ width: CLOSE_BUTTON_SIZE }} />
-      </View>
-
       {mode === 'template' ? (
-        <TemplatePicker onSelectTemplate={handleSelectTemplate} onSkip={handleSkip} />
-      ) : (
         <>
+          <View
+            style={{ paddingTop: insets.top + 6 }}
+            className="flex-row items-center justify-between border-b border-border-hairline px-gutter pb-2 dark:border-border-hairlineDark"
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              onPress={() => router.back()}
+              hitSlop={8}
+              style={{ width: CLOSE_BUTTON_SIZE, height: CLOSE_BUTTON_SIZE, borderRadius: CLOSE_BUTTON_SIZE / 2 }}
+              className="items-center justify-center border border-border-hairline dark:border-border-hairlineDark"
+            >
+              <CloseIcon size={16} color={closeButtonColor} />
+            </Pressable>
+            <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
+              New Fit
+            </Text>
+            <View style={{ width: CLOSE_BUTTON_SIZE }} />
+          </View>
+          <TemplatePicker onSelectTemplate={handleSelectTemplate} onSkip={handleSkip} />
+        </>
+      ) : (
+        // No header bar here -- the canvas is the working surface, and a
+        // titled bar above it just eats vertical space. A bare close button
+        // still floats over the top-left corner (unlike the page-sheet
+        // 'modal' presentation this screen used before, `fullScreenModal`
+        // has no swipe-to-dismiss gesture, so this is the only way out).
+        <View className="flex-1" style={{ paddingTop: insets.top + 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+            onPress={() => router.back()}
+            hitSlop={8}
+            style={{
+              position: 'absolute',
+              top: insets.top + 8,
+              left: 16,
+              width: CLOSE_BUTTON_SIZE,
+              height: CLOSE_BUTTON_SIZE,
+              borderRadius: CLOSE_BUTTON_SIZE / 2,
+              zIndex: 10,
+            }}
+            className="items-center justify-center border border-border-hairline bg-surface-base dark:border-border-hairlineDark dark:bg-surface-baseDark"
+          >
+            <CloseIcon size={16} color={closeButtonColor} />
+          </Pressable>
           <FitCanvas cutoutUrls={cutoutUrls ?? {}} wardrobeItemCutoutPaths={wardrobeItemCutoutPaths} />
           <CategoryTray items={items} thumbnailUrls={thumbnailUrls ?? {}} onAddItem={handleAddItem} />
-        </>
+        </View>
       )}
     </View>
   );
