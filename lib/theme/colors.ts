@@ -21,8 +21,8 @@ export const colors = {
     accent: '#7A2E36',
   },
   dark: {
-    surfaceBase: '#171412',
-    surfaceRaised: '#211D1A',
+    surfaceBase: '#000000',
+    surfaceRaised: '#000000',
     inkPrimary: '#F5F3F1',
     inkSecondary: '#A39C93',
     inkDisabled: '#6B6560',

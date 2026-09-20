@@ -406,7 +406,7 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
     }
   });
 
-  it("a second user cannot INSERT or UPDATE a row under the first user's user_id", async () => {
+  it("a second user cannot INSERT or UPDATE a row under the first user's user_id, but the owner can update their own", async () => {
     const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
 
     const stamp = Date.now();
@@ -461,6 +461,17 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
 
       const { data: unchanged } = await admin.from('fits').select('name').eq('id', fitId).maybeSingle();
       expect(unchanged?.name).toBe('Weekend brunch');
+
+      // The legitimate owner's own write must still go through -- the exact
+      // shape `deleteFit` (Story 3.3) uses: a `deleted_at` soft-delete
+      // update via `fits_update_own`. Unlike the impersonation check above,
+      // this proves the policy doesn't accidentally block the real owner
+      // too, not just that it blocks everyone else.
+      const ownUpdate = await client1.from('fits').update({ deleted_at: new Date().toISOString() }).eq('id', fitId);
+      expect(ownUpdate.error).toBeNull();
+
+      const { data: softDeleted } = await admin.from('fits').select('deleted_at').eq('id', fitId).maybeSingle();
+      expect(softDeleted?.deleted_at).not.toBeNull();
     } finally {
       await admin.from('fits').delete().eq('id', fitId);
       await admin.from('fits').delete().eq('id', otherFitId);

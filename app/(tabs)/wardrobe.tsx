@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+  type Href,
+  type NativeStackNavigationProp,
+} from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { CirclePlusButton } from '@/components/ui/CirclePlusButton';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { CategoryFilterChips, type CategoryFilter } from '@/components/wardrobe/CategoryFilterChips';
 import { WardrobeGridCell } from '@/components/wardrobe/WardrobeGridCell';
@@ -22,6 +30,7 @@ const GRID_GAP = 8;
 const GUTTER = 16;
 
 export default function Wardrobe() {
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const { itemAdded } = useLocalSearchParams<{ itemAdded?: string }>();
   // Derived directly from the route param, not mirrored into local state --
   // the param itself is the source of truth for whether the ack is showing.
@@ -32,11 +41,14 @@ export default function Wardrobe() {
       return;
     }
 
-    // After the ack window, clear the param so it doesn't re-trigger on a
-    // later re-render or re-focus of this tab (e.g. switching tabs and back).
-    const timeout = setTimeout(() => router.setParams({ itemAdded: undefined }), ACK_DURATION_MS);
+    // Scoped to this screen's own route via `useNavigation()`, not the
+    // global `router.setParams` -- that one targets whichever screen is
+    // currently focused, so if the user taps into an item's detail screen
+    // before this timeout fires, it would clear the wrong screen's params
+    // and leave "Item added." stuck here indefinitely.
+    const timeout = setTimeout(() => navigation.setParams({ itemAdded: undefined }), ACK_DURATION_MS);
     return () => clearTimeout(timeout);
-  }, [showAck]);
+  }, [showAck, navigation]);
 
   const { session } = useSession();
   const userId = session?.user.id;
@@ -107,7 +119,7 @@ export default function Wardrobe() {
         <Text variant="title" className="text-ink-primary dark:text-ink-primaryDark">
           My Closet
         </Text>
-        <Button title="Add item" variant="primary" onPress={() => router.push('/add-item')} />
+        <CirclePlusButton accessibilityLabel="Add item" onPress={() => router.push('/add-item')} />
       </View>
     </View>
   );

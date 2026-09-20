@@ -4,10 +4,8 @@ import { colors } from '@/lib/theme/colors';
 
 /**
  * React Navigation's own default themes fill screen/tab-bar chrome with
- * their stock colors (dark background is near-pure black, `rgb(1,1,1)`) --
- * visibly mismatched against DESIGN.md's warm near-black. This is what
- * shows through in the gaps around the floating tab bar pill unless
- * overridden here.
+ * their stock colors, not this app's -- this is what shows through in the
+ * gaps around the floating tab bar pill unless overridden here.
  */
 export const navigationLightTheme: Theme = {
   ...DefaultTheme,

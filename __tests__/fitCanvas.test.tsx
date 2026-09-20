@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, userEvent } from '@testing-library/react-native';
+import { render, screen, fireEvent, userEvent, waitFor, within } from '@testing-library/react-native';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 // Without this, `addItem`'s real `Crypto.randomUUID()` comes back `undefined`
@@ -8,10 +8,14 @@ jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => `uuid-${Math.random()}`) }));
 // `CanvasItem` pulls in Reanimated for its drag/pinch/rotate gesture, which
 // has no working jest mock under Reanimated v4's worklets split (tracked by
-// `CanvasItem` having no tests of its own yet). These tests never place an
-// item, so `CanvasItem` never renders -- but `FitCanvas` still imports it
-// statically, so it must be stubbed here purely to keep the module loadable.
-jest.mock('@/components/fitBuilder/CanvasItem', () => ({ CanvasItem: () => null }));
+// `CanvasItem` having no tests of its own yet), so it's stubbed here to keep
+// the module loadable. Recording the props it's called with (rather than a
+// bare `() => null`) lets these tests assert on what `FitCanvas` passes down
+// -- e.g. `isSelected` -- without needing the real gesture-driven component.
+const mockCanvasItem = jest.fn((_props: Record<string, unknown>) => null);
+jest.mock('@/components/fitBuilder/CanvasItem', () => ({
+  CanvasItem: (props: Record<string, unknown>) => mockCanvasItem(props),
+}));
 // `FitCanvas` itself now imports Reanimated directly for `runOnJS` (used by
 // its background-deselect gesture) -- the library's own official jest mock
 // hits the same broken worklets-split issue as above, so this is a minimal
@@ -98,6 +102,62 @@ describe('FitCanvas onSlotPress wiring', () => {
 
     expect(onSlotPress).toHaveBeenCalledWith(firstAccessoryIndex, 'accessory');
   });
+
+  it('hides a ghost slot once an unrelated placed item is dragged onto its range', async () => {
+    const shoesSlot = FIT_TEMPLATES['shorts-and-top'][slotIndex('shoes')];
+    // Placed via `loadItems`-style seeding (no `templateSlotIndex` claim) so
+    // this only exercises the spatial check, not identity claiming --
+    // simulates an item dragged there after being placed elsewhere.
+    useFitBuilderStore.setState({
+      items: [
+        {
+          id: 'placed-1',
+          wardrobeItemId: 'wardrobe-item-1',
+          category: 'top',
+          templateSlotIndex: null,
+          x: shoesSlot.x,
+          y: shoesSlot.y,
+          scale: 1,
+          rotation: 0,
+          zIndex: 1,
+        },
+      ],
+    });
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Add Shoes' })).toBeNull());
+    // Everything else is still genuinely unfilled.
+    expect(screen.getByRole('button', { name: 'Add Top' })).toBeTruthy();
+  });
+
+  it('shows the ghost again once the covering item is dragged back off its range', async () => {
+    const shoesSlot = FIT_TEMPLATES['shorts-and-top'][slotIndex('shoes')];
+    useFitBuilderStore.setState({
+      items: [
+        {
+          id: 'placed-1',
+          wardrobeItemId: 'wardrobe-item-1',
+          category: 'top',
+          templateSlotIndex: null,
+          x: shoesSlot.x,
+          y: shoesSlot.y,
+          scale: 1,
+          rotation: 0,
+          zIndex: 1,
+        },
+      ],
+    });
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Add Shoes' })).toBeNull());
+
+    useFitBuilderStore.getState().updateItemTransform('placed-1', { x: 0.05, y: 0.05 });
+
+    expect(await screen.findByRole('button', { name: 'Add Shoes' })).toBeTruthy();
+  });
 });
 
 describe('FitCanvas background tap', () => {
@@ -122,6 +182,69 @@ describe('FitCanvas background tap', () => {
     await user.press(await screen.findByRole('button', { name: 'Add Shoes' }));
 
     expect(onSlotPress).toHaveBeenCalledWith(slotIndex('shoes'), 'shoes');
+  });
+});
+
+describe('FitCanvas capture-time chrome exclusion', () => {
+  // `app/new-fit.tsx`'s Save flow captures exactly the `fit-canvas` node via
+  // `react-native-view-shot` -- a ghost slot rendered *inside* that subtree
+  // would get baked into the saved collage for any Fit with an unfilled
+  // template slot. Ghosts must render as a sibling overlay instead, so this
+  // asserts the structural guarantee directly rather than trusting render
+  // order not to regress.
+  it('renders ghost slots outside the capturable fit-canvas subtree', async () => {
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    expect(await screen.findByRole('button', { name: 'Add Shoes' })).toBeTruthy();
+    expect(within(screen.getByTestId('fit-canvas')).queryByRole('button', { name: /^Add /i })).toBeNull();
+  });
+
+  it('renders the delete button outside the capturable fit-canvas subtree too', async () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    const [placed] = useFitBuilderStore.getState().items;
+    useFitBuilderStore.getState().selectItem(placed.id);
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    expect(await screen.findByRole('button', { name: 'Delete item' })).toBeTruthy();
+    expect(within(screen.getByTestId('fit-canvas')).queryByRole('button', { name: 'Delete item' })).toBeNull();
+  });
+
+  it('hides the delete button while capturing, even with an item selected', async () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    const [placed] = useFitBuilderStore.getState().items;
+    useFitBuilderStore.getState().selectItem(placed.id);
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} capturing />);
+    layout();
+
+    expect(screen.queryByRole('button', { name: 'Delete item' })).toBeNull();
+  });
+
+  it("suppresses the selected item's own outline/shadow while capturing, so it can't end up in the saved cover", async () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    const [placed] = useFitBuilderStore.getState().items;
+    useFitBuilderStore.getState().selectItem(placed.id);
+    mockCanvasItem.mockClear();
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} capturing />);
+    layout();
+
+    await waitFor(() => expect(mockCanvasItem).toHaveBeenCalledWith(expect.objectContaining({ isSelected: false })));
+  });
+
+  it('otherwise passes isSelected through normally when not capturing', async () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    const [placed] = useFitBuilderStore.getState().items;
+    useFitBuilderStore.getState().selectItem(placed.id);
+    mockCanvasItem.mockClear();
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    await waitFor(() => expect(mockCanvasItem).toHaveBeenCalledWith(expect.objectContaining({ isSelected: true })));
   });
 });
 

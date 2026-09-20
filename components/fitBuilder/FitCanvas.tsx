@@ -8,7 +8,7 @@ import { GhostSlot } from '@/components/fitBuilder/GhostSlot';
 import { TrashIcon } from '@/components/ui/icons/TrashIcon';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 import type { WardrobeItemCategory } from '@/lib/wardrobe/addItem';
-import { FIT_TEMPLATES, type TemplateSlot } from '@/lib/fitBuilder/templates';
+import { FIT_TEMPLATES, isPointWithinSlotRange, type TemplateSlot } from '@/lib/fitBuilder/templates';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import { colors } from '@/lib/theme/colors';
 
@@ -35,6 +35,16 @@ type Props = {
   wardrobeItemCutoutPaths: Record<string, string>;
   /** Opens the catalog sheet pre-filtered to the tapped ghost slot's own index and category. */
   onSlotPress: (templateSlotIndex: number, category: WardrobeItemCategory) => void;
+  /**
+   * True for the brief window `app/new-fit.tsx`'s Save flow spends
+   * capturing the collage -- suppresses `CanvasItem`'s own selection
+   * outline/shadow (the one piece of capture-time chrome that can't be
+   * moved to a sibling overlay like the delete button and ghosts below,
+   * since it has to hug that exact item's own animated bounds) so it never
+   * ends up baked into a saved Fit's cover image just because something
+   * happened to be selected at the moment Save was tapped.
+   */
+  capturing?: boolean;
 };
 
 /**
@@ -57,7 +67,7 @@ type Props = {
  * surrounding screen padding/footer.
  */
 export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
-  { cutoutUrls, wardrobeItemCutoutPaths, onSlotPress },
+  { cutoutUrls, wardrobeItemCutoutPaths, onSlotPress, capturing = false },
   ref,
 ) {
   const templateId = useFitBuilderStore((state) => state.templateId);
@@ -90,10 +100,17 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
   const claimedSlotIndexes = new Set(
     items.map((item) => item.templateSlotIndex).filter((index): index is number => index !== null),
   );
+  // On top of that identity-based claim, a slot also drops out the moment
+  // any item's own center currently sits within its range -- covers both a
+  // freeform/spiral placement that happens to land on an unrelated slot,
+  // and a claimed item that's since been dragged elsewhere: dragging it back
+  // off makes that slot's ghost reappear, since this is a render-time check
+  // against current position, not a stored claim.
   const unfilledSlots: { slot: TemplateSlot; index: number }[] = templateId
     ? FIT_TEMPLATES[templateId]
         .map((slot, index) => ({ slot, index }))
         .filter(({ index }) => !claimedSlotIndexes.has(index))
+        .filter(({ slot }) => !items.some((item) => isPointWithinSlotRange(slot, item.x, item.y, size.width, size.height)))
         .sort((a, b) => a.slot.zIndex - b.slot.zIndex)
     : [];
 
@@ -124,35 +141,20 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
         onLayout={handleLayout}
       >
         {/*
-         * Ghosts and placed items live in their own layer, separate from the
-         * delete button below -- items carry their own Reanimated-driven
-         * `zIndex` (for reordering among themselves), and relying on a
-         * bigger zIndex number for the button to "win" against that turned
-         * out unreliable in practice. A later sibling *view group* painting
-         * over an earlier one needs no zIndex arithmetic at all.
+         * Placed items live in their own layer, separate from the delete
+         * button below -- items carry their own Reanimated-driven `zIndex`
+         * (for reordering among themselves), and relying on a bigger zIndex
+         * number for the button to "win" against that turned out unreliable
+         * in practice. A later sibling *view group* painting over an earlier
+         * one needs no zIndex arithmetic at all.
          *
          * This layer clears the selection on an empty-space tap (see
-         * `deselectGesture` above) -- a ghost badge's own `Pressable` or an
-         * item's own `GestureDetector` still wins the touch first wherever
-         * they actually sit, so this only ever fires for genuinely empty area.
+         * `deselectGesture` above) -- an item's own `GestureDetector` still
+         * wins the touch first wherever it actually sits, so this only ever
+         * fires for genuinely empty area.
          */}
         <GestureDetector gesture={deselectGesture}>
           <View testID="fit-canvas-background" style={{ flex: 1 }}>
-            {size.width > 0 &&
-              unfilledSlots.map(({ slot, index }) => (
-                <GhostSlot
-                  key={index}
-                  category={slot.category}
-                  containerWidth={size.width}
-                  containerHeight={size.height}
-                  x={slot.x}
-                  y={slot.y}
-                  width={slot.width}
-                  height={slot.height}
-                  onPress={() => onSlotPress(index, slot.category)}
-                  canvasBackgroundColor={canvasBackgroundColor}
-                />
-              ))}
             {size.width > 0 &&
               items.map((item) => {
                 const cutoutPath = wardrobeItemCutoutPaths[item.wardrobeItemId];
@@ -165,7 +167,7 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
                     canvasWidth={size.width}
                     canvasHeight={size.height}
                     itemSize={CANVAS_ITEM_SIZE}
-                    isSelected={item.id === selectedId}
+                    isSelected={!capturing && item.id === selectedId}
                     onSelect={() => handleSelect(item.id)}
                     onTransformEnd={(transform) => updateItemTransform(item.id, transform)}
                   />
@@ -173,31 +175,68 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
               })}
           </View>
         </GestureDetector>
-        {selectedItem ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Delete item"
-            onPress={() => removeItem(selectedItem.id)}
-            hitSlop={8}
-            style={{
-              position: 'absolute',
-              bottom: 12,
-              alignSelf: 'center',
-              width: DELETE_BUTTON_SIZE,
-              height: DELETE_BUTTON_SIZE,
-              borderRadius: DELETE_BUTTON_SIZE / 2,
-              shadowColor: '#000',
-              shadowOpacity: 0.1,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 3 },
-              elevation: DELETE_BUTTON_ELEVATION,
-            }}
-            className="items-center justify-center border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark"
-          >
-            <TrashIcon size={18} color={deleteButtonColor} />
-          </Pressable>
-        ) : null}
       </View>
+      {/*
+       * Ghosts and the delete button both render as a sibling overlay, not
+       * inside the `ref`'d card above -- `captureRef` (see
+       * `app/new-fit.tsx`'s Save flow) only ever captures that card's own
+       * subtree, so neither an unfilled template slot nor a leftover
+       * "delete this item" button can end up baked into a saved Fit's cover
+       * image, regardless of render timing. `position: 'absolute', inset 0`
+       * on a sibling within this same padded parent lands on the identical
+       * box the card fills (React Native positions an absolute child
+       * against its containing block's padding box, same edges a `flex-1`
+       * sibling already starts from), so both still line up exactly where
+       * they always have. `pointerEvents="box-none"` keeps the overlay
+       * itself transparent to touches outside its own children, so tapping
+       * empty canvas still reaches the card's deselect gesture underneath.
+       */}
+      {size.width > 0 && (unfilledSlots.length > 0 || selectedItem) ? (
+        <View
+          pointerEvents="box-none"
+          className="overflow-hidden rounded-lg"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          {unfilledSlots.map(({ slot, index }) => (
+            <GhostSlot
+              key={index}
+              category={slot.category}
+              containerWidth={size.width}
+              containerHeight={size.height}
+              x={slot.x}
+              y={slot.y}
+              width={slot.width}
+              height={slot.height}
+              onPress={() => onSlotPress(index, slot.category)}
+              canvasBackgroundColor={canvasBackgroundColor}
+            />
+          ))}
+          {selectedItem ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete item"
+              onPress={() => removeItem(selectedItem.id)}
+              hitSlop={8}
+              style={{
+                position: 'absolute',
+                bottom: 12,
+                alignSelf: 'center',
+                width: DELETE_BUTTON_SIZE,
+                height: DELETE_BUTTON_SIZE,
+                borderRadius: DELETE_BUTTON_SIZE / 2,
+                shadowColor: '#000',
+                shadowOpacity: 0.1,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 3 },
+                elevation: DELETE_BUTTON_ELEVATION,
+              }}
+              className="items-center justify-center border border-border-hairline bg-surface-raised dark:border-border-hairlineDark dark:bg-surface-raisedDark"
+            >
+              <TrashIcon size={18} color={deleteButtonColor} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 });
