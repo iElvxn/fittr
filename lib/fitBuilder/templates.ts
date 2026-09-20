@@ -70,3 +70,39 @@ export const TEMPLATE_OPTIONS: { id: TemplateId; label: string; description: str
 export function getTemplateSlots(templateId: TemplateId, category: WardrobeItemCategory): TemplateSlot[] {
   return FIT_TEMPLATES[templateId].filter((slot) => slot.category === category);
 }
+
+/**
+ * The accessory slots above render no silhouette (`width`/`height` both 0)
+ * -- they'd otherwise need a placed item's center to land on the exact
+ * pixel their badge sits at to ever suppress the ghost, which is
+ * unreachable in practice. This is the fallback hit box for those, sized to
+ * roughly the badge's own footprint (see `GhostSlot`'s 44px circle).
+ */
+const MIN_SLOT_RANGE_PX = 44;
+
+/**
+ * Whether a point -- in practice, a placed item's own center -- falls
+ * within a template slot's silhouette rectangle, in pixel space. Used to
+ * suppress a still-unfilled ghost slot once something visually covers it,
+ * independent of which slot (if any) actually "claimed" that item; see
+ * `FitCanvas`'s `unfilledSlots`. Coordinates are all 0-1 canvas-relative
+ * fractions, matching both `TemplateSlot` and `PlacedItem`.
+ */
+export function isPointWithinSlotRange(
+  slot: TemplateSlot,
+  pointX: number,
+  pointY: number,
+  canvasWidth: number,
+  canvasHeight: number,
+): boolean {
+  if (canvasWidth <= 0 || canvasHeight <= 0) {
+    return false;
+  }
+
+  const halfWidthPx = Math.max((slot.width * canvasWidth) / 2, MIN_SLOT_RANGE_PX / 2);
+  const halfHeightPx = Math.max((slot.height * canvasHeight) / 2, MIN_SLOT_RANGE_PX / 2);
+  const dxPx = Math.abs(pointX * canvasWidth - slot.x * canvasWidth);
+  const dyPx = Math.abs(pointY * canvasHeight - slot.y * canvasHeight);
+
+  return dxPx <= halfWidthPx && dyPx <= halfHeightPx;
+}

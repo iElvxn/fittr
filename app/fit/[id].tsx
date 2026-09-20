@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,8 +16,15 @@ import { deleteFit } from '@/lib/fits/deleteFit';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 
-const GUTTER = 16;
 const ACK_DURATION_MS = 2500;
+const UPDATED_AT_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const COVER_SHADOW = {
+  shadowColor: '#000',
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 3,
+};
 
 /**
  * Scoped to exactly what Story 3.3 needs -- collage, name, Edit, Delete.
@@ -27,9 +35,8 @@ export default function FitDetail() {
   const { id, fitUpdated } = useLocalSearchParams<{ id: string; fitUpdated?: string }>();
   const { session } = useSession();
   const userId = session?.user.id;
-  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const coverSize = width - GUTTER * 2;
 
   // Same "already-cached list is the single source of truth" convention as
   // `app/item/[id].tsx` -- no separate single-Fit query.
@@ -148,8 +155,19 @@ export default function FitDetail() {
   return (
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       {header}
-      <ScrollView contentContainerClassName="px-gutter pb-10">
-        <View style={{ width: coverSize, height: coverSize }} className="mb-12 self-center">
+      {/*
+       * Not a ScrollView -- name/meta/actions below are fixed-height, so this
+       * card is the only flexible element and simply takes whatever room
+       * they leave, the same "canvas fills the remaining space, controls sit
+       * in a fixed footer below it" layout `new-fit.tsx`'s builder screen
+       * uses. `contentFit="contain"` (not "cover") so a portrait Fit is
+       * never cropped -- it just letterboxes within the space available.
+       */}
+      <View className="flex-1 px-gutter pt-4 pb-3">
+        <View
+          style={COVER_SHADOW}
+          className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
+        >
           {coverUrl ? (
             <Image
               testID="fit-detail-cover"
@@ -159,44 +177,44 @@ export default function FitDetail() {
               contentFit="contain"
             />
           ) : (
-            <View
-              testID="fit-detail-cover-fallback"
-              className="h-full w-full rounded-sm bg-surface-raised dark:bg-surface-raisedDark"
-            />
+            <View testID="fit-detail-cover-fallback" className="h-full w-full" />
           )}
         </View>
-
+      </View>
+      <View
+        style={{ paddingBottom: insets.bottom + 12 }}
+        className="border-t border-border-hairline px-gutter pt-4 dark:border-border-hairlineDark"
+      >
         {showAck ? (
-          <Text accessibilityRole="alert" variant="body" className="mb-4 text-ink-primary dark:text-ink-primaryDark">
+          <Text accessibilityRole="alert" variant="body" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
             Fit updated.
           </Text>
         ) : null}
+        <Text variant="display" className="mb-1 text-accent dark:text-accentDark">
+          {fit.name}
+        </Text>
+        <Text variant="meta" className="mb-4 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">
+          Updated {UPDATED_AT_FORMAT.format(new Date(fit.updated_at))}
+        </Text>
 
         {errorMessage ? (
           <View className="mb-4">
             <ConnectionErrorNotice message={errorMessage} />
           </View>
         ) : null}
-
-        <Text variant="display" className="mb-9 text-accent dark:text-accentDark">
-          {fit.name}
-        </Text>
-
-        <View className="mb-6 flex-row items-stretch gap-3 border-t border-border-hairline pt-6 dark:border-border-hairlineDark">
-          <Button title="Edit" onPress={handleEditPress} disabled={deleting} />
-        </View>
+        <Button title="Edit" variant="primary" onPress={handleEditPress} disabled={deleting} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Delete Fit"
           onPress={handleDeletePress}
           disabled={deleting}
-          className="items-center py-2"
+          className="mt-2 items-center py-2"
         >
           <Text variant="label" className="uppercase tracking-widest text-destructive dark:text-destructiveDark">
             {deleting ? 'Deleting…' : 'Delete'}
           </Text>
         </Pressable>
-      </ScrollView>
+      </View>
     </View>
   );
 }

@@ -24,6 +24,12 @@ import type { FitRow } from '@/lib/fits/listFits';
 
 let queryClient: QueryClient;
 
+// Mirrors `app/fit/[id].tsx`'s own formatter (not exported, it's a route
+// file) -- deriving the expected string this way, rather than hardcoding
+// one, keeps the assertion correct regardless of the test runner's own
+// timezone, since the component formats in the viewer's local time.
+const UPDATED_AT_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
 function makeFit(overrides: Partial<FitRow> = {}): FitRow {
   return {
     id: 'fit-1',
@@ -72,6 +78,27 @@ describe('Fit detail', () => {
     expect(screen.getByText('Weekend Look')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
+  });
+
+  it("never crops the cover, regardless of its aspect ratio -- it letterboxes within the flexible preview area instead", async () => {
+    await renderFitDetail();
+
+    expect(screen.getByTestId('fit-detail-cover').props.contentFit).toBe('contain');
+  });
+
+  it("shows the Fit's last-updated date", async () => {
+    const updatedAt = '2026-03-05T12:00:00.000Z';
+    (useFits as jest.Mock).mockReturnValue({
+      data: [makeFit({ updated_at: updatedAt })],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    await renderFitDetail();
+
+    expect(screen.getByText(`Updated ${UPDATED_AT_FORMAT.format(new Date(updatedAt))}`)).toBeTruthy();
   });
 
   it('navigates to the canvas builder with fitId when Edit is pressed', async () => {

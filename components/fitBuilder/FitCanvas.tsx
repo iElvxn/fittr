@@ -8,7 +8,7 @@ import { GhostSlot } from '@/components/fitBuilder/GhostSlot';
 import { TrashIcon } from '@/components/ui/icons/TrashIcon';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 import type { WardrobeItemCategory } from '@/lib/wardrobe/addItem';
-import { FIT_TEMPLATES, type TemplateSlot } from '@/lib/fitBuilder/templates';
+import { FIT_TEMPLATES, isPointWithinSlotRange, type TemplateSlot } from '@/lib/fitBuilder/templates';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import { colors } from '@/lib/theme/colors';
 
@@ -100,10 +100,17 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
   const claimedSlotIndexes = new Set(
     items.map((item) => item.templateSlotIndex).filter((index): index is number => index !== null),
   );
+  // On top of that identity-based claim, a slot also drops out the moment
+  // any item's own center currently sits within its range -- covers both a
+  // freeform/spiral placement that happens to land on an unrelated slot,
+  // and a claimed item that's since been dragged elsewhere: dragging it back
+  // off makes that slot's ghost reappear, since this is a render-time check
+  // against current position, not a stored claim.
   const unfilledSlots: { slot: TemplateSlot; index: number }[] = templateId
     ? FIT_TEMPLATES[templateId]
         .map((slot, index) => ({ slot, index }))
         .filter(({ index }) => !claimedSlotIndexes.has(index))
+        .filter(({ slot }) => !items.some((item) => isPointWithinSlotRange(slot, item.x, item.y, size.width, size.height)))
         .sort((a, b) => a.slot.zIndex - b.slot.zIndex)
     : [];
 

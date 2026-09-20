@@ -102,6 +102,62 @@ describe('FitCanvas onSlotPress wiring', () => {
 
     expect(onSlotPress).toHaveBeenCalledWith(firstAccessoryIndex, 'accessory');
   });
+
+  it('hides a ghost slot once an unrelated placed item is dragged onto its range', async () => {
+    const shoesSlot = FIT_TEMPLATES['shorts-and-top'][slotIndex('shoes')];
+    // Placed via `loadItems`-style seeding (no `templateSlotIndex` claim) so
+    // this only exercises the spatial check, not identity claiming --
+    // simulates an item dragged there after being placed elsewhere.
+    useFitBuilderStore.setState({
+      items: [
+        {
+          id: 'placed-1',
+          wardrobeItemId: 'wardrobe-item-1',
+          category: 'top',
+          templateSlotIndex: null,
+          x: shoesSlot.x,
+          y: shoesSlot.y,
+          scale: 1,
+          rotation: 0,
+          zIndex: 1,
+        },
+      ],
+    });
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Add Shoes' })).toBeNull());
+    // Everything else is still genuinely unfilled.
+    expect(screen.getByRole('button', { name: 'Add Top' })).toBeTruthy();
+  });
+
+  it('shows the ghost again once the covering item is dragged back off its range', async () => {
+    const shoesSlot = FIT_TEMPLATES['shorts-and-top'][slotIndex('shoes')];
+    useFitBuilderStore.setState({
+      items: [
+        {
+          id: 'placed-1',
+          wardrobeItemId: 'wardrobe-item-1',
+          category: 'top',
+          templateSlotIndex: null,
+          x: shoesSlot.x,
+          y: shoesSlot.y,
+          scale: 1,
+          rotation: 0,
+          zIndex: 1,
+        },
+      ],
+    });
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Add Shoes' })).toBeNull());
+
+    useFitBuilderStore.getState().updateItemTransform('placed-1', { x: 0.05, y: 0.05 });
+
+    expect(await screen.findByRole('button', { name: 'Add Shoes' })).toBeTruthy();
+  });
 });
 
 describe('FitCanvas background tap', () => {

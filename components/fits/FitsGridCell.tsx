@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Image, type ImageLoadEventData } from 'expo-image';
+import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
+import { useImageAspectRatio } from '@/lib/theme/useImageAspectRatio';
 
 const DEFAULT_ASPECT_RATIO = 3 / 4;
 const LABEL_INSET = 8;
@@ -22,15 +22,8 @@ type Props = {
  * forcing every cover into a square crop.
  */
 export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress }: Props) {
-  const [aspectRatio, setAspectRatio] = useState(DEFAULT_ASPECT_RATIO);
+  const { aspectRatio, handleLoad } = useImageAspectRatio(DEFAULT_ASPECT_RATIO);
   const height = columnWidth / aspectRatio;
-
-  function handleLoad(event: ImageLoadEventData) {
-    const { width, height: sourceHeight } = event.source;
-    if (width > 0 && sourceHeight > 0) {
-      setAspectRatio(width / sourceHeight);
-    }
-  }
 
   return (
     <Pressable

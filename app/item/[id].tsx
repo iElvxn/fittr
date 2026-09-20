@@ -8,6 +8,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
@@ -40,6 +41,7 @@ export default function ItemDetail() {
   const { session } = useSession();
   const userId = session?.user.id;
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const cutoutSize = width - GUTTER * 2;
 
@@ -192,7 +194,7 @@ export default function ItemDetail() {
   return (
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       {header}
-      <ScrollView contentContainerClassName="px-gutter pb-10">
+      <ScrollView contentContainerClassName="px-gutter pb-6">
         <View style={{ width: cutoutSize, height: cutoutSize }} className="mb-12 self-center">
           {cutoutUrl ? (
             <Image
@@ -209,12 +211,6 @@ export default function ItemDetail() {
             />
           )}
         </View>
-
-        {errorMessage ? (
-          <View className="mb-4">
-            <ConnectionErrorNotice message={errorMessage} />
-          </View>
-        ) : null}
 
         {isEditing ? (
           <View>
@@ -250,11 +246,6 @@ export default function ItemDetail() {
                 className="mb-3 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
               />
             </View>
-
-            <View className="mb-2">
-              <Button title="Save" variant="primary" loading={saving} onPress={handleSave} />
-            </View>
-            <Button title="Cancel" onPress={handleCancelEdit} disabled={saving} />
           </View>
         ) : (
           <View>
@@ -278,11 +269,32 @@ export default function ItemDetail() {
             ) : null}
 
             <SectionLabel>Fits</SectionLabel>
-            <Text variant="body" className="mb-6 text-ink-secondary dark:text-ink-secondaryDark">
+            <Text variant="body" className="text-ink-secondary dark:text-ink-secondaryDark">
               Not in any Fit yet.
             </Text>
+          </View>
+        )}
+      </ScrollView>
+      <View
+        style={{ paddingBottom: insets.bottom + 12 }}
+        className="border-t border-border-hairline px-gutter pt-4 dark:border-border-hairlineDark"
+      >
+        {errorMessage ? (
+          <View className="mb-4">
+            <ConnectionErrorNotice message={errorMessage} />
+          </View>
+        ) : null}
 
-            <View className="mb-6 flex-row items-stretch gap-3 border-t border-border-hairline pt-6 dark:border-border-hairlineDark">
+        {isEditing ? (
+          <>
+            <View className="mb-2">
+              <Button title="Save" variant="primary" loading={saving} onPress={handleSave} />
+            </View>
+            <Button title="Cancel" onPress={handleCancelEdit} disabled={saving} />
+          </>
+        ) : (
+          <>
+            <View className="flex-row items-stretch gap-3">
               <Button title="Edit" onPress={handleStartEdit} disabled={deleting} />
               <View className="flex-1">
                 <Button title="Create Fit With This" disabled />
@@ -293,15 +305,15 @@ export default function ItemDetail() {
               accessibilityLabel="Delete item"
               onPress={handleDeletePress}
               disabled={deleting}
-              className="items-center py-2"
+              className="mt-2 items-center py-2"
             >
               <Text variant="label" className="uppercase tracking-widest text-destructive dark:text-destructiveDark">
                 {deleting ? 'Deleting…' : 'Delete'}
               </Text>
             </Pressable>
-          </View>
+          </>
         )}
-      </ScrollView>
+      </View>
     </View>
   );
 }
