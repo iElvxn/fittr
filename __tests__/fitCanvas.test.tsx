@@ -235,6 +235,16 @@ describe('FitCanvas capture-time chrome exclusion', () => {
     await waitFor(() => expect(mockCanvasItem).toHaveBeenCalledWith(expect.objectContaining({ isSelected: false })));
   });
 
+  it('passes capturing through to CanvasItem so a deleted-item gap can suppress its own placeholder chrome during capture', async () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    mockCanvasItem.mockClear();
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} capturing />);
+    layout();
+
+    await waitFor(() => expect(mockCanvasItem).toHaveBeenCalledWith(expect.objectContaining({ capturing: true })));
+  });
+
   it('otherwise passes isSelected through normally when not capturing', async () => {
     useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
     const [placed] = useFitBuilderStore.getState().items;
@@ -254,6 +264,35 @@ describe('FitCanvas delete button', () => {
     layout();
 
     expect(screen.queryByRole('button', { name: 'Delete item' })).toBeNull();
+  });
+
+  it('shows a delete button for a selected gap (deleted wardrobe item) same as any other selected item', async () => {
+    useFitBuilderStore.setState({
+      items: [
+        {
+          id: 'gap-1',
+          wardrobeItemId: 'wardrobe-item-gone',
+          category: 'shoes',
+          templateSlotIndex: null,
+          x: 0.5,
+          y: 0.5,
+          scale: 1,
+          rotation: 0,
+          zIndex: 1,
+          wardrobeItemDeleted: true,
+        },
+      ],
+      selectedId: 'gap-1',
+    });
+    const user = userEvent.setup();
+
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    await user.press(await screen.findByRole('button', { name: 'Delete item' }));
+
+    expect(useFitBuilderStore.getState().items).toEqual([]);
+    expect(useFitBuilderStore.getState().selectedId).toBeNull();
   });
 
   it('shows a delete button for the selected item and removes it on tap', async () => {

@@ -10,6 +10,7 @@ jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
 jest.mock('@/lib/fits/deleteFit', () => ({ deleteFit: jest.fn() }));
+jest.mock('@/lib/fits/getFitItems', () => ({ getFitItems: jest.fn() }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
 
 import FitDetail from '@/app/fit/[id]';
@@ -18,6 +19,7 @@ import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { deleteFit } from '@/lib/fits/deleteFit';
+import { getFitItems } from '@/lib/fits/getFitItems';
 import { Sentry } from '@/lib/observability/sentry';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import type { FitRow } from '@/lib/fits/listFits';
@@ -69,6 +71,9 @@ describe('Fit detail', () => {
     (useThumbnailUrls as jest.Mock).mockReturnValue({
       data: { 'user-1/fits/fit-1/cover.png': 'https://signed.example/cover.png' },
     });
+    (getFitItems as jest.Mock).mockResolvedValue([
+      { id: 'placement-1', wardrobeItemId: 'wardrobe-item-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, category: 'top', wardrobeItemDeleted: false },
+    ]);
   });
 
   it('shows the cover image, name, and Edit/Delete controls', async () => {
@@ -240,5 +245,78 @@ describe('Fit detail', () => {
     await renderFitDetail();
 
     expect(screen.queryByText('Fit updated.')).toBeNull();
+  });
+
+  describe('zero-item empty state (Story 3.4)', () => {
+    it('shows an empty state with an Add item action instead of the cover when every item has been deleted', async () => {
+      (getFitItems as jest.Mock).mockResolvedValue([
+        { id: 'placement-1', wardrobeItemId: 'wardrobe-item-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, category: 'top', wardrobeItemDeleted: true },
+      ]);
+
+      await renderFitDetail();
+
+      expect(await screen.findByTestId('fit-detail-empty')).toBeTruthy();
+      expect(screen.queryByTestId('fit-detail-cover')).toBeNull();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Add item' }));
+      expect(router.push).toHaveBeenCalledWith({ pathname: '/new-fit', params: { fitId: 'fit-1' } });
+    });
+
+    it('hides the redundant footer Edit button when the empty state already offers Add item for the same action', async () => {
+      (getFitItems as jest.Mock).mockResolvedValue([
+        { id: 'placement-1', wardrobeItemId: 'wardrobe-item-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, category: 'top', wardrobeItemDeleted: true },
+      ]);
+
+      await renderFitDetail();
+
+      await screen.findByTestId('fit-detail-empty');
+      expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+      // Delete stays available -- an empty Fit is still a real Fit a user
+      // may want to remove outright, not just refill.
+      expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
+    });
+
+    it('shows an empty state when a Fit was saved with no items at all', async () => {
+      (getFitItems as jest.Mock).mockResolvedValue([]);
+
+      await renderFitDetail();
+
+      expect(await screen.findByTestId('fit-detail-empty')).toBeTruthy();
+    });
+
+    it('shows the cover normally when at least one live item remains among deleted ones', async () => {
+      (getFitItems as jest.Mock).mockResolvedValue([
+        { id: 'placement-1', wardrobeItemId: 'wardrobe-item-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, category: 'top', wardrobeItemDeleted: true },
+        { id: 'placement-2', wardrobeItemId: 'wardrobe-item-2', x: 0.6, y: 0.6, scale: 1, rotation: 0, zIndex: 2, category: 'shoes', wardrobeItemDeleted: false },
+      ]);
+
+      await renderFitDetail();
+
+      await waitFor(() => expect(screen.getByTestId('fit-detail-cover')).toBeTruthy());
+      expect(screen.queryByTestId('fit-detail-empty')).toBeNull();
+    });
+
+    it('fails open on a no-connection item-count error -- keeps showing the cover and Edit/Delete rather than blocking the whole screen for a secondary read', async () => {
+      (getFitItems as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+
+      await renderFitDetail();
+
+      await waitFor(() => expect(screen.getByTestId('fit-detail-cover')).toBeTruthy());
+      expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
+      expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
+      expect(screen.queryByTestId('fit-detail-empty')).toBeNull();
+    });
+
+    it('fails open and reports an unexpected item-count failure, without blocking the screen', async () => {
+      (getFitItems as jest.Mock).mockRejectedValue(new Error('boom'));
+
+      await renderFitDetail();
+
+      await waitFor(() => expect(Sentry.captureException).toHaveBeenCalled());
+      expect(screen.getByTestId('fit-detail-cover')).toBeTruthy();
+      expect(screen.queryByText(UNKNOWN_ERROR_MESSAGE)).toBeNull();
+    });
   });
 });

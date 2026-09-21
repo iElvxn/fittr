@@ -133,13 +133,12 @@ export default function NewFit() {
       const seededItems: PlacedItem[] = placements.map((placement) => ({
         id: placement.id,
         wardrobeItemId: placement.wardrobeItemId,
-        // A Fit whose placement points at a wardrobe item that's since been
-        // deleted (already possible today via `app/item/[id].tsx`'s own
-        // delete flow, independent of Story 3.4) falls back to a placeholder
-        // category rather than crashing; showing a visible gap at that
-        // position instead is Story 3.4's own scope ("Fit behavior when a
-        // wardrobe item is deleted"), not this one's.
-        category: items.find((item) => item.id === placement.wardrobeItemId)?.category ?? 'top',
+        // `getFitItems` now joins `wardrobe_items` itself, so `category`
+        // (and whether the source item was deleted) comes straight from
+        // that row -- correct even once the item's gone, instead of
+        // guessing from the live (non-deleted-only) wardrobe list.
+        category: placement.category,
+        wardrobeItemDeleted: placement.wardrobeItemDeleted,
         templateSlotIndex: null,
         x: placement.x,
         y: placement.y,
@@ -281,6 +280,13 @@ export default function NewFit() {
       // through `useFits`'s cache -- without this, a just-created or
       // just-edited Fit wouldn't show up until some unrelated refetch.
       await queryClient.invalidateQueries({ queryKey: ['fits', userId] });
+      // `app/fit/[id].tsx`'s zero-item empty state (Story 3.4) reads a
+      // separate `['fitItems', fitId]` cache -- that screen has no
+      // focus-refetch of its own either, so without this an edit that empties
+      // (or re-fills) a Fit wouldn't be reflected there until some unrelated
+      // refetch. Always the current `pendingSave.fitId`, valid for both a
+      // fresh save and an edit re-save.
+      await queryClient.invalidateQueries({ queryKey: ['fitItems', pendingSave.fitId] });
       const savedFitId = pendingSave.fitId;
       setPendingSave(null);
       reset();

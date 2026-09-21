@@ -8,6 +8,7 @@ import Svg, { Rect } from 'react-native-svg';
 import type { PlacedItem } from '@/stores/fitBuilder';
 import { containSize } from '@/lib/fitBuilder/aspectFit';
 import { colors } from '@/lib/theme/colors';
+import { GarmentSilhouette } from '@/components/fitBuilder/GarmentSilhouette';
 
 /** Touch targets must reach 44x44pt (EXPERIENCE.md Accessibility Floor) even when the cutout itself renders smaller. */
 const MIN_TOUCH_TARGET = 44;
@@ -35,6 +36,16 @@ type Props = {
   canvasHeight: number;
   itemSize: number;
   isSelected: boolean;
+  /**
+   * True for the brief window `app/new-fit.tsx`'s Save flow spends
+   * capturing the collage -- a deleted-item gap's placeholder chrome (dashed
+   * outline + muted silhouette) only ever exists to guide editing, so it's
+   * suppressed here the same way `FitCanvas` already suppresses ghosts, the
+   * delete button, and the selection outline: nothing about "this slot used
+   * to hold a since-deleted item" belongs baked into a saved cover, which
+   * should show real empty space at that position instead.
+   */
+  capturing?: boolean;
   onSelect: () => void;
   onTransformEnd: (transform: { x: number; y: number; scale: number; rotation: number }) => void;
 };
@@ -46,6 +57,7 @@ export function CanvasItem({
   canvasHeight,
   itemSize,
   isSelected,
+  capturing,
   onSelect,
   onTransformEnd,
 }: Props) {
@@ -141,10 +153,15 @@ export function CanvasItem({
     })
     .onEnd(() => runOnJS(commitTransform)());
 
-  const composedGesture = Gesture.Race(
-    tapGesture,
-    Gesture.Simultaneous(panGesture, pinchGesture, rotationGesture),
-  );
+  // A gap (its wardrobe item has been deleted) stays selectable -- tapping
+  // it still reveals `FitCanvas`'s existing floating Delete button, the only
+  // way to clear a leftover placement -- but repositioning empty space has
+  // no purpose, so drag/pinch/rotate drop out entirely rather than moving a
+  // silhouette that represents nothing real.
+  const composedGesture = item.wardrobeItemDeleted
+    ? tapGesture
+    : Gesture.Race(tapGesture, Gesture.Simultaneous(panGesture, pinchGesture, rotationGesture));
+  const gapColor = scheme === 'dark' ? colors.dark.inkSecondary : colors.light.inkSecondary;
 
   const animatedStyle = useAnimatedStyle(() => ({
     position: 'absolute',
@@ -172,7 +189,32 @@ export function CanvasItem({
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View style={[animatedStyle, isSelected ? SELECTED_SHADOW : undefined]} hitSlop={hitSlop}>
-        {imageUrl ? (
+        {item.wardrobeItemDeleted ? (
+          // No photo -- the source wardrobe item is gone. Chrome is
+          // suppressed entirely while `capturing` so this never ends up
+          // baked into a saved cover (see the `capturing` prop doc above);
+          // otherwise a muted dashed outline plus the item's own recovered
+          // category silhouette marks the gap without implying it's a live,
+          // draggable item.
+          !capturing && (
+            <>
+              <GarmentSilhouette category={item.category} width={boxWidth} height={boxHeight} color={gapColor} opacity={0.4} />
+              <Svg width={boxWidth} height={boxHeight} style={{ position: 'absolute', top: 0, left: 0 }} pointerEvents="none">
+                <Rect
+                  x={1}
+                  y={1}
+                  width={Math.max(0, boxWidth - 2)}
+                  height={Math.max(0, boxHeight - 2)}
+                  rx={2}
+                  fill="none"
+                  stroke={gapColor}
+                  strokeWidth={2}
+                  strokeDasharray="6,4"
+                />
+              </Svg>
+            </>
+          )
+        ) : imageUrl ? (
           <Image
             source={{ uri: imageUrl }}
             style={{ width: '100%', height: '100%' }}
@@ -180,7 +222,7 @@ export function CanvasItem({
             onLoad={handleLoad}
           />
         ) : null}
-        {isSelected ? (
+        {!item.wardrobeItemDeleted && isSelected ? (
           // A real `border-dashed` View border doesn't render on Android
           // once `borderRadius` is involved (a long-standing RN/Android
           // limitation) -- an SVG stroke with `strokeDasharray` draws the

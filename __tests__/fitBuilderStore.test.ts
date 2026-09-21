@@ -214,6 +214,7 @@ describe('loadItems', () => {
       scale: 0.9,
       rotation: -4,
       zIndex: 1,
+      wardrobeItemDeleted: true,
     },
   ];
 
