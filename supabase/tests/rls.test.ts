@@ -592,3 +592,132 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
     }
   });
 });
+
+/**
+ * Story 4.1: cross-user isolation for `fit_wears` (0008_fit_wears.sql).
+ * Mirrors the `fits` own-column RLS pattern above -- `fit_wears` has no
+ * UPDATE/DELETE policy at all (append-only, matching `fit_items`_delete_own's
+ * "real DELETE only where the app needs it" discipline -- there's no edit/
+ * remove-a-wear-entry feature), so this covers SELECT and INSERT only.
+ */
+describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
+  jest.setTimeout(30000);
+
+  it("a second user cannot SELECT the first user's fit_wears row", async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-fit-wears-1-${stamp}@mailinator.com`;
+    const email2 = `rls-fit-wears-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const fitId = randomUUID();
+    const wearId = randomUUID();
+
+    try {
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      const fitInsert = await client1.from('fits').insert({
+        id: fitId,
+        user_id: user1Id,
+        name: 'Weekend brunch',
+        cover_path: `${user1Id}/fits/${fitId}/cover.png`,
+      });
+      expect(fitInsert.error).toBeNull();
+
+      const wearInsert = await client1
+        .from('fit_wears')
+        .insert({ id: wearId, user_id: user1Id, fit_id: fitId, worn_on: '2026-09-21' });
+      expect(wearInsert.error).toBeNull();
+
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      const { data, error } = await client2.from('fit_wears').select('*').eq('id', wearId).maybeSingle();
+
+      // RLS denies the row rather than erroring: an empty result, not a thrown error.
+      expect(error).toBeNull();
+      expect(data).toBeNull();
+    } finally {
+      await admin.from('fit_wears').delete().eq('id', wearId);
+      await admin.from('fits').delete().eq('id', fitId);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+
+  it("a second user cannot INSERT a fit_wears row under the first user's user_id, but the owner can", async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-fit-wears-write-1-${stamp}@mailinator.com`;
+    const email2 = `rls-fit-wears-write-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const fitId = randomUUID();
+    const wearId = randomUUID();
+    const impersonatedWearId = randomUUID();
+
+    try {
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      const fitInsert = await client1.from('fits').insert({
+        id: fitId,
+        user_id: user1Id,
+        name: 'Weekend brunch',
+        cover_path: `${user1Id}/fits/${fitId}/cover.png`,
+      });
+      expect(fitInsert.error).toBeNull();
+
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      // User 2 tries to INSERT a wear row impersonating user 1's ownership.
+      const impersonatedInsert = await client2
+        .from('fit_wears')
+        .insert({ id: impersonatedWearId, user_id: user1Id, fit_id: fitId, worn_on: '2026-09-21' });
+      expect(impersonatedInsert.error).not.toBeNull();
+
+      // The legitimate owner's own insert must still go through.
+      const ownInsert = await client1
+        .from('fit_wears')
+        .insert({ id: wearId, user_id: user1Id, fit_id: fitId, worn_on: '2026-09-21' });
+      expect(ownInsert.error).toBeNull();
+
+      const { data: stored } = await admin.from('fit_wears').select('id').eq('id', wearId).maybeSingle();
+      expect(stored?.id).toBe(wearId);
+    } finally {
+      await admin.from('fit_wears').delete().eq('id', wearId);
+      await admin.from('fit_wears').delete().eq('id', impersonatedWearId);
+      await admin.from('fits').delete().eq('id', fitId);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+});

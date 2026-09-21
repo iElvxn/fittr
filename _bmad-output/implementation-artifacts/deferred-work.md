@@ -93,3 +93,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-4-fit-behavior-when-a-wardrobe-item-is-deleted.md`
   summary: `CanvasItem` (every placed item on the fit-builder canvas, not just a deleted-item gap) has no `accessibilityLabel`/`accessibilityRole` identifying it to a screen reader -- only the separate floating "Delete item" button does.
   evidence: Code-review finding (blind-hunter), filed against this story's new gap placeholder specifically but verified to be a pre-existing, uniform gap across every `CanvasItem` since Story 3.1, not something this story's diff introduced or made inconsistent. Fixing only the gap would create a new asymmetry (gap labeled, ordinary placed items not) rather than resolve one -- belongs to a canvas-wide accessibility pass covering all placed items together.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-browse-and-filter-my-fits.md`
+  summary: `fit_wears` (this story's new table) has no UPDATE or DELETE policy at all, so a mis-tap on "mark worn" can never be corrected or undone by the user once Story 4.2 ships that action.
+  evidence: Code-review finding (blind-hunter). Real product gap, but the "mark worn" UI it would apply to doesn't exist until Story 4.2 -- whether/how to let a user undo a wear entry (a policy change, a UI affordance, or both) is that story's design decision, not a defect in this story, which only reads the table.

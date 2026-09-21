@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo } from 'react';
-import { ActivityIndicator, FlatList, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FlatList, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   router,
@@ -15,12 +15,20 @@ import { Button } from '@/components/ui/Button';
 import { CirclePlusButton } from '@/components/ui/CirclePlusButton';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { FitsGridCell } from '@/components/fits/FitsGridCell';
+import { FitsGridSkeleton } from '@/components/fits/FitsGridSkeleton';
+import { FitsFilterChips, type FitsFilter } from '@/components/fits/FitsFilterChips';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
+import { useWornFitIds } from '@/lib/fits/wornFitIds';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
-import { isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
+import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { Sentry } from '@/lib/observability/sentry';
+
+const FILTER_EMPTY_COPY: Record<Exclude<FitsFilter, 'all'>, string> = {
+  favorites: 'No Favorites yet.',
+  worn: 'Nothing worn yet.',
+};
 
 const ACK_DURATION_MS = 2500;
 const GRID_COLUMNS = 2;
@@ -55,6 +63,8 @@ export default function Fits() {
   }, [showAck, navigation]);
 
   const { data: fits, isLoading, isError, error, refetch } = useFits(userId);
+  const { data: wornFitIds, isLoading: isWornLoading, isError: isWornError, error: wornError } = useWornFitIds(userId);
+  const [filter, setFilter] = useState<FitsFilter>('all');
 
   // Same reasoning as `wardrobe.tsx`'s own `useFocusEffect`: `router.dismissTo`
   // (used on a successful save/edit in `new-fit.tsx`) returns to this
@@ -73,9 +83,39 @@ export default function Fits() {
     }
   }, [isError, error]);
 
+  // Fails open, same as `fit/[id].tsx`'s item-count read: a failed secondary
+  // read (Worn status) shouldn't block viewing/filtering an otherwise
+  // healthy Fits list -- it just means the Worn filter under-counts until
+  // this self-heals on the next focus-triggered refetch. `getWornFitIds`
+  // throws its own classified `FitError` (unlike `useFits`'s queryFn, which
+  // lets the raw Supabase error through), so this checks `instanceof
+  // FitError` rather than the generic `isNoConnectionError`, same as
+  // `fit/[id].tsx`'s own `isItemsNoConnection` check.
+  const isWornNoConnection = wornError instanceof FitError && wornError.kind === 'no_connection';
+  useEffect(() => {
+    if (isWornError && !isWornNoConnection) {
+      Sentry.captureException(wornError);
+    }
+  }, [isWornError, isWornNoConnection, wornError]);
+
   const coverPaths = useMemo(() => (fits ?? []).map((fit) => fit.cover_path).filter((path): path is string => Boolean(path)), [fits]);
   const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
   const columnWidth = (width - GUTTER * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+
+  // Client-side filtering -- Favorites/Worn are both correctly empty until
+  // Story 4.2 lands the toggle/mark-worn write paths (`is_favorite` and
+  // `fit_wears` both already exist ahead of their own write UI, same
+  // precedent as `0004_fits.sql`'s own `is_favorite` column comment).
+  const filteredFits = useMemo(() => {
+    const allFits = fits ?? [];
+    if (filter === 'favorites') {
+      return allFits.filter((candidate) => candidate.is_favorite);
+    }
+    if (filter === 'worn') {
+      return allFits.filter((candidate) => wornFitIds?.has(candidate.id) ?? false);
+    }
+    return allFits;
+  }, [fits, filter, wornFitIds]);
 
   const header = (
     <View
@@ -96,13 +136,11 @@ export default function Fits() {
     </View>
   );
 
-  if (!userId || isLoading) {
+  if (!userId || isLoading || isWornLoading) {
     return (
       <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
         {header}
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator />
-        </View>
+        <FitsGridSkeleton columns={GRID_COLUMNS} columnWidth={columnWidth} gap={GRID_GAP} />
       </View>
     );
   }
@@ -148,19 +186,32 @@ export default function Fits() {
     );
   }
 
+  const filterEmptyMessage = filter !== 'all' && filteredFits.length === 0 ? FILTER_EMPTY_COPY[filter] : null;
+
   return (
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       {header}
-      <FlatList
-        testID="fits-grid"
-        data={fits}
-        numColumns={GRID_COLUMNS}
-        keyExtractor={(item) => item.id}
-        contentContainerClassName="px-gutter pt-4"
-        contentContainerStyle={{ paddingBottom: tabBarClearance }}
-        columnWrapperStyle={{ gap: GRID_GAP, marginBottom: GRID_GAP, alignItems: 'flex-start' }}
-        renderItem={renderCell}
-      />
+      <View className="pb-1 pt-3">
+        <FitsFilterChips selected={filter} onSelect={setFilter} />
+      </View>
+      {filterEmptyMessage ? (
+        <View className="flex-1 items-center justify-center px-gutter">
+          <Text variant="body" className="text-center text-ink-secondary dark:text-ink-secondaryDark">
+            {filterEmptyMessage}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          testID="fits-grid"
+          data={filteredFits}
+          numColumns={GRID_COLUMNS}
+          keyExtractor={(item) => item.id}
+          contentContainerClassName="px-gutter pt-3"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          columnWrapperStyle={{ gap: GRID_GAP, marginBottom: GRID_GAP, alignItems: 'flex-start' }}
+          renderItem={renderCell}
+        />
+      )}
     </View>
   );
 }

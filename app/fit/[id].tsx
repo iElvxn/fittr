@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Pressable, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
@@ -9,6 +9,8 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { BackHeader } from '@/components/ui/BackHeader';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
+import { SectionLabel } from '@/components/wardrobe/SectionLabel';
+import { FitItemsList } from '@/components/fits/FitItemsList';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
@@ -19,18 +21,13 @@ import { Sentry } from '@/lib/observability/sentry';
 
 const ACK_DURATION_MS = 2500;
 const UPDATED_AT_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const COVER_SHADOW = {
-  shadowColor: '#000',
-  shadowOpacity: 0.08,
-  shadowRadius: 12,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 3,
-};
 
 /**
- * Scoped to exactly what Story 3.3 needs -- collage, name, Edit, Delete.
- * Favorite/Wear/Plan/Share (EXPERIENCE.md's full Fit-detail action set)
- * belong to their own later stories and get no placeholders here.
+ * Scoped to exactly what Story 3.3/4.1 need -- collage, name, item list,
+ * Edit, Delete. Favorite/Wear/Plan/Share (EXPERIENCE.md's full Fit-detail
+ * action set) belong to their own later stories and get no placeholders
+ * here. The cover carries no shadow -- DESIGN.md: "Photography ... never
+ * gets a shadow of its own."
  */
 export default function FitDetail() {
   const { id, fitUpdated } = useLocalSearchParams<{ id: string; fitUpdated?: string }>();
@@ -187,18 +184,17 @@ export default function FitDetail() {
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       {header}
       {/*
-       * Not a ScrollView -- name/meta/actions below are fixed-height, so this
-       * card is the only flexible element and simply takes whatever room
-       * they leave, the same "canvas fills the remaining space, controls sit
-       * in a fixed footer below it" layout `new-fit.tsx`'s builder screen
-       * uses. `contentFit="contain"` (not "cover") so a portrait Fit is
-       * never cropped -- it just letterboxes within the space available.
+       * Cover and footer split the remaining space by a fixed 2:1 ratio
+       * (both `flex`, not just the cover) rather than the footer being
+       * unconstrained -- a `ScrollView` with no bounded height doesn't
+       * actually scroll in React Native, it just lets content overflow past
+       * the screen. `contentFit="contain"` (not "cover") so a portrait Fit
+       * is never cropped -- it just letterboxes within the space available.
+       * The footer (Story 4.1) scrolls within its own share, since its item
+       * list can now run longer than that share allows.
        */}
-      <View className="flex-1 px-gutter pt-4 pb-3">
-        <View
-          style={COVER_SHADOW}
-          className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
-        >
+      <View style={{ flex: 2 }} className="px-gutter pt-4 pb-3">
+        <View className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark">
           {isEmptyFit ? (
             <View testID="fit-detail-empty" className="flex-1 items-center justify-center px-gutter">
               <Text variant="body" className="mb-6 text-center text-ink-secondary dark:text-ink-secondaryDark">
@@ -219,9 +215,11 @@ export default function FitDetail() {
           )}
         </View>
       </View>
-      <View
-        style={{ paddingBottom: insets.bottom + 12 }}
-        className="border-t border-border-hairline px-gutter pt-4 dark:border-border-hairlineDark"
+      <ScrollView
+        style={{ flex: 1 }}
+        className="border-t border-border-hairline dark:border-border-hairlineDark"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+        contentContainerClassName="px-gutter pt-4"
       >
         {showAck ? (
           <Text accessibilityRole="alert" variant="body" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
@@ -253,7 +251,15 @@ export default function FitDetail() {
             {deleting ? 'Deleting…' : 'Delete'}
           </Text>
         </Pressable>
-      </View>
+
+        {/* Not shown in the zero-live-item empty state above -- a "Removed" row list would contradict its own "no items left" message. */}
+        {!isEmptyFit && fitItems && fitItems.length > 0 ? (
+          <View className="mt-6">
+            <SectionLabel>Items</SectionLabel>
+            <FitItemsList items={fitItems} />
+          </View>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }

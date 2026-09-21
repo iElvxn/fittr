@@ -8,6 +8,10 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
+// `FitItemsList` (rendered by this screen as of Story 4.1) transitively
+// imports `@/lib/supabase` via `CATEGORY_LABELS`, which loads the real
+// `@react-native-async-storage` native module outside app context.
+jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
 jest.mock('@/lib/fits/deleteFit', () => ({ deleteFit: jest.fn() }));
 jest.mock('@/lib/fits/getFitItems', () => ({ getFitItems: jest.fn() }));
@@ -39,6 +43,7 @@ function makeFit(overrides: Partial<FitRow> = {}): FitRow {
     cover_path: 'user-1/fits/fit-1/cover.png',
     canvas_background_color: null,
     updated_at: '2026-09-18T00:00:00.000Z',
+    is_favorite: false,
     ...overrides,
   };
 }
@@ -72,7 +77,19 @@ describe('Fit detail', () => {
       data: { 'user-1/fits/fit-1/cover.png': 'https://signed.example/cover.png' },
     });
     (getFitItems as jest.Mock).mockResolvedValue([
-      { id: 'placement-1', wardrobeItemId: 'wardrobe-item-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, category: 'top', wardrobeItemDeleted: false },
+      {
+        id: 'placement-1',
+        wardrobeItemId: 'wardrobe-item-1',
+        x: 0.5,
+        y: 0.5,
+        scale: 1,
+        rotation: 0,
+        zIndex: 1,
+        category: 'top',
+        wardrobeItemDeleted: false,
+        name: 'White Tee',
+        thumbPath: 'user-1/items/wardrobe-item-1/thumb.webp',
+      },
     ]);
   });
 
@@ -83,6 +100,21 @@ describe('Fit detail', () => {
     expect(screen.getByText('Weekend Look')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
+  });
+
+  it('never puts a shadow on the collage -- DESIGN.md: photography never gets a shadow of its own', async () => {
+    await renderFitDetail();
+
+    const coverFrame = screen.getByTestId('fit-detail-cover').parent;
+    expect(coverFrame?.props.style?.shadowOpacity).toBeUndefined();
+    expect(coverFrame?.props.style?.shadowColor).toBeUndefined();
+  });
+
+  it('shows the item list below the collage', async () => {
+    await renderFitDetail();
+
+    expect(await screen.findByTestId('fit-items-list')).toBeTruthy();
+    expect(screen.getByText('White Tee')).toBeTruthy();
   });
 
   it("never crops the cover, regardless of its aspect ratio -- it letterboxes within the flexible preview area instead", async () => {
@@ -307,6 +339,7 @@ describe('Fit detail', () => {
       expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
       expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
       expect(screen.queryByTestId('fit-detail-empty')).toBeNull();
+      expect(screen.queryByTestId('fit-items-list')).toBeNull();
     });
 
     it('fails open and reports an unexpected item-count failure, without blocking the screen', async () => {

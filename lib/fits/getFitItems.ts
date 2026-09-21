@@ -4,15 +4,19 @@ import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
 import type { FitItemPlacement } from './saveFit';
 
 /**
- * A placement plus its source wardrobe item's current `category` and
- * deletion status, embedded via the `wardrobe_items` FK -- `wardrobe_items`'
- * own SELECT RLS has no `deleted_at` condition, so a soft-deleted row is
- * still readable here for its own owner, which is what lets this recover
- * the true category instead of guessing (see edit-mode seeding).
+ * A placement plus its source wardrobe item's current `category`, deletion
+ * status, `name`, and `thumbPath`, embedded via the `wardrobe_items` FK --
+ * `wardrobe_items`' own SELECT RLS has no `deleted_at` condition, so a
+ * soft-deleted row is still readable here for its own owner, which is what
+ * lets this recover the true category instead of guessing (see edit-mode
+ * seeding) and still show a deleted item's last-known name/thumbnail in the
+ * Fit detail item list (Story 4.1) rather than a blank row.
  */
 export type FitItemPlacementWithSource = FitItemPlacement & {
   category: WardrobeItemCategory;
   wardrobeItemDeleted: boolean;
+  name: string | null;
+  thumbPath: string | null;
 };
 
 /**
@@ -31,7 +35,12 @@ type FitItemRow = {
   scale: number;
   rotation: number;
   z_index: number;
-  wardrobe_items: { category: WardrobeItemCategory; deleted_at: string | null } | null;
+  wardrobe_items: {
+    category: WardrobeItemCategory;
+    deleted_at: string | null;
+    name: string | null;
+    thumb_path: string;
+  } | null;
 };
 
 /**
@@ -43,7 +52,7 @@ type FitItemRow = {
 export async function getFitItems(fitId: string): Promise<FitItemPlacementWithSource[]> {
   const { data, error } = await supabase
     .from('fit_items')
-    .select('id, item_id, x, y, scale, rotation, z_index, wardrobe_items(category, deleted_at)')
+    .select('id, item_id, x, y, scale, rotation, z_index, wardrobe_items(category, deleted_at, name, thumb_path)')
     .eq('fit_id', fitId);
 
   if (error) {
@@ -70,5 +79,7 @@ export async function getFitItems(fitId: string): Promise<FitItemPlacementWithSo
     // real recovered category).
     category: row.wardrobe_items ? row.wardrobe_items.category : 'top',
     wardrobeItemDeleted: row.wardrobe_items ? row.wardrobe_items.deleted_at != null : true,
+    name: row.wardrobe_items ? row.wardrobe_items.name : null,
+    thumbPath: row.wardrobe_items ? row.wardrobe_items.thumb_path : '',
   }));
 }
