@@ -168,6 +168,7 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
                     canvasHeight={size.height}
                     itemSize={CANVAS_ITEM_SIZE}
                     isSelected={!capturing && item.id === selectedId}
+                    capturing={capturing}
                     onSelect={() => handleSelect(item.id)}
                     onTransformEnd={(transform) => updateItemTransform(item.id, transform)}
                   />

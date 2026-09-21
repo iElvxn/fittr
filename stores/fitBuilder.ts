@@ -16,6 +16,13 @@ export type PlacedItem = CanvasSlot & {
    * same-category ghosts always fills that exact one, never the first.
    */
   templateSlotIndex: number | null;
+  /**
+   * True only for a placement seeded from a saved Fit (Story 3.3's
+   * `loadItems`) whose source wardrobe item has since been soft-deleted
+   * (Story 3.4). Unset/`false` for anything `addItem` places, since a live
+   * catalog pick can never reference a deleted item.
+   */
+  wardrobeItemDeleted?: boolean;
 };
 
 type FitBuilderState = {

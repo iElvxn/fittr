@@ -3,7 +3,7 @@ import { ActionSheetIOS, ActivityIndicator, Pressable, View } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,7 @@ import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { deleteFit } from '@/lib/fits/deleteFit';
+import { getFitItems } from '@/lib/fits/getFitItems';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 
@@ -42,6 +43,36 @@ export default function FitDetail() {
   // `app/item/[id].tsx` -- no separate single-Fit query.
   const { data: fits, isLoading, isError: isListError, error: listError, refetch: refetchFits } = useFits(userId);
   const fit = fits?.find((candidate) => candidate.id === id);
+
+  // Powers the zero-item empty state (Story 3.4) -- `fit` itself carries no
+  // item count, only `getFitItems`'s placements do. Never blocking, loading
+  // or failed alike: `liveItemCount` stays `null` in both cases and the
+  // cover renders as it always has, only swapping to the empty state once
+  // this has actually resolved to zero live items. A failed secondary read
+  // here shouldn't cost the user the ability to view/edit/delete an
+  // otherwise perfectly healthy Fit -- it's reported to Sentry (below) and
+  // self-heals on the next mount/refetch rather than blocking the screen.
+  const {
+    data: fitItems,
+    isError: isItemsError,
+    error: itemsError,
+  } = useQuery({
+    queryKey: ['fitItems', fit?.id],
+    queryFn: () => getFitItems(fit!.id),
+    enabled: Boolean(fit),
+  });
+  const liveItemCount = fitItems ? fitItems.filter((item) => !item.wardrobeItemDeleted).length : null;
+  const isEmptyFit = liveItemCount === 0;
+  // `getFitItems` throws its own classified `FitError`, unlike `useFits`'s
+  // queryFn (which lets the raw Supabase error through for `isNoConnectionError`
+  // above) -- same `instanceof FitError` check `app/new-fit.tsx`'s `loadFit` uses.
+  const isItemsNoConnection = itemsError instanceof FitError && itemsError.kind === 'no_connection';
+
+  useEffect(() => {
+    if (isItemsError && !isItemsNoConnection) {
+      Sentry.captureException(itemsError);
+    }
+  }, [isItemsError, isItemsNoConnection, itemsError]);
 
   useEffect(() => {
     if (isListError && !isNoConnectionError(listError)) {
@@ -168,7 +199,14 @@ export default function FitDetail() {
           style={COVER_SHADOW}
           className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
         >
-          {coverUrl ? (
+          {isEmptyFit ? (
+            <View testID="fit-detail-empty" className="flex-1 items-center justify-center px-gutter">
+              <Text variant="body" className="mb-6 text-center text-ink-secondary dark:text-ink-secondaryDark">
+                This Fit has no items left.
+              </Text>
+              <Button title="Add item" variant="primary" onPress={handleEditPress} />
+            </View>
+          ) : coverUrl ? (
             <Image
               testID="fit-detail-cover"
               accessibilityLabel="Fit collage"
@@ -202,7 +240,8 @@ export default function FitDetail() {
             <ConnectionErrorNotice message={errorMessage} />
           </View>
         ) : null}
-        <Button title="Edit" variant="primary" onPress={handleEditPress} disabled={deleting} />
+        {/* Empty state above already offers its own "Add items" CTA for this exact action -- avoid two differently-labeled buttons for the same thing. */}
+        {isEmptyFit ? null : <Button title="Edit" variant="primary" onPress={handleEditPress} disabled={deleting} />}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Delete Fit"

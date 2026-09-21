@@ -17,11 +17,29 @@ function mockSelectChain(result: { data: unknown; error: unknown }) {
 }
 
 describe('getFitItems', () => {
-  it('maps fit_items rows into FitItemPlacement shape', async () => {
+  it('maps fit_items rows into FitItemPlacement shape, with the joined category and a live source item', async () => {
     const { select, eq } = mockSelectChain({
       data: [
-        { id: 'placement-1', item_id: 'wardrobe-item-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, z_index: 1 },
-        { id: 'placement-2', item_id: 'wardrobe-item-2', x: 0.6, y: 0.6, scale: 1.2, rotation: 15, z_index: 2 },
+        {
+          id: 'placement-1',
+          item_id: 'wardrobe-item-1',
+          x: 0.5,
+          y: 0.5,
+          scale: 1,
+          rotation: 0,
+          z_index: 1,
+          wardrobe_items: { category: 'top', deleted_at: null },
+        },
+        {
+          id: 'placement-2',
+          item_id: 'wardrobe-item-2',
+          x: 0.6,
+          y: 0.6,
+          scale: 1.2,
+          rotation: 15,
+          z_index: 2,
+          wardrobe_items: { category: 'shoes', deleted_at: null },
+        },
       ],
       error: null,
     });
@@ -29,11 +47,85 @@ describe('getFitItems', () => {
     const items = await getFitItems('fit-1');
 
     expect(supabase.from).toHaveBeenCalledWith('fit_items');
-    expect(select).toHaveBeenCalledWith('id, item_id, x, y, scale, rotation, z_index');
+    expect(select).toHaveBeenCalledWith(
+      'id, item_id, x, y, scale, rotation, z_index, wardrobe_items(category, deleted_at)',
+    );
     expect(eq).toHaveBeenCalledWith('fit_id', 'fit-1');
     expect(items).toEqual([
-      { id: 'placement-1', wardrobeItemId: 'wardrobe-item-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1 },
-      { id: 'placement-2', wardrobeItemId: 'wardrobe-item-2', x: 0.6, y: 0.6, scale: 1.2, rotation: 15, zIndex: 2 },
+      {
+        id: 'placement-1',
+        wardrobeItemId: 'wardrobe-item-1',
+        x: 0.5,
+        y: 0.5,
+        scale: 1,
+        rotation: 0,
+        zIndex: 1,
+        category: 'top',
+        wardrobeItemDeleted: false,
+      },
+      {
+        id: 'placement-2',
+        wardrobeItemId: 'wardrobe-item-2',
+        x: 0.6,
+        y: 0.6,
+        scale: 1.2,
+        rotation: 15,
+        zIndex: 2,
+        category: 'shoes',
+        wardrobeItemDeleted: false,
+      },
+    ]);
+  });
+
+  it('flags a placement whose source wardrobe item has been soft-deleted', async () => {
+    mockSelectChain({
+      data: [
+        {
+          id: 'placement-1',
+          item_id: 'wardrobe-item-1',
+          x: 0.5,
+          y: 0.5,
+          scale: 1,
+          rotation: 0,
+          z_index: 1,
+          wardrobe_items: { category: 'top', deleted_at: '2026-09-19T00:00:00.000Z' },
+        },
+      ],
+      error: null,
+    });
+
+    const items = await getFitItems('fit-1');
+
+    expect(items).toEqual([
+      expect.objectContaining({ id: 'placement-1', category: 'top', wardrobeItemDeleted: true }),
+    ]);
+  });
+
+  it('treats a placement whose wardrobe_items join comes back null as a gap, not a live item with a bogus category', async () => {
+    // The FK guarantees a row exists and RLS never filters a soft-deleted
+    // one out (see the type's own doc comment), so this is a defensive path
+    // rather than an expected one -- but the join *type* admits `null`, so
+    // this must never silently read as "not deleted".
+    mockSelectChain({
+      data: [
+        {
+          id: 'placement-1',
+          item_id: 'wardrobe-item-1',
+          x: 0.5,
+          y: 0.5,
+          scale: 1,
+          rotation: 0,
+          z_index: 1,
+          wardrobe_items: null,
+        },
+      ],
+      error: null,
+    });
+
+    const items = await getFitItems('fit-1');
+
+    expect(items).toEqual([
+      expect.objectContaining({ id: 'placement-1', wardrobeItemDeleted: true, category: 'top' }),
     ]);
   });
 

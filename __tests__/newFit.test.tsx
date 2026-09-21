@@ -160,6 +160,19 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
     scale: 1.3,
     rotation: 12,
     zIndex: 2,
+    category: 'top',
+    wardrobeItemDeleted: false,
+  };
+  const DELETED_PLACEMENT = {
+    id: 'placement-2',
+    wardrobeItemId: 'wardrobe-item-gone',
+    x: 0.7,
+    y: 0.5,
+    scale: 1,
+    rotation: 0,
+    zIndex: 3,
+    category: 'shoes',
+    wardrobeItemDeleted: true,
   };
 
   beforeEach(() => {
@@ -196,10 +209,35 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
           scale: 1.3,
           rotation: 12,
           zIndex: 2,
+          wardrobeItemDeleted: false,
         },
       ]);
     });
     expect(getFitItems).toHaveBeenCalledWith('fit-1');
+  });
+
+  it('seeds a placement whose wardrobe item has been deleted using the joined category, without guessing from the live wardrobe list', async () => {
+    (getFitItems as jest.Mock).mockResolvedValue([DELETED_PLACEMENT]);
+    // Deliberately has no matching id for `wardrobe-item-gone` -- proves the
+    // seeded category comes from `getFitItems`'s own join, not a lookup
+    // against this list (the old `?? 'top'` guess this replaces).
+    (useWardrobeItems as jest.Mock).mockReturnValue({
+      data: [{ id: 'wardrobe-item-1', category: 'top', thumb_path: 't.webp', cutout_path: 'c.png' }],
+      isLoading: false,
+    });
+
+    await renderNewFit();
+
+    await waitFor(() => {
+      expect(useFitBuilderStore.getState().items).toEqual([
+        expect.objectContaining({
+          id: 'placement-2',
+          wardrobeItemId: 'wardrobe-item-gone',
+          category: 'shoes',
+          wardrobeItemDeleted: true,
+        }),
+      ]);
+    });
   });
 
   it("restores the Fit's own saved canvas background color", async () => {
@@ -269,6 +307,12 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
       params: { id: 'fit-1', fitUpdated: '1' },
     });
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['fits', 'user-1'] });
+    // Without this, `app/fit/[id].tsx`'s zero-item empty state (Story 3.4)
+    // reads a stale `fitItems` cache after this same `dismissTo` -- that
+    // screen has no focus-refetch either, so a save that empties a Fit (or
+    // fills a previously-empty one) wouldn't show the correct state until
+    // some unrelated refetch happened.
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['fitItems', 'fit-1'] });
   });
 
   it('shows the block-and-keep message when an edit re-save fails with no connection', async () => {
