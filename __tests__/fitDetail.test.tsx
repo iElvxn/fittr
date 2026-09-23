@@ -98,7 +98,7 @@ describe('Fit detail', () => {
 
     expect(screen.getByTestId('fit-detail-cover')).toBeTruthy();
     expect(screen.getByText('Weekend Look')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit Fit' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
   });
 
@@ -142,7 +142,7 @@ describe('Fit detail', () => {
     await renderFitDetail();
 
     const user = userEvent.setup();
-    await user.press(screen.getByRole('button', { name: 'Edit' }));
+    await user.press(screen.getByRole('button', { name: 'Edit Fit' }));
 
     expect(router.push).toHaveBeenCalledWith({ pathname: '/new-fit', params: { fitId: 'fit-1' } });
   });
@@ -208,7 +208,7 @@ describe('Fit detail', () => {
     await renderFitDetail();
 
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit Fit' })).toBeNull();
   });
 
   it('shows a connection error with retry when the Fits list fails to load', async () => {
@@ -303,7 +303,7 @@ describe('Fit detail', () => {
       await renderFitDetail();
 
       await screen.findByTestId('fit-detail-empty');
-      expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Edit Fit' })).toBeNull();
       // Delete stays available -- an empty Fit is still a real Fit a user
       // may want to remove outright, not just refill.
       expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
@@ -335,7 +335,7 @@ describe('Fit detail', () => {
       await renderFitDetail();
 
       await waitFor(() => expect(screen.getByTestId('fit-detail-cover')).toBeTruthy());
-      expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Edit Fit' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
       expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
       expect(screen.queryByTestId('fit-detail-empty')).toBeNull();
