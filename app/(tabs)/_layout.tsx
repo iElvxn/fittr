@@ -22,7 +22,7 @@ const ITEM_INSET = 6;
  * no icon package installed) above a text label for the four real
  * destinations, matching DESIGN.md's "thin-stroke icons, one family
  * throughout" even without Phosphor itself. The middle slot is the one
- * exception -- an accent-filled icon-only "Add item" action, not a
+ * exception -- an ink-filled icon-only "Add item" action, not a
  * destination. Profile isn't a tab at all -- it's reached from an icon on
  * Home instead (a top-level pushed route, `app/profile.tsx`), freeing this
  * slot back to "Fits."

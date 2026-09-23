@@ -391,7 +391,7 @@ export default function NewFit() {
               loading={opening}
               disabled={placedItems.length === 0}
               onPress={handleSavePress}
-              leftIcon={<CheckIcon size={14} color={colors.light.surfaceRaised} />}
+              leftIcon={<CheckIcon size={14} color={scheme === 'dark' ? colors.dark.surfaceBase : colors.light.surfaceBase} />}
               accessibilityLabel="Save Fit"
             />
           </View>

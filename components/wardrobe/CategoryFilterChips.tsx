@@ -41,10 +41,10 @@ export function CategoryFilterChips({ selected, onSelect }: Props) {
             ].join(' ')}
           >
             <Text
-              variant="label"
+              variant="caption"
               className={
                 isSelected
-                  ? 'text-surface-raised dark:text-surface-baseDark'
+                  ? 'text-surface-base dark:text-surface-baseDark'
                   : 'text-ink-secondary dark:text-ink-secondaryDark'
               }
             >

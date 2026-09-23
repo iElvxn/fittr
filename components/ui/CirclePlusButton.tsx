@@ -11,13 +11,13 @@ type Props = {
 };
 
 /**
- * Same accent-filled circle + plus glyph as the tab bar's "Add item"
+ * Same ink-filled circle + plus glyph as the tab bar's "Add item"
  * button (`AddItemTabButton`), sized for inline header use (44pt, this
  * app's minimum touch target) rather than a tab-bar slot.
  */
 export function CirclePlusButton({ accessibilityLabel, onPress }: Props) {
   const scheme = useColorScheme();
-  const accent = scheme === 'dark' ? colors.dark.accent : colors.light.accent;
+  const palette = scheme === 'dark' ? colors.dark : colors.light;
 
   return (
     <Pressable
@@ -30,7 +30,7 @@ export function CirclePlusButton({ accessibilityLabel, onPress }: Props) {
         borderRadius: CIRCLE_SIZE / 2,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: accent,
+        backgroundColor: palette.inkPrimary,
         shadowColor: '#000',
         shadowOpacity: 0.18,
         shadowRadius: 8,
@@ -38,7 +38,7 @@ export function CirclePlusButton({ accessibilityLabel, onPress }: Props) {
         elevation: 6,
       }}
     >
-      <PlusIcon size={20} color={colors.light.surfaceRaised} />
+      <PlusIcon size={20} color={palette.surfaceBase} />
     </Pressable>
   );
 }

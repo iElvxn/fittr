@@ -94,10 +94,11 @@ export function AnimatedActiveIndicator({ barWidth, barHeight, inset }: Props) {
       ]}
     >
       <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+      {/* `inkPrimary` (#252220 / #EDE8DF) at low opacity. */}
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: isDark ? 'rgba(245,243,241,0.16)' : 'rgba(28,25,23,0.10)' },
+          { backgroundColor: isDark ? 'rgba(237,232,223,0.16)' : 'rgba(37,34,32,0.10)' },
         ]}
       />
     </Animated.View>

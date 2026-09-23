@@ -45,7 +45,7 @@ export function FitItemsList({ items }: Props) {
           <View key={item.id} className="flex-row items-center gap-3 border-b border-border-hairline py-3 dark:border-border-hairlineDark">
             <View
               style={{ width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }}
-              className={['overflow-hidden rounded-sm bg-surface-raised dark:bg-surface-raisedDark', item.wardrobeItemDeleted ? 'opacity-40' : ''].join(' ')}
+              className={['overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark', item.wardrobeItemDeleted ? 'opacity-40' : ''].join(' ')}
             >
               {thumbnailUrl ? (
                 <Image
