@@ -594,11 +594,11 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
 });
 
 /**
- * Story 4.1: cross-user isolation for `fit_wears` (0008_fit_wears.sql).
- * Mirrors the `fits` own-column RLS pattern above -- `fit_wears` has no
- * UPDATE/DELETE policy at all (append-only, matching `fit_items`_delete_own's
- * "real DELETE only where the app needs it" discipline -- there's no edit/
- * remove-a-wear-entry feature), so this covers SELECT and INSERT only.
+ * Story 4.1/4.2: cross-user isolation for `fit_wears` (0008_fit_wears.sql,
+ * 0009_fit_wears_undo.sql). SELECT/INSERT shipped read-only in Story 4.1;
+ * Story 4.2 added a scoped DELETE policy so "Wear today" can be undone
+ * same-day -- still no UPDATE policy, since nothing ever edits a wear row
+ * in place.
  */
 describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
@@ -718,6 +718,134 @@ describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
       await admin.from('fits').delete().eq('id', fitId);
       if (user1Id) await admin.auth.admin.deleteUser(user1Id);
       if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+
+  it("a second user cannot DELETE the first user's fit_wears row, but the owner can", async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-fit-wears-delete-1-${stamp}@mailinator.com`;
+    const email2 = `rls-fit-wears-delete-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const fitId = randomUUID();
+    const wearId = randomUUID();
+
+    try {
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      const fitInsert = await client1.from('fits').insert({
+        id: fitId,
+        user_id: user1Id,
+        name: 'Weekend brunch',
+        cover_path: `${user1Id}/fits/${fitId}/cover.png`,
+      });
+      expect(fitInsert.error).toBeNull();
+
+      const wearInsert = await client1
+        .from('fit_wears')
+        .insert({ id: wearId, user_id: user1Id, fit_id: fitId, worn_on: '2026-09-21' });
+      expect(wearInsert.error).toBeNull();
+
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      // RLS denies the row rather than erroring: a no-op delete, not a thrown error.
+      const impersonatedDelete = await client2.from('fit_wears').delete().eq('id', wearId);
+      expect(impersonatedDelete.error).toBeNull();
+
+      const { data: stillThere } = await admin.from('fit_wears').select('id').eq('id', wearId).maybeSingle();
+      expect(stillThere?.id).toBe(wearId);
+
+      // The legitimate owner's own delete must still go through.
+      const ownDelete = await client1.from('fit_wears').delete().eq('id', wearId);
+      expect(ownDelete.error).toBeNull();
+
+      const { data: gone } = await admin.from('fit_wears').select('id').eq('id', wearId).maybeSingle();
+      expect(gone).toBeNull();
+    } finally {
+      await admin.from('fit_wears').delete().eq('id', wearId);
+      await admin.from('fits').delete().eq('id', fitId);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
+});
+
+/**
+ * Story 4.2: `fits_set_updated_at` (0010_fits_favorite_no_reorder.sql) must
+ * not bump `updated_at` for an `is_favorite`-only change, since My Fits
+ * sorts by `updated_at desc` (`lib/fits/listFits.ts`) -- otherwise
+ * favoriting a Fit would silently reorder the whole grid. Not an RLS check,
+ * but lives here since this file already has the only live-Supabase
+ * scaffolding in the repo.
+ */
+describeIfConfigured('fits trigger: favorite-only update does not bump updated_at', () => {
+  jest.setTimeout(30000);
+
+  it('leaves updated_at unchanged when only is_favorite changes, but bumps it for a name change', async () => {
+    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email = `fits-trigger-${stamp}@mailinator.com`;
+
+    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    expect(created.error).toBeNull();
+    const userId = created.data.user?.id;
+    expect(userId).toBeTruthy();
+
+    const fitId = randomUUID();
+
+    try {
+      const client = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn = await client.auth.signInWithPassword({ email, password });
+      expect(signIn.error).toBeNull();
+
+      const inserted = await client
+        .from('fits')
+        .insert({ id: fitId, user_id: userId, name: 'Weekend brunch', cover_path: `${userId}/fits/${fitId}/cover.png` })
+        .select('updated_at')
+        .single();
+      expect(inserted.error).toBeNull();
+      const originalUpdatedAt = inserted.data!.updated_at;
+
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      const favoriteUpdate = await client
+        .from('fits')
+        .update({ is_favorite: true })
+        .eq('id', fitId)
+        .select('updated_at')
+        .single();
+      expect(favoriteUpdate.error).toBeNull();
+      expect(favoriteUpdate.data!.updated_at).toBe(originalUpdatedAt);
+
+      const nameUpdate = await client
+        .from('fits')
+        .update({ name: 'Sunday brunch' })
+        .eq('id', fitId)
+        .select('updated_at')
+        .single();
+      expect(nameUpdate.error).toBeNull();
+      expect(nameUpdate.data!.updated_at).not.toBe(originalUpdatedAt);
+    } finally {
+      await admin.from('fits').delete().eq('id', fitId);
+      if (userId) await admin.auth.admin.deleteUser(userId);
     }
   });
 });

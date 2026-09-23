@@ -15,6 +15,9 @@ jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
 jest.mock('@/lib/fits/deleteFit', () => ({ deleteFit: jest.fn() }));
 jest.mock('@/lib/fits/getFitItems', () => ({ getFitItems: jest.fn() }));
+jest.mock('@/lib/fits/toggleFavorite', () => ({ toggleFitFavorite: jest.fn() }));
+jest.mock('@/lib/fits/markFitWorn', () => ({ markFitWornToday: jest.fn(), unmarkFitWornToday: jest.fn() }));
+jest.mock('@/lib/fits/wornFitIds', () => ({ useTodayWornFitIds: jest.fn() }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
 
 import FitDetail from '@/app/fit/[id]';
@@ -24,6 +27,9 @@ import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { deleteFit } from '@/lib/fits/deleteFit';
 import { getFitItems } from '@/lib/fits/getFitItems';
+import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
+import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
+import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { Sentry } from '@/lib/observability/sentry';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import type { FitRow } from '@/lib/fits/listFits';
@@ -91,6 +97,7 @@ describe('Fit detail', () => {
         thumbPath: 'user-1/items/wardrobe-item-1/thumb.webp',
       },
     ]);
+    (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set() });
   });
 
   it('shows the cover image, name, and Edit/Delete controls', async () => {
@@ -350,6 +357,217 @@ describe('Fit detail', () => {
       await waitFor(() => expect(Sentry.captureException).toHaveBeenCalled());
       expect(screen.getByTestId('fit-detail-cover')).toBeTruthy();
       expect(screen.queryByText(UNKNOWN_ERROR_MESSAGE)).toBeNull();
+    });
+  });
+
+  describe('Favorite (Story 4.2)', () => {
+    it('shows an inactive Favorite control when the Fit is not favorited', async () => {
+      await renderFitDetail();
+
+      expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeTruthy();
+    });
+
+    it('shows an active Favorite control when the Fit is already favorited', async () => {
+      (useFits as jest.Mock).mockReturnValue({
+        data: [makeFit({ is_favorite: true })],
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: jest.fn(),
+      });
+
+      await renderFitDetail();
+
+      expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeTruthy();
+    });
+
+    it('toggles favorite on immediately (before the write resolves) and calls toggleFitFavorite', async () => {
+      let resolveToggle: () => void;
+      (toggleFitFavorite as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveToggle = resolve)));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Add to favorites' }));
+
+      expect(toggleFitFavorite).toHaveBeenCalledWith('fit-1', true);
+      // Flips immediately -- DESIGN.md requires no confirmation step and an
+      // immediate visual change, not a wait for the write to resolve.
+      expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeTruthy();
+
+      resolveToggle!();
+      await waitFor(() => {});
+    });
+
+    it('toggles favorite off when already favorited', async () => {
+      (useFits as jest.Mock).mockReturnValue({
+        data: [makeFit({ is_favorite: true })],
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: jest.fn(),
+      });
+      (toggleFitFavorite as jest.Mock).mockResolvedValue(undefined);
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Remove from favorites' }));
+
+      expect(toggleFitFavorite).toHaveBeenCalledWith('fit-1', false);
+    });
+
+    it('reverts the optimistic flip and shows a connection error when the write fails offline', async () => {
+      (toggleFitFavorite as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Add to favorites' }));
+
+      expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeTruthy();
+    });
+
+    it('reverts the optimistic flip and reports an unknown error', async () => {
+      (toggleFitFavorite as jest.Mock).mockRejectedValue(new Error('boom'));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Add to favorites' }));
+
+      expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Add to favorites' })).toBeTruthy();
+    });
+
+    it('ignores a second tap while the first write is still in flight', async () => {
+      let resolveToggle: () => void;
+      (toggleFitFavorite as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveToggle = resolve)));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      const button = screen.getByRole('button', { name: 'Add to favorites' });
+      await user.press(button);
+      await user.press(screen.getByRole('button', { name: 'Remove from favorites' }));
+
+      expect(toggleFitFavorite).toHaveBeenCalledTimes(1);
+
+      resolveToggle!();
+      await waitFor(() => {});
+    });
+  });
+
+  describe('Wear today (Story 4.2)', () => {
+    it('shows the not-worn-today control when no fit_wears row exists for today', async () => {
+      await renderFitDetail();
+
+      expect(screen.getByRole('button', { name: 'Wear today' })).toBeTruthy();
+    });
+
+    it('shows the worn-today control when a fit_wears row already exists for today', async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+
+      await renderFitDetail();
+
+      expect(screen.getByRole('button', { name: "Remove today's wear entry" })).toBeTruthy();
+    });
+
+    it('marks the Fit worn today and flips immediately (before the write resolves)', async () => {
+      let resolveMark: () => void;
+      (markFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveMark = resolve)));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Wear today' }));
+
+      expect(markFitWornToday).toHaveBeenCalledWith('user-1', 'fit-1');
+      // Flips immediately -- same reasoning as Favorite's "flips immediately"
+      // test. Once the write resolves, the override clears and the button
+      // falls back to `useTodayWornFitIds` -- a real refetch would reflect
+      // the new row, but this suite mocks that hook statically, so this
+      // test only asserts the pre-resolution optimistic state.
+      expect(screen.getByRole('button', { name: "Remove today's wear entry" })).toBeTruthy();
+
+      resolveMark!();
+      await waitFor(() => {});
+    });
+
+    it('unmarks the Fit worn today (undo) when already worn today, flipping immediately', async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      let resolveUnmark: () => void;
+      (unmarkFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveUnmark = resolve)));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+      expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-1');
+      expect(screen.getByRole('button', { name: 'Wear today' })).toBeTruthy();
+
+      resolveUnmark!();
+      await waitFor(() => {});
+    });
+
+    it('reverts the optimistic flip and shows a connection error when marking worn fails offline', async () => {
+      (markFitWornToday as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Wear today' }));
+
+      expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Wear today' })).toBeTruthy();
+    });
+
+    it('reverts the optimistic flip and reports an unknown error when marking worn fails', async () => {
+      (markFitWornToday as jest.Mock).mockRejectedValue(new Error('boom'));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Wear today' }));
+
+      expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Wear today' })).toBeTruthy();
+    });
+
+    it('reverts back to worn-today and shows a connection error when undoing fails offline', async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (unmarkFitWornToday as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+      expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+      expect(screen.getByRole('button', { name: "Remove today's wear entry" })).toBeTruthy();
+    });
+
+    it('reverts back to worn-today and reports an unknown error when undoing fails', async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (unmarkFitWornToday as jest.Mock).mockRejectedValue(new Error('boom'));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+      expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: "Remove today's wear entry" })).toBeTruthy();
+    });
+
+    it('ignores a second tap while the first write is still in flight', async () => {
+      let resolveMark: () => void;
+      (markFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveMark = resolve)));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      const button = screen.getByRole('button', { name: 'Wear today' });
+      await user.press(button);
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+      expect(markFitWornToday).toHaveBeenCalledTimes(1);
+
+      resolveMark!();
+      await waitFor(() => {});
     });
   });
 });

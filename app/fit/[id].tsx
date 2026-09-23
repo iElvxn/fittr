@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/Button';
 import { BackHeader } from '@/components/ui/BackHeader';
 import { PencilIcon } from '@/components/ui/icons/PencilIcon';
 import { TrashIcon } from '@/components/ui/icons/TrashIcon';
+import { HeartIcon } from '@/components/ui/icons/HeartIcon';
+import { CalendarIcon } from '@/components/ui/icons/CalendarIcon';
+import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { SectionLabel } from '@/components/wardrobe/SectionLabel';
 import { FitItemsList } from '@/components/fits/FitItemsList';
@@ -18,6 +21,9 @@ import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { deleteFit } from '@/lib/fits/deleteFit';
 import { getFitItems } from '@/lib/fits/getFitItems';
+import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
+import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
+import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import { colors } from '@/lib/theme/colors';
@@ -28,11 +34,11 @@ const ACTION_ICON_SIZE = 20;
 const ACTION_TOUCH_TARGET = 44;
 
 /**
- * Scoped to exactly what Story 3.3/4.1 need -- collage, name, item list,
- * Edit, Delete. Favorite/Wear/Plan/Share (EXPERIENCE.md's full Fit-detail
- * action set) belong to their own later stories and get no placeholders
- * here. The cover carries no shadow -- DESIGN.md: "Photography ... never
- * gets a shadow of its own."
+ * Scoped to exactly what Story 3.3/4.1/4.2 need -- collage, name, item
+ * list, Edit, Favorite, Wear today, Delete. Plan/Share (EXPERIENCE.md's
+ * full Fit-detail action set) belong to their own later stories and get no
+ * placeholders here. The cover carries no shadow -- DESIGN.md:
+ * "Photography ... never gets a shadow of its own."
  */
 export default function FitDetail() {
   const { id, fitUpdated } = useLocalSearchParams<{ id: string; fitUpdated?: string }>();
@@ -85,6 +91,11 @@ export default function FitDetail() {
     }
   }, [isListError, listError]);
 
+  // Story 4.2: whether *today's* fit_wears row already exists for this Fit,
+  // separate from `useWornFitIds`'s "ever worn" (used by the My Fits Worn
+  // filter) -- powers the Wear-today button's already-logged state.
+  const { data: todayWornFitIds } = useTodayWornFitIds(userId);
+
   const showAck = fitUpdated === '1';
   useEffect(() => {
     if (!showAck) {
@@ -100,9 +111,93 @@ export default function FitDetail() {
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Optimistic overrides: DESIGN.md requires an immediate visual flip with
+  // no confirmation step, but `fit`/`todayWornFitIds` only reflect the
+  // server once the corresponding query is invalidated and refetched.
+  // `null` means "no override -- trust the fetched value"; reset whenever
+  // the viewed Fit changes so a stale override can't leak across Fits.
+  // Resetting during render (React's documented "adjust state when a prop
+  // changes" pattern), not in an effect, avoids an extra render pass.
+  const [favoriteOverride, setFavoriteOverride] = useState<boolean | null>(null);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [wornTodayOverride, setWornTodayOverride] = useState<boolean | null>(null);
+  const [wearBusy, setWearBusy] = useState(false);
+  const [overrideResetForId, setOverrideResetForId] = useState(id);
+
+  if (id !== overrideResetForId) {
+    setOverrideResetForId(id);
+    setFavoriteOverride(null);
+    setWornTodayOverride(null);
+  }
+
+  const isFavorite = favoriteOverride ?? fit?.is_favorite ?? false;
+  const isWornToday = wornTodayOverride ?? (fit ? (todayWornFitIds?.has(fit.id) ?? false) : false);
+
   function reportUnknownError(error: unknown) {
     Sentry.captureException(error);
     setErrorMessage(UNKNOWN_ERROR_MESSAGE);
+  }
+
+  async function handleToggleFavorite() {
+    if (!fit || favoriteBusy) {
+      return;
+    }
+    setErrorMessage(null);
+    const next = !isFavorite;
+    setFavoriteOverride(next);
+    setFavoriteBusy(true);
+    try {
+      await toggleFitFavorite(fit.id, next);
+      // Awaited (unlike `handleDelete`'s fire-and-forget invalidate, which
+      // navigates away regardless): clearing the override only once the
+      // refetch has actually landed avoids trusting a stale local value
+      // forever -- `isFavorite` falls back to `fit?.is_favorite` once this
+      // resolves, so the override's only job was bridging the gap until now.
+      await queryClient.invalidateQueries({ queryKey: ['fits', userId] });
+      setFavoriteOverride(null);
+    } catch (error) {
+      setFavoriteOverride(!next);
+      if (error instanceof FitError && error.kind === 'no_connection') {
+        setErrorMessage(NO_CONNECTION_MESSAGE);
+      } else {
+        reportUnknownError(error);
+      }
+    } finally {
+      setFavoriteBusy(false);
+    }
+  }
+
+  async function handleToggleWornToday() {
+    if (!fit || !userId || wearBusy) {
+      return;
+    }
+    setErrorMessage(null);
+    const next = !isWornToday;
+    setWornTodayOverride(next);
+    setWearBusy(true);
+    try {
+      if (next) {
+        await markFitWornToday(userId, fit.id);
+      } else {
+        await unmarkFitWornToday(userId, fit.id);
+      }
+      // Awaited, same reasoning as `handleToggleFavorite` -- clear the
+      // override only once both refetches have actually landed.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['wornFitIds', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['todayWornFitIds', userId] }),
+      ]);
+      setWornTodayOverride(null);
+    } catch (error) {
+      setWornTodayOverride(!next);
+      if (error instanceof FitError && error.kind === 'no_connection') {
+        setErrorMessage(NO_CONNECTION_MESSAGE);
+      } else {
+        reportUnknownError(error);
+      }
+    } finally {
+      setWearBusy(false);
+    }
   }
 
   async function handleDelete() {
@@ -253,9 +348,9 @@ export default function FitDetail() {
          * Photos, Halide) rather than a stacked primary button + text link
          * -- every icon is the same weight/color, including Delete, so
          * `colors.destructive` stays reserved for the confirmation sheet
-         * itself (DESIGN.md: destructive red is "never decorative"). This
-         * row is also where Favorite/Wear/Share (Story 4.2/4.3) and Plan
-         * (Story 5.1) land later, one icon at a time. `active:opacity-60`
+         * itself (DESIGN.md: destructive red is "never decorative"). Share
+         * (Story 4.3) and Plan (Story 5.1) land here later, one icon at a
+         * time. `active:opacity-60`
          * gives each icon real pressed-state feedback (pro-rules.md: icon
          * buttons need a visible response within 80-150ms of a tap).
          */}
@@ -276,9 +371,37 @@ export default function FitDetail() {
           )}
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            accessibilityState={{ selected: isFavorite }}
+            onPress={handleToggleFavorite}
+            disabled={deleting || favoriteBusy}
+            hitSlop={8}
+            className="active:opacity-60"
+            style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <HeartIcon size={ACTION_ICON_SIZE} color={deleting || favoriteBusy ? inkDisabled : inkPrimary} filled={isFavorite} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isWornToday ? "Remove today's wear entry" : 'Wear today'}
+            accessibilityState={{ selected: isWornToday }}
+            onPress={handleToggleWornToday}
+            disabled={deleting || wearBusy}
+            hitSlop={8}
+            className="active:opacity-60"
+            style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
+          >
+            {isWornToday ? (
+              <CheckIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
+            ) : (
+              <CalendarIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
+            )}
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Delete Fit"
             onPress={handleDeletePress}
-            disabled={deleting}
+            disabled={deleting || favoriteBusy || wearBusy}
             hitSlop={8}
             className="active:opacity-60"
             style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
