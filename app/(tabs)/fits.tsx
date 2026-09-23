@@ -182,6 +182,9 @@ export default function Fits() {
         thumbnailUrl={thumbnailUrl}
         columnWidth={columnWidth}
         onPress={() => router.push({ pathname: '/fit/[id]', params: { id: item.id } } as Href)}
+        fitId={item.id}
+        isFavorite={item.is_favorite}
+        userId={userId}
       />
     );
   }

@@ -1,9 +1,15 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
 jest.mock('@/lib/fits/wornFitIds', () => ({ useWornFitIds: jest.fn() }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
+// `FitsGridCell`'s favorite badge (Story 4.2 fast-follow) imports
+// `toggleFitFavorite`, which transitively pulls in `@/lib/supabase` and the
+// real AsyncStorage native module outside app context -- same reasoning as
+// `fitDetail.test.tsx`'s own `@/lib/supabase` mock, one import removed.
+jest.mock('@/lib/fits/toggleFavorite', () => ({ toggleFitFavorite: jest.fn() }));
 const mockNavigation = { setParams: jest.fn() };
 
 jest.mock('expo-router', () => ({
@@ -57,9 +63,24 @@ function mockWornFitIds(overrides: Record<string, unknown> = {}) {
   });
 }
 
+let queryClient: QueryClient;
+
+// `FitsGridCell`'s favorite badge (Story 4.2 fast-follow) calls
+// `useQueryClient()` for real, unlike this screen's own data hooks (all
+// mocked above) -- same `QueryClientProvider` wrapper as `fitDetail.test.tsx`'s
+// `renderFitDetail`.
+function renderFits() {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <Fits />
+    </QueryClientProvider>,
+  );
+}
+
 describe('Fits tab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     (useSession as jest.Mock).mockReturnValue({ session: { user: { id: 'user-1' } }, loading: false });
     (useThumbnailUrls as jest.Mock).mockReturnValue({ data: {} });
     (useLocalSearchParams as jest.Mock).mockReturnValue({});
@@ -71,7 +92,7 @@ describe('Fits tab', () => {
       (useLocalSearchParams as jest.Mock).mockReturnValue({ fitSaved: '1' });
       mockFits({ data: [] });
 
-      await render(<Fits />);
+      await renderFits();
 
       expect(screen.getByText('Fit saved.')).toBeTruthy();
     });
@@ -79,7 +100,7 @@ describe('Fits tab', () => {
     it('shows no acknowledgement without the fitSaved param', async () => {
       mockFits({ data: [] });
 
-      await render(<Fits />);
+      await renderFits();
 
       expect(screen.queryByText('Fit saved.')).toBeNull();
     });
@@ -89,7 +110,7 @@ describe('Fits tab', () => {
       (useLocalSearchParams as jest.Mock).mockReturnValue({ fitSaved: '1' });
       mockFits({ data: [] });
 
-      await render(<Fits />);
+      await renderFits();
       jest.advanceTimersByTime(2500);
 
       // Regression test: a global `router.setParams` call here would clear
@@ -106,7 +127,7 @@ describe('Fits tab', () => {
   it('shows the empty state when there are no Fits', async () => {
     mockFits({ data: [] });
 
-    await render(<Fits />);
+    await renderFits();
 
     expect(await screen.findByText('Build your first Fit.')).toBeTruthy();
   });
@@ -115,7 +136,7 @@ describe('Fits tab', () => {
     const refetch = jest.fn();
     mockFits({ data: undefined, isError: true, error: new TypeError('Network request failed'), refetch });
 
-    await render(<Fits />);
+    await renderFits();
 
     expect(screen.getByText('No connection — nothing was lost. Try again.')).toBeTruthy();
     const user = userEvent.setup();
@@ -126,7 +147,7 @@ describe('Fits tab', () => {
   it('lists saved Fits by name and navigates to the detail screen on tap', async () => {
     mockFits({ data: [fit({ id: 'a', name: 'Weekend Look' }), fit({ id: 'b', name: 'Office Day' })] });
 
-    await render(<Fits />);
+    await renderFits();
 
     expect(screen.getByText('Weekend Look')).toBeTruthy();
     expect(screen.getByText('Office Day')).toBeTruthy();
@@ -140,7 +161,7 @@ describe('Fits tab', () => {
   it('always keeps New Fit reachable even with saved Fits present', async () => {
     mockFits({ data: [fit()] });
 
-    await render(<Fits />);
+    await renderFits();
 
     const user = userEvent.setup();
     await user.press(screen.getByRole('button', { name: 'New Fit' }));
@@ -152,7 +173,7 @@ describe('Fits tab', () => {
     const refetch = jest.fn();
     mockFits({ data: [fit()], refetch });
 
-    await render(<Fits />);
+    await renderFits();
 
     const onFocus = (useFocusEffect as jest.Mock).mock.calls[0][0];
     onFocus();
@@ -163,7 +184,7 @@ describe('Fits tab', () => {
   it('shows a generic message and reports an unexpected list-load failure', async () => {
     mockFits({ data: undefined, isError: true, error: new Error('boom') });
 
-    await render(<Fits />);
+    await renderFits();
 
     expect(screen.getByText('Something went wrong. Please try again.')).toBeTruthy();
     expect(Sentry.captureException).toHaveBeenCalled();
@@ -172,7 +193,7 @@ describe('Fits tab', () => {
   it('shows a placeholder cell for a Fit whose cover has no resolved thumbnail yet', async () => {
     mockFits({ data: [fit({ id: 'a', cover_path: null })] });
 
-    await render(<Fits />);
+    await renderFits();
 
     expect(screen.getByTestId('fits-grid-thumbnail-fallback')).toBeTruthy();
     expect(screen.queryByTestId('fits-grid-thumbnail-image')).toBeNull();
@@ -182,7 +203,7 @@ describe('Fits tab', () => {
     it('shows a skeleton grid, not a bare spinner, while loading', async () => {
       mockFits({ data: undefined, isLoading: true });
 
-      await render(<Fits />);
+      await renderFits();
 
       expect(screen.getByTestId('fits-grid-skeleton', { includeHiddenElements: true })).toBeTruthy();
     });
@@ -191,7 +212,7 @@ describe('Fits tab', () => {
       mockFits({ data: [fit({ id: 'a' })] });
       mockWornFitIds({ data: undefined, isLoading: true });
 
-      await render(<Fits />);
+      await renderFits();
 
       expect(screen.getByTestId('fits-grid-skeleton', { includeHiddenElements: true })).toBeTruthy();
     });
@@ -200,7 +221,7 @@ describe('Fits tab', () => {
       mockFits({ data: [fit({ id: 'a', name: 'Weekend Look' })] });
       mockWornFitIds({ data: undefined, isError: true, error: new Error('boom') });
 
-      await render(<Fits />);
+      await renderFits();
 
       expect(screen.getByText('Weekend Look')).toBeTruthy();
       expect(Sentry.captureException).toHaveBeenCalledWith(new Error('boom'));
@@ -209,7 +230,7 @@ describe('Fits tab', () => {
     it('defaults to All, showing every Fit', async () => {
       mockFits({ data: [fit({ id: 'a', name: 'Weekend Look' }), fit({ id: 'b', name: 'Office Day' })] });
 
-      await render(<Fits />);
+      await renderFits();
 
       expect(screen.getByRole('button', { name: 'All' }).props.accessibilityState.selected).toBe(true);
       expect(screen.getByText('Weekend Look')).toBeTruthy();
@@ -224,7 +245,7 @@ describe('Fits tab', () => {
         ],
       });
 
-      await render(<Fits />);
+      await renderFits();
       const user = userEvent.setup();
       await user.press(screen.getByText('Favorites'));
 
@@ -238,7 +259,7 @@ describe('Fits tab', () => {
       });
       mockWornFitIds({ data: new Set(['a']) });
 
-      await render(<Fits />);
+      await renderFits();
       const user = userEvent.setup();
       await user.press(screen.getByText('Worn'));
 
@@ -250,7 +271,7 @@ describe('Fits tab', () => {
       mockFits({ data: [fit({ id: 'a', name: 'Weekend Look' })] });
       mockWornFitIds();
 
-      await render(<Fits />);
+      await renderFits();
       const user = userEvent.setup();
       await user.press(screen.getByText('Worn'));
 
@@ -261,7 +282,7 @@ describe('Fits tab', () => {
     it('shows filter-specific empty copy when a filter matches nothing, keeping the chips visible', async () => {
       mockFits({ data: [fit({ id: 'a', name: 'Weekend Look', is_favorite: false })] });
 
-      await render(<Fits />);
+      await renderFits();
       const user = userEvent.setup();
       await user.press(screen.getByText('Favorites'));
 
@@ -272,7 +293,7 @@ describe('Fits tab', () => {
     it('keeps the all-Fits empty state (not a filter message) when there are no Fits at all', async () => {
       mockFits({ data: [] });
 
-      await render(<Fits />);
+      await renderFits();
 
       expect(await screen.findByText('Build your first Fit.')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'All' })).toBeNull();
