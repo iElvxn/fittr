@@ -118,3 +118,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-2-grid-cell-favorite-heart.md`
   summary: `FitsGridCell`'s new favorite-heart `Pressable`, nested inside the cell's own outer `Pressable`, may be collapsed into the parent by VoiceOver/TalkBack and become unreachable via assistive tech, even though the automated test suite (which queries elements directly, not via real touch/accessibility hit-testing) passes.
   evidence: Code-review finding (blind-hunter), verdicted `maybe-false` -- RN's actual nested-accessible-element behavior is version- and platform-dependent, and no simulator/device was available in the implementation environment to verify it. If true this would be medium-to-high (the affordance unusable for screen-reader users on the My Fits grid specifically). Settling this needs a manual on-device VoiceOver/TalkBack check.
+
+- source_spec: none
+  summary: App-wide Mobbin-informed visual redesign (refreshed DESIGN.md tokens -- type scale, spacing, surfaces, motion -- and restyle of Wardrobe, My Fits grid, canvas builder, Profile, auth/onboarding) toward a minimal, refined, fashion-editorial look.
+  evidence: Split from the Story 4.3 (Share a Fit) request on 2026-09-23 per the scope standard; user chose to limit this story's redesign to the surfaces Story 4.3 touches (Fit detail) and do the rest as its own goal.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-share-a-fit.md`
+  summary: `shareFitCover` deletes the temp `fit-<id>.png` as soon as `Share.share` resolves. If a share target (AirDrop, Save to Files, a third-party extension) is still reading the file then, the transfer could fail.
+  evidence: Code-review finding (blind-hunter), verdict `maybe-false`, which would be medium if true. iOS's `completionWithItemsHandler` should fire only after the activity finishes, but this can only be settled on a device by sharing a Fit through AirDrop, Save to Files and one third-party app. If any fails, drop the post-share delete: `idempotent: true` already overwrites the file on the next share, and `Paths.cache` is OS-purgeable.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-share-a-fit.md`
+  summary: `supabase/.temp/` (Supabase CLI state) is untracked but missing from `.gitignore`, so it could be committed by accident.
+  evidence: Code-review finding (blind-hunter). It predates this story; `git status` showed it at the start of the session.

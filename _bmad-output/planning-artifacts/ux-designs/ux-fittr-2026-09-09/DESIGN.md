@@ -141,6 +141,7 @@ Nothing in between these four values — a consistent radius scale reads as inte
 - **Favorite indicator** — a thin outline heart (`{colors.ink-secondary}`) that fills solid `{colors.ink-primary}` when active. The change is outline-to-filled, not a color swap.
 - **Wear-streak counter** — `label` type in `{colors.ink-primary}`, a number and the word "day streak" — plain numerals, no flame/fire iconography (too playful for this brand) and no celebratory animation or color beyond the number update itself.
 - **Item detail / Fit detail** — the photo dominates the top of the screen edge-to-edge (minus gutter), metadata in `body`/`meta` below, actions as a row of secondary buttons or icon buttons beneath that.
+  - **Fit detail (as shipped, Story 4.3):** one scroll — back chevron left / Share icon right in the header (iOS convention); collage in a 4:5 `surface-raised` frame, `contain`, no shadow; Fit name in `display`; one uppercase tracked `meta` line (`2 ITEMS · UPDATED SEP 18, 2026`); a hairline-bordered (top + bottom) row of icon actions, in equal-width columns, each with a tiny uppercase `ink-secondary` caption (FAVORITE / WEAR TODAY↔WORN TODAY / EDIT / DELETE; wraps to two lines at large Dynamic Type sizes); icons all `ink-primary` (`ink-disabled` while busy), state by fill/glyph only; then the `ITEMS` section. Wear-today's logged state swaps `CalendarIcon`→`CheckIcon` (same family/weight) — the "state via glyph swap" convention alongside the heart's fill-vs-outline.
 
 ## Do's and Don'ts
 

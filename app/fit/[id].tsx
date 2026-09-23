@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useColorScheme } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useColorScheme, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
@@ -13,6 +13,7 @@ import { TrashIcon } from '@/components/ui/icons/TrashIcon';
 import { HeartIcon } from '@/components/ui/icons/HeartIcon';
 import { CalendarIcon } from '@/components/ui/icons/CalendarIcon';
 import { CheckIcon } from '@/components/ui/icons/CheckIcon';
+import { ShareIcon } from '@/components/ui/icons/ShareIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { SectionLabel } from '@/components/wardrobe/SectionLabel';
 import { FitItemsList } from '@/components/fits/FitItemsList';
@@ -24,21 +25,23 @@ import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
+import { shareFitCover } from '@/lib/fits/shareFit';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import { colors } from '@/lib/theme/colors';
 
 const ACK_DURATION_MS = 2500;
 const UPDATED_AT_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const ACTION_ICON_SIZE = 20;
+const ACTION_ICON_SIZE = 22;
 const ACTION_TOUCH_TARGET = 44;
+const CAPTION_FONT_SIZE = 10;
+const CAPTION_LINE_HEIGHT = 14;
+const COVER_ASPECT_RATIO = 4 / 5;
 
 /**
- * Scoped to exactly what Story 3.3/4.1/4.2 need -- collage, name, item
- * list, Edit, Favorite, Wear today, Delete. Plan/Share (EXPERIENCE.md's
- * full Fit-detail action set) belong to their own later stories and get no
- * placeholders here. The cover carries no shadow -- DESIGN.md:
- * "Photography ... never gets a shadow of its own."
+ * Scoped to what Stories 3.3/4.1/4.2/4.3 need -- collage, name, item list,
+ * Share, Favorite, Wear today, Edit, Delete. Plan (EXPERIENCE.md's full
+ * Fit-detail action set) belongs to Story 5.1 and gets no placeholder here.
  */
 export default function FitDetail() {
   const { id, fitUpdated } = useLocalSearchParams<{ id: string; fitUpdated?: string }>();
@@ -105,10 +108,15 @@ export default function FitDetail() {
     return () => clearTimeout(timeout);
   }, [showAck]);
 
-  const { data: thumbnailUrls } = useThumbnailUrls(fit?.cover_path ? [fit.cover_path] : []);
+  const {
+    data: thumbnailUrls,
+    isStale: isCoverUrlStale,
+    refetch: refetchCoverUrl,
+  } = useThumbnailUrls(fit?.cover_path ? [fit.cover_path] : []);
   const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
 
   const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Optimistic overrides: DESIGN.md requires an immediate visual flip with
@@ -226,6 +234,41 @@ export default function FitDetail() {
     }
   }
 
+  async function handleShare() {
+    const coverPath = fit?.cover_path;
+    if (!fit || !coverPath || !coverUrl || sharing || deleting) {
+      return;
+    }
+    setErrorMessage(null);
+    setSharing(true);
+    try {
+      let url: string | null = coverUrl;
+      // Signed URLs expire after an hour and nothing re-signs them while
+      // this screen stays mounted (e.g. the app sat in the background
+      // overnight) -- `staleTime` is set a minute short of expiry, so a
+      // stale query means the URL is about to (or already did) 403.
+      if (isCoverUrlStale) {
+        const refreshed = await refetchCoverUrl();
+        if (refreshed.isError) {
+          throw refreshed.error;
+        }
+        url = refreshed.data?.[coverPath] ?? null;
+        if (!url) {
+          throw new Error('Cover URL could not be re-signed for sharing');
+        }
+      }
+      await shareFitCover(fit.id, url);
+    } catch (error) {
+      if ((error instanceof FitError && error.kind === 'no_connection') || isNoConnectionError(error)) {
+        setErrorMessage(NO_CONNECTION_MESSAGE);
+      } else {
+        reportUnknownError(error);
+      }
+    } finally {
+      setSharing(false);
+    }
+  }
+
   function handleDeletePress() {
     ActionSheetIOS.showActionSheetWithOptions(
       { options: ['Delete', 'Cancel'], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
@@ -283,146 +326,210 @@ export default function FitDetail() {
     );
   }
 
+  // Also disabled until the live item count is known, so a zero-item Fit's
+  // stale cover can't be shared in the window before `isEmptyFit` resolves.
+  // A failed count read fails open (same as the rest of this screen, Story 3.4).
+  const itemCountPending = liveItemCount === null && !isItemsError;
+  const shareDisabled = !coverUrl || itemCountPending || deleting || sharing;
+  // Hidden (not just disabled) for a zero-live-item Fit: its stored cover
+  // still shows the items that were since deleted, so sharing it would hand
+  // out an image that no longer matches the Fit.
+  const shareButton = isEmptyFit ? null : (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Share Fit"
+      accessibilityState={{ busy: sharing }}
+      onPress={handleShare}
+      disabled={shareDisabled}
+      hitSlop={8}
+      className="active:opacity-60"
+      style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
+    >
+      {sharing ? (
+        <ActivityIndicator size="small" />
+      ) : (
+        <ShareIcon size={ACTION_ICON_SIZE} color={shareDisabled ? inkDisabled : inkPrimary} />
+      )}
+    </Pressable>
+  );
+
+  const updatedLabel = `Updated ${UPDATED_AT_FORMAT.format(new Date(fit.updated_at))}`;
+  // Item count only once `getFitItems` has resolved -- never a guessed or
+  // zero-until-loaded number.
+  const metaLine =
+    liveItemCount === null ? updatedLabel : `${liveItemCount} ${liveItemCount === 1 ? 'item' : 'items'} · ${updatedLabel}`;
+
   return (
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
-      {header}
+      <BackHeader disabled={deleting} compact right={shareButton} />
       {/*
-       * Name/meta sit right under the back arrow, not below the image --
-       * `display` type's own DESIGN.md example is "a Fit's name on its own
-       * detail screen," and keeping it out of the scrollable footer frees
-       * that whole region for the image and item list instead of splitting
-       * it with text. `numberOfLines` caps a pathological name so it can't
-       * push the image down indefinitely.
+       * Story 4.3 "editorial scroll" layout: collage first, then name/meta,
+       * then a captioned action row, then the items -- one scroll, image
+       * leading (DESIGN.md: "the photo dominates the top of the screen").
+       * Share sits top-right in the header, the iOS convention Grailed /
+       * Zalando / lululemon all follow on Mobbin.
        */}
-      <View className="px-gutter pb-3 pt-1">
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
         {showAck ? (
-          <Text accessibilityRole="alert" variant="body" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
+          <Text accessibilityRole="alert" variant="body" className="px-gutter pb-2 text-ink-primary dark:text-ink-primaryDark">
             Fit updated.
           </Text>
         ) : null}
-        <Text variant="display" numberOfLines={2} className="text-accent dark:text-accentDark">
-          {fit.name}
-        </Text>
-        <Text variant="meta" className="mt-1 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">
-          Updated {UPDATED_AT_FORMAT.format(new Date(fit.updated_at))}
-        </Text>
-      </View>
-      {/*
-       * Image and item list split the remaining space by a fixed 2:1 ratio
-       * (both `flex`) rather than the item list being unconstrained -- a
-       * `ScrollView` with no bounded height doesn't actually scroll in React
-       * Native, it just lets content overflow past the screen.
-       * `contentFit="contain"` (not "cover") so a portrait Fit is never
-       * cropped -- it just letterboxes within the space available.
-       */}
-      <View style={{ flex: 2 }} className="px-gutter pb-3">
-        <View className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark">
-          {isEmptyFit ? (
-            <View testID="fit-detail-empty" className="flex-1 items-center justify-center px-gutter">
-              <Text variant="body" className="mb-6 text-center text-ink-secondary dark:text-ink-secondaryDark">
-                This Fit has no items left.
-              </Text>
-              <Button title="Add item" variant="primary" onPress={handleEditPress} />
-            </View>
-          ) : coverUrl ? (
-            <Image
-              testID="fit-detail-cover"
-              accessibilityLabel="Fit collage"
-              source={{ uri: coverUrl }}
-              style={{ width: '100%', height: '100%' }}
-              contentFit="contain"
-            />
-          ) : (
-            <View testID="fit-detail-cover-fallback" className="h-full w-full" />
-          )}
-        </View>
-      </View>
-      <View className="border-t border-border-hairline px-gutter py-3 dark:border-border-hairlineDark">
-        {errorMessage ? (
-          <View className="mb-3">
-            <ConnectionErrorNotice message={errorMessage} />
-          </View>
-        ) : null}
         {/*
-         * Icon-only action row (Photos-app convention: Google Photos, Apple
-         * Photos, Halide) rather than a stacked primary button + text link
-         * -- every icon is the same weight/color, including Delete, so
-         * `colors.destructive` stays reserved for the confirmation sheet
-         * itself (DESIGN.md: destructive red is "never decorative"). Share
-         * (Story 4.3) and Plan (Story 5.1) land here later, one icon at a
-         * time. `active:opacity-60`
-         * gives each icon real pressed-state feedback (pro-rules.md: icon
-         * buttons need a visible response within 80-150ms of a tap).
+         * Fixed 4:5 frame (the portrait ratio fashion apps use for a look)
+         * with `contentFit="contain"`, so a Fit of any shape letterboxes
+         * inside it and is never cropped. No shadow -- DESIGN.md:
+         * "Photography ... never gets a shadow of its own."
          */}
-        <View className="flex-row items-center gap-6">
-          {/* Empty state above already offers its own "Add items" CTA for this exact action -- avoid two differently-labeled controls for the same thing. */}
-          {isEmptyFit ? null : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Edit Fit"
-              onPress={handleEditPress}
-              disabled={deleting}
-              hitSlop={8}
-              className="active:opacity-60"
-              style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <PencilIcon size={ACTION_ICON_SIZE} color={deleting ? inkDisabled : inkPrimary} />
-            </Pressable>
-          )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-            accessibilityState={{ selected: isFavorite }}
+        <View className="px-gutter pt-2">
+          <View
+            style={{ aspectRatio: COVER_ASPECT_RATIO }}
+            className="w-full overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
+          >
+            {isEmptyFit ? (
+              <View testID="fit-detail-empty" className="flex-1 items-center justify-center px-gutter">
+                <Text variant="body" className="mb-6 text-center text-ink-secondary dark:text-ink-secondaryDark">
+                  This Fit has no items left.
+                </Text>
+                <Button title="Add item" variant="primary" onPress={handleEditPress} />
+              </View>
+            ) : coverUrl ? (
+              <Image
+                testID="fit-detail-cover"
+                accessibilityLabel="Fit collage"
+                source={{ uri: coverUrl }}
+                style={{ width: '100%', height: '100%' }}
+                contentFit="contain"
+                transition={200}
+                priority="high"
+              />
+            ) : (
+              <View testID="fit-detail-cover-fallback" className="h-full w-full" />
+            )}
+          </View>
+        </View>
+
+        <View className="px-gutter pt-6">
+          <Text variant="display" numberOfLines={3} className="text-accent dark:text-accentDark">
+            {fit.name}
+          </Text>
+          <Text variant="meta" className="mt-2 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">
+            {metaLine}
+          </Text>
+        </View>
+
+        {/*
+         * Captioned action row between two hairlines (Whering puts its
+         * actions directly under the collage; the tiny tracked uppercase
+         * captions are Zara/SSENSE's editorial register). Every icon is the
+         * same weight/color, Delete included -- `colors.destructive` stays
+         * reserved for the confirmation sheet itself (DESIGN.md: destructive
+         * red is "never decorative"). State is fill/glyph only, never color.
+         */}
+        <View className="mx-gutter mt-6 flex-row border-y border-border-hairline py-2 dark:border-border-hairlineDark">
+          <FitAction
+            label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            caption="Favorite"
+            selected={isFavorite}
             onPress={handleToggleFavorite}
             disabled={deleting || favoriteBusy}
-            hitSlop={8}
-            className="active:opacity-60"
-            style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
           >
             <HeartIcon size={ACTION_ICON_SIZE} color={deleting || favoriteBusy ? inkDisabled : inkPrimary} filled={isFavorite} />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={isWornToday ? "Remove today's wear entry" : 'Wear today'}
-            accessibilityState={{ selected: isWornToday }}
+          </FitAction>
+          <FitAction
+            label={isWornToday ? "Remove today's wear entry" : 'Wear today'}
+            caption={isWornToday ? 'Worn today' : 'Wear today'}
+            selected={isWornToday}
             onPress={handleToggleWornToday}
             disabled={deleting || wearBusy}
-            hitSlop={8}
-            className="active:opacity-60"
-            style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
           >
             {isWornToday ? (
               <CheckIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
             ) : (
               <CalendarIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
             )}
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Delete Fit"
+          </FitAction>
+          {/* Empty state above already offers its own "Add item" CTA for this exact action -- avoid two differently-labeled controls for the same thing. */}
+          {isEmptyFit ? null : (
+            <FitAction label="Edit Fit" caption="Edit" onPress={handleEditPress} disabled={deleting}>
+              <PencilIcon size={ACTION_ICON_SIZE} color={deleting ? inkDisabled : inkPrimary} />
+            </FitAction>
+          )}
+          <FitAction
+            label="Delete Fit"
+            caption="Delete"
             onPress={handleDeletePress}
-            disabled={deleting || favoriteBusy || wearBusy}
-            hitSlop={8}
-            className="active:opacity-60"
-            style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
+            disabled={deleting || favoriteBusy || wearBusy || sharing}
           >
             {deleting ? <ActivityIndicator size="small" /> : <TrashIcon size={ACTION_ICON_SIZE} color={inkPrimary} />}
-          </Pressable>
+          </FitAction>
         </View>
-      </View>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
-        contentContainerClassName="px-gutter pt-3"
-      >
+
+        {errorMessage ? (
+          <View className="px-gutter pt-4">
+            <ConnectionErrorNotice message={errorMessage} />
+          </View>
+        ) : null}
+
         {/* Not shown in the zero-live-item empty state above -- a "Removed" row list would contradict its own "no items left" message. */}
         {!isEmptyFit && fitItems && fitItems.length > 0 ? (
-          <>
+          <View className="px-gutter pt-8">
             <SectionLabel>Items</SectionLabel>
             <FitItemsList items={fitItems} />
-          </>
+          </View>
         ) : null}
       </ScrollView>
     </View>
+  );
+}
+
+type FitActionProps = {
+  /** VoiceOver label -- the full action, which can differ from the short visible caption. */
+  label: string;
+  caption: string;
+  onPress: () => void;
+  disabled: boolean;
+  selected?: boolean;
+  children: ReactNode;
+};
+
+/**
+ * One captioned action: icon over a tiny tracked uppercase caption. Defined
+ * at module scope (not inside `FitDetail`) so it isn't a new component type
+ * on every render. The caption is visual only -- `accessibilityLabel`
+ * carries the spoken name, so VoiceOver doesn't read both.
+ */
+function FitAction({ label, caption, onPress, disabled, selected, children }: FitActionProps) {
+  // Reactive (unlike `PixelRatio.getFontScale()`), so a Dynamic Type change
+  // while this screen is open re-renders the captions at the new size.
+  const { fontScale: scale } = useWindowDimensions();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={selected === undefined ? undefined : { selected }}
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={4}
+      // Equal-width columns (`flex-1`) rather than a fixed min width, so four
+      // actions always fit the row; at large Dynamic Type sizes a caption
+      // wraps to a second line instead of truncating or overflowing.
+      className="flex-1 items-center justify-center active:opacity-60"
+      style={{ minHeight: ACTION_TOUCH_TARGET, paddingVertical: 6 }}
+    >
+      {children}
+      <Text
+        variant="meta"
+        numberOfLines={2}
+        className={
+          disabled
+            ? 'mt-1.5 text-center uppercase text-ink-disabled dark:text-ink-disabledDark'
+            : 'mt-1.5 text-center uppercase text-ink-secondary dark:text-ink-secondaryDark'
+        }
+        style={{ fontSize: CAPTION_FONT_SIZE * scale, lineHeight: CAPTION_LINE_HEIGHT * scale, letterSpacing: 1.2 }}
+      >
+        {caption}
+      </Text>
+    </Pressable>
   );
 }
