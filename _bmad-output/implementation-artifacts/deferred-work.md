@@ -97,3 +97,16 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1-browse-and-filter-my-fits.md`
   summary: `fit_wears` (this story's new table) has no UPDATE or DELETE policy at all, so a mis-tap on "mark worn" can never be corrected or undone by the user once Story 4.2 ships that action.
   evidence: Code-review finding (blind-hunter). Real product gap, but the "mark worn" UI it would apply to doesn't exist until Story 4.2 -- whether/how to let a user undo a wear entry (a policy change, a UI affordance, or both) is that story's design decision, not a defect in this story, which only reads the table.
+  status: resolved by `spec-4-2-favorite-a-fit-and-mark-it-worn.md` -- see `supabase/migrations/0009_fit_wears_undo.sql` (`fit_wears_delete_own` policy) and `lib/fits/markFitWorn.ts`'s `unmarkFitWornToday`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
+  summary: Add a Depop-style tappable favorite heart badge (top-right, small semi-transparent circular backing, monochrome, no like-count) to `FitsGridCell.tsx`/`app/(tabs)/fits.tsx`, so favoriting works from the My Fits grid as well as the Fit detail screen.
+  evidence: User request to match Pinterest/Depop's grid aesthetic specifically; validated via Mobbin (Pinterest's masonry layout already matches `FitsGridCell.tsx`, Depop's top-right heart-on-tile is the pattern to copy, its like-count/red fill are not per this app's no-badge-counts/monochrome rules). Split out purely for spec-size (pushed this story past the 1600-token guideline) — user asked for it as a fast-follow immediately after this story, not a backlog item.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
+  summary: DESIGN.md doesn't yet document the "state via icon-swap" convention this story introduced (Wear-today swaps `CalendarIcon`→`CheckIcon` for its already-logged state, since DESIGN.md only defines fill-vs-outline for the heart) -- should be added so Story 4.4 and the deferred grid-cell favorite fast-follow have a documented convention to match.
+  evidence: Code-review finding (blind-hunter), also self-flagged in this story's own Implementation Notes. Fix means editing a planning artifact, not this story's application code.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
+  summary: The new `fit_wears_delete_own` RLS policy (and its cross-user-isolation test) is only exercised when live Supabase credentials are configured for `npm run test`, same as every other RLS test in this repo -- a broken or overly-permissive policy would ship without the normal test run catching it.
+  evidence: Code-review finding (verification-gap, pre-verified per that layer's own evidence rules). Same pre-existing gap every prior story's own RLS additions have shipped under; closing it means wiring live/local Supabase credentials into the normal CI/test path project-wide, which is bigger than this one policy.
