@@ -18,6 +18,7 @@ jest.mock('@/lib/fits/getFitItems', () => ({ getFitItems: jest.fn() }));
 jest.mock('@/lib/fits/toggleFavorite', () => ({ toggleFitFavorite: jest.fn() }));
 jest.mock('@/lib/fits/markFitWorn', () => ({ markFitWornToday: jest.fn(), unmarkFitWornToday: jest.fn() }));
 jest.mock('@/lib/fits/wornFitIds', () => ({ useTodayWornFitIds: jest.fn() }));
+jest.mock('@/lib/fits/shareFit', () => ({ shareFitCover: jest.fn() }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
 
 import FitDetail from '@/app/fit/[id]';
@@ -30,6 +31,7 @@ import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
+import { shareFitCover } from '@/lib/fits/shareFit';
 import { Sentry } from '@/lib/observability/sentry';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import type { FitRow } from '@/lib/fits/listFits';
@@ -142,7 +144,49 @@ describe('Fit detail', () => {
 
     await renderFitDetail();
 
-    expect(screen.getByText(`Updated ${UPDATED_AT_FORMAT.format(new Date(updatedAt))}`)).toBeTruthy();
+    expect(screen.getByText(new RegExp(`Updated ${UPDATED_AT_FORMAT.format(new Date(updatedAt))}$`))).toBeTruthy();
+  });
+
+  it('adds the live item count to the meta line once it is known (singular)', async () => {
+    await renderFitDetail();
+    expect(await screen.findByText(/^1 item · Updated /)).toBeTruthy();
+  });
+
+  it('pluralizes the item count and excludes deleted items from it', async () => {
+    (getFitItems as jest.Mock).mockResolvedValue([
+      { id: 'p-1', wardrobeItemId: 'w-1', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, category: 'top', wardrobeItemDeleted: false, name: 'A' },
+      { id: 'p-2', wardrobeItemId: 'w-2', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 2, category: 'bottom', wardrobeItemDeleted: false, name: 'B' },
+      { id: 'p-3', wardrobeItemId: 'w-3', x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 3, category: 'shoes', wardrobeItemDeleted: true, name: 'C' },
+    ]);
+    await renderFitDetail();
+    expect(await screen.findByText(/^2 items · Updated /)).toBeTruthy();
+  });
+
+  it('shows only the date in the meta line while the item count is still unknown', async () => {
+    (getFitItems as jest.Mock).mockReturnValue(new Promise(() => {}));
+    await renderFitDetail();
+    expect(screen.getByText(/^Updated /)).toBeTruthy();
+  });
+
+  it('labels every action with a visible caption, not just an icon', async () => {
+    await renderFitDetail();
+    // Let `getFitItems` settle so its state update lands inside the test's act scope.
+    await screen.findByTestId('fit-items-list');
+
+    expect(screen.getByText('Favorite')).toBeTruthy();
+    expect(screen.getByText('Wear today')).toBeTruthy();
+    expect(screen.getByText('Edit')).toBeTruthy();
+    expect(screen.getByText('Delete')).toBeTruthy();
+  });
+
+  it('switches the wear caption to "Worn today" once today is logged', async () => {
+    (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+    await renderFitDetail();
+    // Let `getFitItems` settle so its state update lands inside the test's act scope.
+    await screen.findByTestId('fit-items-list');
+
+    expect(screen.getByText('Worn today')).toBeTruthy();
+    expect(screen.queryByText('Wear today')).toBeNull();
   });
 
   it('navigates to the canvas builder with fitId when Edit is pressed', async () => {
@@ -568,6 +612,179 @@ describe('Fit detail', () => {
 
       resolveMark!();
       await waitFor(() => {});
+    });
+  });
+
+  describe('Share (Story 4.3)', () => {
+    const SIGNED_COVER_URL = 'https://signed.example/cover.png';
+
+    it('shows an enabled Share control once the cover URL has resolved', async () => {
+      await renderFitDetail();
+      // Let `getFitItems` settle so its state update lands inside the test's act scope.
+      await screen.findByTestId('fit-items-list');
+
+      const share = screen.getByRole('button', { name: 'Share Fit' });
+      expect(share.props.accessibilityState?.disabled).toBeFalsy();
+    });
+
+    it('disables Share until the cover URL resolves, so a placeholder can never be shared', async () => {
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: {} });
+      await renderFitDetail();
+      // Let `getFitItems` settle so its state update lands inside the test's act scope.
+      await screen.findByTestId('fit-items-list');
+
+      const share = screen.getByRole('button', { name: 'Share Fit' });
+      expect(share.props.accessibilityState?.disabled).toBe(true);
+
+      const user = userEvent.setup();
+      await user.press(share);
+      expect(shareFitCover).not.toHaveBeenCalled();
+    });
+
+    it('hides Share for a Fit with no live items -- its stale cover would show items that no longer exist', async () => {
+      (getFitItems as jest.Mock).mockResolvedValue([]);
+      await renderFitDetail();
+
+      await screen.findByTestId('fit-detail-empty');
+      expect(screen.queryByRole('button', { name: 'Share Fit' })).toBeNull();
+    });
+
+    it("shares the Fit's already-rendered cover via its signed URL", async () => {
+      (shareFitCover as jest.Mock).mockResolvedValue(undefined);
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL));
+      expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
+      expect(screen.queryByText(UNKNOWN_ERROR_MESSAGE)).toBeNull();
+    });
+
+    it('shows the no-connection message and does not report to Sentry when the download fails offline', async () => {
+      (shareFitCover as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('shows a generic message and reports any other share failure', async () => {
+      const failure = new Error('UnableToDownload: status 403');
+      (shareFitCover as jest.Mock).mockRejectedValue(failure);
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalledWith(failure);
+    });
+
+    it('ignores a second tap while the first share is still preparing', async () => {
+      let finishShare: () => void = () => {};
+      (shareFitCover as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (finishShare = resolve)));
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      expect(shareFitCover).toHaveBeenCalledTimes(1);
+      finishShare();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Share Fit' }).props.accessibilityState?.disabled).toBeFalsy());
+    });
+
+    it('keeps Share disabled until the live item count is known, so an empty Fit\'s stale cover cannot slip out', async () => {
+      (getFitItems as jest.Mock).mockReturnValue(new Promise(() => {}));
+      await renderFitDetail();
+
+      expect(screen.getByRole('button', { name: 'Share Fit' }).props.accessibilityState?.disabled).toBe(true);
+    });
+
+    it('fails open -- enables Share -- when the item count read fails', async () => {
+      (getFitItems as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      await renderFitDetail();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Share Fit' }).props.accessibilityState?.disabled).toBeFalsy());
+    });
+
+    it('re-signs a stale cover URL before sharing, so a long-open screen never hands the download an expired link', async () => {
+      (shareFitCover as jest.Mock).mockResolvedValue(undefined);
+      const refetch = jest.fn().mockResolvedValue({
+        isError: false,
+        data: { 'user-1/fits/fit-1/cover.png': 'https://signed.example/fresh-cover.png' },
+      });
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: { 'user-1/fits/fit-1/cover.png': SIGNED_COVER_URL }, isStale: true, refetch });
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', 'https://signed.example/fresh-cover.png'));
+      expect(refetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not re-sign a still-fresh cover URL', async () => {
+      (shareFitCover as jest.Mock).mockResolvedValue(undefined);
+      const refetch = jest.fn();
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: { 'user-1/fits/fit-1/cover.png': SIGNED_COVER_URL }, isStale: false, refetch });
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL));
+      expect(refetch).not.toHaveBeenCalled();
+    });
+
+    it('shows the no-connection message without reporting when re-signing fails offline', async () => {
+      const refetch = jest.fn().mockResolvedValue({ isError: true, error: new TypeError('Network request failed'), data: undefined });
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: { 'user-1/fits/fit-1/cover.png': SIGNED_COVER_URL }, isStale: true, refetch });
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+      expect(shareFitCover).not.toHaveBeenCalled();
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('disables Delete while a share is preparing', async () => {
+      (shareFitCover as jest.Mock).mockReturnValue(new Promise(() => {}));
+      mockActionSheetChoice(0);
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Delete Fit' }).props.accessibilityState?.disabled).toBe(true));
+      await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+      expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
+      expect(deleteFit).not.toHaveBeenCalled();
+    });
+
+    it('disables Share while a delete is in flight', async () => {
+      (deleteFit as jest.Mock).mockReturnValue(new Promise(() => {}));
+      mockActionSheetChoice(0);
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Share Fit' }).props.accessibilityState?.disabled).toBe(true));
     });
   });
 });
