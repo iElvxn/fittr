@@ -2,6 +2,7 @@ import { render, screen, userEvent } from '@testing-library/react-native';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
+jest.mock('@/lib/fits/wornFitIds', () => ({ useWornFitIds: jest.fn() }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
 const mockNavigation = { setParams: jest.fn() };
 
@@ -19,6 +20,7 @@ import Fits from '@/app/(tabs)/fits';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
+import { useWornFitIds } from '@/lib/fits/wornFitIds';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { Sentry } from '@/lib/observability/sentry';
 
@@ -29,6 +31,7 @@ function fit(overrides: Partial<FitRow> = {}): FitRow {
     cover_path: 'user-1/fits/fit-1/cover.png',
     canvas_background_color: null,
     updated_at: '2026-09-18T00:00:00.000Z',
+    is_favorite: false,
     ...overrides,
   };
 }
@@ -44,12 +47,23 @@ function mockFits(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function mockWornFitIds(overrides: Record<string, unknown> = {}) {
+  (useWornFitIds as jest.Mock).mockReturnValue({
+    data: new Set<string>(),
+    isLoading: false,
+    isError: false,
+    error: null,
+    ...overrides,
+  });
+}
+
 describe('Fits tab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useSession as jest.Mock).mockReturnValue({ session: { user: { id: 'user-1' } }, loading: false });
     (useThumbnailUrls as jest.Mock).mockReturnValue({ data: {} });
     (useLocalSearchParams as jest.Mock).mockReturnValue({});
+    mockWornFitIds();
   });
 
   describe('save acknowledgement', () => {
@@ -162,5 +176,106 @@ describe('Fits tab', () => {
 
     expect(screen.getByTestId('fits-grid-thumbnail-fallback')).toBeTruthy();
     expect(screen.queryByTestId('fits-grid-thumbnail-image')).toBeNull();
+  });
+
+  describe('filters', () => {
+    it('shows a skeleton grid, not a bare spinner, while loading', async () => {
+      mockFits({ data: undefined, isLoading: true });
+
+      await render(<Fits />);
+
+      expect(screen.getByTestId('fits-grid-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    });
+
+    it('keeps showing the skeleton while the Worn-status query is still in flight, even after Fits itself has loaded', async () => {
+      mockFits({ data: [fit({ id: 'a' })] });
+      mockWornFitIds({ data: undefined, isLoading: true });
+
+      await render(<Fits />);
+
+      expect(screen.getByTestId('fits-grid-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    });
+
+    it('fails open and reports a Worn-status fetch failure, without blocking the grid', async () => {
+      mockFits({ data: [fit({ id: 'a', name: 'Weekend Look' })] });
+      mockWornFitIds({ data: undefined, isError: true, error: new Error('boom') });
+
+      await render(<Fits />);
+
+      expect(screen.getByText('Weekend Look')).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalledWith(new Error('boom'));
+    });
+
+    it('defaults to All, showing every Fit', async () => {
+      mockFits({ data: [fit({ id: 'a', name: 'Weekend Look' }), fit({ id: 'b', name: 'Office Day' })] });
+
+      await render(<Fits />);
+
+      expect(screen.getByRole('button', { name: 'All' }).props.accessibilityState.selected).toBe(true);
+      expect(screen.getByText('Weekend Look')).toBeTruthy();
+      expect(screen.getByText('Office Day')).toBeTruthy();
+    });
+
+    it('narrows to favorited Fits when the Favorites chip is tapped', async () => {
+      mockFits({
+        data: [
+          fit({ id: 'a', name: 'Weekend Look', is_favorite: true }),
+          fit({ id: 'b', name: 'Office Day', is_favorite: false }),
+        ],
+      });
+
+      await render(<Fits />);
+      const user = userEvent.setup();
+      await user.press(screen.getByText('Favorites'));
+
+      expect(screen.getByText('Weekend Look')).toBeTruthy();
+      expect(screen.queryByText('Office Day')).toBeNull();
+    });
+
+    it('narrows to worn Fits when the Worn chip is tapped', async () => {
+      mockFits({
+        data: [fit({ id: 'a', name: 'Weekend Look' }), fit({ id: 'b', name: 'Office Day' })],
+      });
+      mockWornFitIds({ data: new Set(['a']) });
+
+      await render(<Fits />);
+      const user = userEvent.setup();
+      await user.press(screen.getByText('Worn'));
+
+      expect(screen.getByText('Weekend Look')).toBeTruthy();
+      expect(screen.queryByText('Office Day')).toBeNull();
+    });
+
+    it('shows "Nothing worn yet." when the Worn filter matches nothing (fit_wears empty, pre-Story-4.2)', async () => {
+      mockFits({ data: [fit({ id: 'a', name: 'Weekend Look' })] });
+      mockWornFitIds();
+
+      await render(<Fits />);
+      const user = userEvent.setup();
+      await user.press(screen.getByText('Worn'));
+
+      expect(screen.getByText('Nothing worn yet.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'All' })).toBeTruthy();
+    });
+
+    it('shows filter-specific empty copy when a filter matches nothing, keeping the chips visible', async () => {
+      mockFits({ data: [fit({ id: 'a', name: 'Weekend Look', is_favorite: false })] });
+
+      await render(<Fits />);
+      const user = userEvent.setup();
+      await user.press(screen.getByText('Favorites'));
+
+      expect(screen.getByText('No Favorites yet.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'All' })).toBeTruthy();
+    });
+
+    it('keeps the all-Fits empty state (not a filter message) when there are no Fits at all', async () => {
+      mockFits({ data: [] });
+
+      await render(<Fits />);
+
+      expect(await screen.findByText('Build your first Fit.')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'All' })).toBeNull();
+    });
   });
 });

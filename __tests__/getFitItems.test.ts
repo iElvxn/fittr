@@ -28,7 +28,7 @@ describe('getFitItems', () => {
           scale: 1,
           rotation: 0,
           z_index: 1,
-          wardrobe_items: { category: 'top', deleted_at: null },
+          wardrobe_items: { category: 'top', deleted_at: null, name: 'White Tee', thumb_path: 'user-1/items/a/thumb.webp' },
         },
         {
           id: 'placement-2',
@@ -38,7 +38,7 @@ describe('getFitItems', () => {
           scale: 1.2,
           rotation: 15,
           z_index: 2,
-          wardrobe_items: { category: 'shoes', deleted_at: null },
+          wardrobe_items: { category: 'shoes', deleted_at: null, name: null, thumb_path: 'user-1/items/b/thumb.webp' },
         },
       ],
       error: null,
@@ -48,7 +48,7 @@ describe('getFitItems', () => {
 
     expect(supabase.from).toHaveBeenCalledWith('fit_items');
     expect(select).toHaveBeenCalledWith(
-      'id, item_id, x, y, scale, rotation, z_index, wardrobe_items(category, deleted_at)',
+      'id, item_id, x, y, scale, rotation, z_index, wardrobe_items(category, deleted_at, name, thumb_path)',
     );
     expect(eq).toHaveBeenCalledWith('fit_id', 'fit-1');
     expect(items).toEqual([
@@ -62,6 +62,8 @@ describe('getFitItems', () => {
         zIndex: 1,
         category: 'top',
         wardrobeItemDeleted: false,
+        name: 'White Tee',
+        thumbPath: 'user-1/items/a/thumb.webp',
       },
       {
         id: 'placement-2',
@@ -73,6 +75,8 @@ describe('getFitItems', () => {
         zIndex: 2,
         category: 'shoes',
         wardrobeItemDeleted: false,
+        name: null,
+        thumbPath: 'user-1/items/b/thumb.webp',
       },
     ]);
   });
@@ -88,7 +92,12 @@ describe('getFitItems', () => {
           scale: 1,
           rotation: 0,
           z_index: 1,
-          wardrobe_items: { category: 'top', deleted_at: '2026-09-19T00:00:00.000Z' },
+          wardrobe_items: {
+            category: 'top',
+            deleted_at: '2026-09-19T00:00:00.000Z',
+            name: 'White Tee',
+            thumb_path: 'user-1/items/a/thumb.webp',
+          },
         },
       ],
       error: null,
@@ -96,8 +105,18 @@ describe('getFitItems', () => {
 
     const items = await getFitItems('fit-1');
 
+    // A deleted item's last-known name/thumbnail still comes through -- the
+    // item list (Story 4.1) needs them to render a muted "Removed" row
+    // rather than a blank one, same recovered-not-guessed category as the
+    // canvas gap (Story 3.4).
     expect(items).toEqual([
-      expect.objectContaining({ id: 'placement-1', category: 'top', wardrobeItemDeleted: true }),
+      expect.objectContaining({
+        id: 'placement-1',
+        category: 'top',
+        wardrobeItemDeleted: true,
+        name: 'White Tee',
+        thumbPath: 'user-1/items/a/thumb.webp',
+      }),
     ]);
   });
 
@@ -125,7 +144,7 @@ describe('getFitItems', () => {
     const items = await getFitItems('fit-1');
 
     expect(items).toEqual([
-      expect.objectContaining({ id: 'placement-1', wardrobeItemDeleted: true, category: 'top' }),
+      expect.objectContaining({ id: 'placement-1', wardrobeItemDeleted: true, category: 'top', name: null, thumbPath: '' }),
     ]);
   });
 

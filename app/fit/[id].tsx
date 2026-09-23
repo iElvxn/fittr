@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Pressable, View } from 'react-native';
+import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
@@ -8,7 +8,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { BackHeader } from '@/components/ui/BackHeader';
+import { PencilIcon } from '@/components/ui/icons/PencilIcon';
+import { TrashIcon } from '@/components/ui/icons/TrashIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
+import { SectionLabel } from '@/components/wardrobe/SectionLabel';
+import { FitItemsList } from '@/components/fits/FitItemsList';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
@@ -16,21 +20,19 @@ import { deleteFit } from '@/lib/fits/deleteFit';
 import { getFitItems } from '@/lib/fits/getFitItems';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
+import { colors } from '@/lib/theme/colors';
 
 const ACK_DURATION_MS = 2500;
 const UPDATED_AT_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const COVER_SHADOW = {
-  shadowColor: '#000',
-  shadowOpacity: 0.08,
-  shadowRadius: 12,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 3,
-};
+const ACTION_ICON_SIZE = 20;
+const ACTION_TOUCH_TARGET = 44;
 
 /**
- * Scoped to exactly what Story 3.3 needs -- collage, name, Edit, Delete.
- * Favorite/Wear/Plan/Share (EXPERIENCE.md's full Fit-detail action set)
- * belong to their own later stories and get no placeholders here.
+ * Scoped to exactly what Story 3.3/4.1 need -- collage, name, item list,
+ * Edit, Delete. Favorite/Wear/Plan/Share (EXPERIENCE.md's full Fit-detail
+ * action set) belong to their own later stories and get no placeholders
+ * here. The cover carries no shadow -- DESIGN.md: "Photography ... never
+ * gets a shadow of its own."
  */
 export default function FitDetail() {
   const { id, fitUpdated } = useLocalSearchParams<{ id: string; fitUpdated?: string }>();
@@ -38,6 +40,9 @@ export default function FitDetail() {
   const userId = session?.user.id;
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const scheme = useColorScheme();
+  const inkPrimary = scheme === 'dark' ? colors.dark.inkPrimary : colors.light.inkPrimary;
+  const inkDisabled = scheme === 'dark' ? colors.dark.inkDisabled : colors.light.inkDisabled;
 
   // Same "already-cached list is the single source of truth" convention as
   // `app/item/[id].tsx` -- no separate single-Fit query.
@@ -144,7 +149,7 @@ export default function FitDetail() {
     router.push({ pathname: '/new-fit', params: { fitId: fit.id } });
   }
 
-  const header = <BackHeader disabled={deleting} />;
+  const header = <BackHeader disabled={deleting} compact />;
 
   if (!userId || isLoading) {
     return (
@@ -187,18 +192,36 @@ export default function FitDetail() {
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       {header}
       {/*
-       * Not a ScrollView -- name/meta/actions below are fixed-height, so this
-       * card is the only flexible element and simply takes whatever room
-       * they leave, the same "canvas fills the remaining space, controls sit
-       * in a fixed footer below it" layout `new-fit.tsx`'s builder screen
-       * uses. `contentFit="contain"` (not "cover") so a portrait Fit is
-       * never cropped -- it just letterboxes within the space available.
+       * Name/meta sit right under the back arrow, not below the image --
+       * `display` type's own DESIGN.md example is "a Fit's name on its own
+       * detail screen," and keeping it out of the scrollable footer frees
+       * that whole region for the image and item list instead of splitting
+       * it with text. `numberOfLines` caps a pathological name so it can't
+       * push the image down indefinitely.
        */}
-      <View className="flex-1 px-gutter pt-4 pb-3">
-        <View
-          style={COVER_SHADOW}
-          className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
-        >
+      <View className="px-gutter pb-3 pt-1">
+        {showAck ? (
+          <Text accessibilityRole="alert" variant="body" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
+            Fit updated.
+          </Text>
+        ) : null}
+        <Text variant="display" numberOfLines={2} className="text-accent dark:text-accentDark">
+          {fit.name}
+        </Text>
+        <Text variant="meta" className="mt-1 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">
+          Updated {UPDATED_AT_FORMAT.format(new Date(fit.updated_at))}
+        </Text>
+      </View>
+      {/*
+       * Image and item list split the remaining space by a fixed 2:1 ratio
+       * (both `flex`) rather than the item list being unconstrained -- a
+       * `ScrollView` with no bounded height doesn't actually scroll in React
+       * Native, it just lets content overflow past the screen.
+       * `contentFit="contain"` (not "cover") so a portrait Fit is never
+       * cropped -- it just letterboxes within the space available.
+       */}
+      <View style={{ flex: 2 }} className="px-gutter pb-3">
+        <View className="flex-1 overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark">
           {isEmptyFit ? (
             <View testID="fit-detail-empty" className="flex-1 items-center justify-center px-gutter">
               <Text variant="body" className="mb-6 text-center text-ink-secondary dark:text-ink-secondaryDark">
@@ -219,41 +242,64 @@ export default function FitDetail() {
           )}
         </View>
       </View>
-      <View
-        style={{ paddingBottom: insets.bottom + 12 }}
-        className="border-t border-border-hairline px-gutter pt-4 dark:border-border-hairlineDark"
-      >
-        {showAck ? (
-          <Text accessibilityRole="alert" variant="body" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
-            Fit updated.
-          </Text>
-        ) : null}
-        <Text variant="display" className="mb-1 text-accent dark:text-accentDark">
-          {fit.name}
-        </Text>
-        <Text variant="meta" className="mb-4 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">
-          Updated {UPDATED_AT_FORMAT.format(new Date(fit.updated_at))}
-        </Text>
-
+      <View className="border-t border-border-hairline px-gutter py-3 dark:border-border-hairlineDark">
         {errorMessage ? (
-          <View className="mb-4">
+          <View className="mb-3">
             <ConnectionErrorNotice message={errorMessage} />
           </View>
         ) : null}
-        {/* Empty state above already offers its own "Add items" CTA for this exact action -- avoid two differently-labeled buttons for the same thing. */}
-        {isEmptyFit ? null : <Button title="Edit" variant="primary" onPress={handleEditPress} disabled={deleting} />}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Delete Fit"
-          onPress={handleDeletePress}
-          disabled={deleting}
-          className="mt-2 items-center py-2"
-        >
-          <Text variant="label" className="uppercase tracking-widest text-destructive dark:text-destructiveDark">
-            {deleting ? 'Deleting…' : 'Delete'}
-          </Text>
-        </Pressable>
+        {/*
+         * Icon-only action row (Photos-app convention: Google Photos, Apple
+         * Photos, Halide) rather than a stacked primary button + text link
+         * -- every icon is the same weight/color, including Delete, so
+         * `colors.destructive` stays reserved for the confirmation sheet
+         * itself (DESIGN.md: destructive red is "never decorative"). This
+         * row is also where Favorite/Wear/Share (Story 4.2/4.3) and Plan
+         * (Story 5.1) land later, one icon at a time. `active:opacity-60`
+         * gives each icon real pressed-state feedback (pro-rules.md: icon
+         * buttons need a visible response within 80-150ms of a tap).
+         */}
+        <View className="flex-row items-center gap-6">
+          {/* Empty state above already offers its own "Add items" CTA for this exact action -- avoid two differently-labeled controls for the same thing. */}
+          {isEmptyFit ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Edit Fit"
+              onPress={handleEditPress}
+              disabled={deleting}
+              hitSlop={8}
+              className="active:opacity-60"
+              style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <PencilIcon size={ACTION_ICON_SIZE} color={deleting ? inkDisabled : inkPrimary} />
+            </Pressable>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Delete Fit"
+            onPress={handleDeletePress}
+            disabled={deleting}
+            hitSlop={8}
+            className="active:opacity-60"
+            style={{ minWidth: ACTION_TOUCH_TARGET, minHeight: ACTION_TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' }}
+          >
+            {deleting ? <ActivityIndicator size="small" /> : <TrashIcon size={ACTION_ICON_SIZE} color={inkPrimary} />}
+          </Pressable>
+        </View>
       </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+        contentContainerClassName="px-gutter pt-3"
+      >
+        {/* Not shown in the zero-live-item empty state above -- a "Removed" row list would contradict its own "no items left" message. */}
+        {!isEmptyFit && fitItems && fitItems.length > 0 ? (
+          <>
+            <SectionLabel>Items</SectionLabel>
+            <FitItemsList items={fitItems} />
+          </>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }

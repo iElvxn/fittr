@@ -8,7 +8,28 @@ export type FitRow = {
   cover_path: string | null;
   canvas_background_color: string | null;
   updated_at: string;
+  is_favorite: boolean;
 };
+
+/**
+ * Plain, directly-testable core (same split as `getFitItems.ts`/
+ * `wornFitIds.ts` -- lets a test assert on the exact `select(...)` string
+ * and mapped output without rendering React Query).
+ */
+export async function getFits(userId: string): Promise<FitRow[]> {
+  const { data, error } = await supabase
+    .from('fits')
+    .select('id, name, cover_path, canvas_background_color, updated_at, is_favorite')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data as FitRow[];
+}
 
 /**
  * Mirrors `lib/wardrobe/listItems.ts`'s `useWardrobeItems` exactly: live
@@ -22,20 +43,7 @@ export type FitRow = {
 export function useFits(userId: string | undefined) {
   return useQuery({
     queryKey: ['fits', userId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('fits')
-        .select('id, name, cover_path, canvas_background_color, updated_at')
-        .eq('user_id', userId as string)
-        .is('deleted_at', null)
-        .order('updated_at', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      return data as FitRow[];
-    },
+    queryFn: () => getFits(userId as string),
     enabled: Boolean(userId),
   });
 }

@@ -5,7 +5,6 @@ import { Text } from '@/components/ui/Text';
 import { useImageAspectRatio } from '@/lib/theme/useImageAspectRatio';
 
 const DEFAULT_ASPECT_RATIO = 3 / 4;
-const LABEL_INSET = 8;
 
 type Props = {
   name: string;
@@ -20,6 +19,12 @@ type Props = {
  * cover's real aspect ratio once the image reports its own size -- that's
  * what gives the columns their uneven, Pinterest-board look instead of
  * forcing every cover into a square crop.
+ *
+ * The name sits below the photo, not overlaid on it -- DESIGN.md's grid
+ * cell rule is "no card chrome" on the photography itself, and an overlay
+ * pill (even at partial opacity) still sits on top of the image. Matches
+ * the caption-below-image treatment seen in Zalando's/Doji's saved-outfit
+ * grids rather than a caption baked into the photo.
  */
 export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress }: Props) {
   const { aspectRatio, handleLoad } = useImageAspectRatio(DEFAULT_ASPECT_RATIO);
@@ -49,17 +54,10 @@ export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress }: Props
         ) : (
           <View testID="fits-grid-thumbnail-fallback" className="h-full w-full bg-surface-raised dark:bg-surface-baseDark" />
         )}
-        <View pointerEvents="none" style={{ paddingHorizontal: LABEL_INSET }} className="absolute inset-x-0 bottom-2 items-center">
-          <View
-            style={{ maxWidth: columnWidth - LABEL_INSET * 2 }}
-            className="rounded-sm bg-surface-raised/70 px-2 py-0.5 dark:bg-surface-baseDark/70"
-          >
-            <Text variant="meta" numberOfLines={1} className="text-ink-secondary dark:text-ink-secondaryDark">
-              {name}
-            </Text>
-          </View>
-        </View>
       </View>
+      <Text variant="meta" numberOfLines={1} className="mt-1.5 text-ink-secondary dark:text-ink-secondaryDark">
+        {name}
+      </Text>
     </Pressable>
   );
 }
