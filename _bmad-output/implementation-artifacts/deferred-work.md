@@ -144,10 +144,6 @@
   evidence: Blind reviewer. These predate the change; move them to `caption` during the screen phases.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
-  summary: EXPERIENCE.md line 94 still names "Cormorant/Montserrat" as the custom fonts, which now disagrees with DESIGN.md (Newsreader).
-  evidence: Blind reviewer. Phase 0's intent says not to touch EXPERIENCE.md, so it needs a separate, user-approved edit.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
   summary: Unselected chips are marked only by a `border-hairline` outline, which is about 1.2:1 against the base surface. That is far below WCAG 1.4.11's 3:1 for non-text UI, and no test covers non-text contrast or `ink-disabled`.
   evidence: Blind reviewer, verdict medium. The old palette had the same problem (`#E7E5E4` on `#FAFAF9`), so it predates v2. The label text (ink-secondary, AA) still identifies each chip, but the selected/unselected boundary relies on the fill.
 
