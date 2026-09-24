@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { render, screen, userEvent, fireEvent } from '@testing-library/react-native';
 
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn(), storage: { from: jest.fn() } } }));
@@ -27,6 +28,7 @@ import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { Sentry } from '@/lib/observability/sentry';
+import { typeScale } from '@/lib/theme/fonts';
 
 function item(overrides: Partial<WardrobeItemRow> = {}): WardrobeItemRow {
   return {
@@ -64,13 +66,28 @@ describe('Wardrobe', () => {
   });
 
   describe('save acknowledgement', () => {
-    it('shows "Item added." when returning with itemAdded=1', async () => {
+    it('shows the "Added to your closet" banner when returning with itemAdded=1', async () => {
       (useLocalSearchParams as jest.Mock).mockReturnValue({ itemAdded: '1' });
-      mockWardrobeItems({ data: [] });
+      mockWardrobeItems({ data: [item({ id: 'a' })] });
 
       await render(<Wardrobe />);
 
-      expect(screen.getByText('Item added.')).toBeTruthy();
+      expect(screen.getByText('Added to your closet')).toBeTruthy();
+      expect(screen.queryByText('Item added.')).toBeNull();
+    });
+
+    it('renders the banner as an ink fill with inverse text, floating above the tab bar', async () => {
+      (useLocalSearchParams as jest.Mock).mockReturnValue({ itemAdded: '1' });
+      mockWardrobeItems({ data: [item({ id: 'a' })] });
+
+      await render(<Wardrobe />);
+
+      const banner = screen.getByTestId('wardrobe-ack-banner');
+      expect(banner.props.accessibilityRole).toBe('alert');
+      expect(banner.props.className).toContain('bg-ink-primary');
+      expect(banner.props.className).toContain('absolute');
+      expect(StyleSheet.flatten(banner.props.style).bottom).toBeGreaterThan(0);
+      expect(screen.getByText('Added to your closet').props.className).toContain('text-surface-base');
     });
 
     it('shows no acknowledgement without the itemAdded param', async () => {
@@ -78,7 +95,25 @@ describe('Wardrobe', () => {
 
       await render(<Wardrobe />);
 
-      expect(screen.queryByText('Item added.')).toBeNull();
+      expect(screen.queryByText('Added to your closet')).toBeNull();
+    });
+
+    it('clears the search and resets the chip when the ack arrives, so the new piece is visible', async () => {
+      mockWardrobeItems({ data: [item({ id: 'a', category: 'top', name: 'Blue tee' })] });
+      const user = userEvent.setup();
+
+      const view = await render(<Wardrobe />);
+      await user.press(await screen.findByRole('button', { name: 'Accessories' }));
+      await user.type(screen.getByPlaceholderText('Search by name or brand'), 'silk');
+      expect(screen.queryByLabelText('Blue tee, Top')).toBeNull();
+
+      (useLocalSearchParams as jest.Mock).mockReturnValue({ itemAdded: '1' });
+      await view.rerender(<Wardrobe />);
+
+      expect(screen.getByText('Added to your closet')).toBeTruthy();
+      expect(screen.getByPlaceholderText('Search by name or brand').props.value).toBe('');
+      expect(screen.getByRole('button', { name: 'All' }).props.accessibilityState.selected).toBe(true);
+      expect(screen.getByLabelText('Blue tee, Top')).toBeTruthy();
     });
 
     it("clears the ack via this screen's own navigation, not the global router", async () => {
@@ -100,22 +135,128 @@ describe('Wardrobe', () => {
     });
   });
 
-  it('shows the empty state when there are no items', async () => {
-    mockWardrobeItems({ data: [] });
+  describe('empty closet', () => {
+    it('shows the editorial empty state with no search or chips', async () => {
+      mockWardrobeItems({ data: [] });
+
+      await render(<Wardrobe />);
+
+      expect(await screen.findByText('An empty closet.')).toBeTruthy();
+      expect(
+        screen.getByText('Photograph a piece and Fittr cuts it out for you. Start with what you wear most.'),
+      ).toBeTruthy();
+      expect(screen.queryByPlaceholderText('Search by name or brand')).toBeNull();
+      expect(screen.queryByText('All')).toBeNull();
+      expect(screen.getByText('No pieces yet')).toBeTruthy();
+    });
+
+    it('goes to add-item from "Add your first piece"', async () => {
+      mockWardrobeItems({ data: [] });
+      const user = userEvent.setup();
+
+      await render(<Wardrobe />);
+      await user.press(await screen.findByText('Add your first piece'));
+
+      expect(router.push).toHaveBeenCalledWith('/add-item');
+    });
+  });
+
+  it('shows the "My Closet" display title with the add button', async () => {
+    mockWardrobeItems({ data: [item({ id: 'a' })] });
+    const user = userEvent.setup();
 
     await render(<Wardrobe />);
 
-    expect(await screen.findByText('Add your first item.')).toBeTruthy();
+    const title = await screen.findByText('My Closet');
+    expect(StyleSheet.flatten(title.props.style).fontFamily).toBe(typeScale.display.fontFamily);
+    await user.press(screen.getByRole('button', { name: 'Add item' }));
+    expect(router.push).toHaveBeenCalledWith('/add-item');
   });
 
-  it('renders the grid with a total item count', async () => {
+  it('renders the grid with a caption piece count', async () => {
     mockWardrobeItems({
       data: [item({ id: 'a', category: 'top' }), item({ id: 'b', category: 'shoes' })],
     });
 
     await render(<Wardrobe />);
 
-    expect(await screen.findByText('2 items')).toBeTruthy();
+    const count = await screen.findByText('2 pieces');
+    expect(StyleSheet.flatten(count.props.style).textTransform).toBe('uppercase');
+    expect(screen.getByTestId('wardrobe-grid')).toBeTruthy();
+  });
+
+  it('shows the name and brand under each tile', async () => {
+    mockWardrobeItems({ data: [item({ id: 'a', category: 'outerwear', name: 'Camel coat', brand: 'Toteme' })] });
+
+    await render(<Wardrobe />);
+
+    expect(await screen.findByText('Camel coat')).toBeTruthy();
+    expect(screen.getByText('Toteme')).toBeTruthy();
+    expect(screen.getByLabelText('Camel coat, Toteme, Outerwear')).toBeTruthy();
+  });
+
+  describe('search', () => {
+    const closet = [
+      item({ id: 'coat', category: 'outerwear', name: 'Camel coat', brand: 'Toteme' }),
+      item({ id: 'loafers', category: 'shoes', name: 'Leather loafers', brand: 'G.H. Bass' }),
+      item({ id: 'boots', category: 'shoes', name: 'Chelsea boots', brand: 'Blundstone' }),
+      item({ id: 'tee', category: 'top', name: 'Boxy tee', brand: 'COS' }),
+    ];
+
+    it('narrows the grid by name or brand, case-insensitively', async () => {
+      mockWardrobeItems({ data: closet });
+      const user = userEvent.setup();
+
+      await render(<Wardrobe />);
+      await user.type(await screen.findByPlaceholderText('Search by name or brand'), 'COAT');
+
+      expect(screen.getByLabelText('Camel coat, Toteme, Outerwear')).toBeTruthy();
+      expect(screen.queryByLabelText('Boxy tee, COS, Top')).toBeNull();
+    });
+
+    it('combines with the category chip', async () => {
+      mockWardrobeItems({ data: closet });
+      const user = userEvent.setup();
+
+      await render(<Wardrobe />);
+      await user.press(await screen.findByRole('button', { name: 'Shoes' }));
+      await user.type(screen.getByPlaceholderText('Search by name or brand'), 'bass');
+
+      expect(screen.getByLabelText('Leather loafers, G.H. Bass, Shoes')).toBeTruthy();
+      expect(screen.queryByLabelText('Chelsea boots, Blundstone, Shoes')).toBeNull();
+      expect(screen.queryByLabelText('Camel coat, Toteme, Outerwear')).toBeNull();
+    });
+
+    it('clears the query from the clear button', async () => {
+      mockWardrobeItems({ data: closet });
+      const user = userEvent.setup();
+
+      await render(<Wardrobe />);
+      await user.type(await screen.findByPlaceholderText('Search by name or brand'), 'coat');
+      await user.press(screen.getByRole('button', { name: 'Clear search' }));
+
+      expect(screen.getByLabelText('Boxy tee, COS, Top')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+    });
+
+    it('shows "Nothing matches" and "Show everything" clears both search and chip', async () => {
+      mockWardrobeItems({ data: closet });
+      const user = userEvent.setup();
+
+      await render(<Wardrobe />);
+      await user.press(await screen.findByRole('button', { name: 'Shoes' }));
+      await user.type(screen.getByPlaceholderText('Search by name or brand'), 'silk');
+
+      expect(screen.getByText('Nothing matches "silk".')).toBeTruthy();
+      expect(screen.queryByTestId('wardrobe-grid')).toBeNull();
+
+      await user.press(screen.getByText('Show everything'));
+
+      expect(screen.getByPlaceholderText('Search by name or brand').props.value).toBe('');
+      expect(screen.getByRole('button', { name: 'All' }).props.accessibilityState.selected).toBe(true);
+      expect(screen.getByLabelText('Camel coat, Toteme, Outerwear')).toBeTruthy();
+      expect(screen.getByLabelText('Boxy tee, COS, Top')).toBeTruthy();
+    });
   });
 
   it('narrows the grid to the selected category', async () => {
@@ -128,7 +269,7 @@ describe('Wardrobe', () => {
     const user = userEvent.setup();
 
     await render(<Wardrobe />);
-    await user.press(await screen.findByText('Shoes'));
+    await user.press(await screen.findByRole('button', { name: 'Shoes' }));
 
     expect(screen.getByLabelText('Sneakers, Shoes')).toBeTruthy();
     expect(screen.queryByLabelText('Blue tee, Top')).toBeNull();
@@ -146,14 +287,28 @@ describe('Wardrobe', () => {
     expect(router.push).toHaveBeenCalledWith('/item/b');
   });
 
-  it('shows a message when the selected category has no matching items', async () => {
-    mockWardrobeItems({ data: [item({ id: 'a', category: 'top' })] });
+  it('shows "No {chip} yet." with "Show everything" when the selected category is empty', async () => {
+    mockWardrobeItems({ data: [item({ id: 'a', category: 'top', name: 'Blue tee' })] });
     const user = userEvent.setup();
 
     await render(<Wardrobe />);
-    await user.press(await screen.findByText('Shoes'));
+    await user.press(await screen.findByText('Accessories'));
 
-    expect(await screen.findByText('No items in this category.')).toBeTruthy();
+    expect(await screen.findByText('No accessories yet.')).toBeTruthy();
+
+    await user.press(screen.getByText('Show everything'));
+
+    expect(screen.getByLabelText('Blue tee, Top')).toBeTruthy();
+  });
+
+  it('shows the masonry skeleton while loading', async () => {
+    mockWardrobeItems({ data: undefined, isLoading: true });
+
+    await render(<Wardrobe />);
+
+    expect(screen.getByTestId('wardrobe-grid-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByTestId('wardrobe-grid')).toBeNull();
+    expect(screen.queryByText('No pieces yet')).toBeNull();
   });
 
   it('shows the connection error notice and retries on tap', async () => {
@@ -208,14 +363,15 @@ describe('Wardrobe', () => {
 
     expect(await screen.findByText('Something went wrong. Please try again.')).toBeTruthy();
     expect(screen.queryByText('No connection — nothing was lost. Try again.')).toBeNull();
+    expect(screen.queryByText('No pieces yet')).toBeNull();
   });
 
-  it('uses the singular "item" for exactly one item', async () => {
+  it('uses the singular "piece" for exactly one item', async () => {
     mockWardrobeItems({ data: [item({ id: 'a' })] });
 
     await render(<Wardrobe />);
 
-    expect(await screen.findByText('1 item')).toBeTruthy();
+    expect(await screen.findByText('1 piece')).toBeTruthy();
   });
 
   it('shows a placeholder cell when a thumbnail has no resolved URL', async () => {

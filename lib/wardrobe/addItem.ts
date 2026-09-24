@@ -6,10 +6,10 @@ import { WardrobeItemError, isNoConnectionError, NO_CONNECTION_MESSAGE } from '.
 export type WardrobeItemCategory = 'top' | 'bottom' | 'shoes' | 'outerwear' | 'accessory';
 
 /**
- * Single source of truth for the fixed category list -- shared by the
- * add-item category selector (`app/add-item.tsx`) and the Wardrobe grid's
- * filter chips (`components/wardrobe/CategoryFilterChips.tsx`) so the two
- * can't drift apart.
+ * Single source of truth for the fixed category list and its singular
+ * labels (add-item's category selector, `app/add-item.tsx`). The filter
+ * chips (`components/wardrobe/CategoryFilterChips.tsx`) take their order
+ * from here but use plural labels from `CATEGORY_FILTER_LABELS`.
  */
 export const CATEGORY_OPTIONS: { value: WardrobeItemCategory; label: string }[] = [
   { value: 'top', label: 'Top' },

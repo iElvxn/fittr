@@ -7,15 +7,25 @@ import { CategoryFilterChips } from '@/components/wardrobe/CategoryFilterChips';
 import { typeScale } from '@/lib/theme/fonts';
 
 describe('CategoryFilterChips', () => {
-  it('renders an "All" chip plus one chip per fixed category', async () => {
+  it('renders an "All" chip plus one plural-labelled chip per fixed category, in order', async () => {
     await render(<CategoryFilterChips selected="all" onSelect={jest.fn()} />);
 
-    expect(screen.getByText('All')).toBeTruthy();
-    expect(screen.getByText('Top')).toBeTruthy();
-    expect(screen.getByText('Bottom')).toBeTruthy();
-    expect(screen.getByText('Shoes')).toBeTruthy();
-    expect(screen.getByText('Outerwear')).toBeTruthy();
-    expect(screen.getByText('Accessory')).toBeTruthy();
+    expect(screen.getAllByRole('button')).toHaveLength(6);
+    for (const label of ['All', 'Tops', 'Bottoms', 'Shoes', 'Outerwear', 'Accessories']) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.queryByText('Top')).toBeNull();
+    expect(screen.queryByText('Accessory')).toBeNull();
+  });
+
+  it('keeps the singular category value when a plural chip is tapped', async () => {
+    const onSelect = jest.fn();
+    const user = userEvent.setup();
+    await render(<CategoryFilterChips selected="all" onSelect={onSelect} />);
+
+    await user.press(screen.getByText('Accessories'));
+
+    expect(onSelect).toHaveBeenCalledWith('accessory');
   });
 
   it('calls onSelect with the tapped category', async () => {

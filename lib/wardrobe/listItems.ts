@@ -60,3 +60,20 @@ export function filterByCategory(
   }
   return items.filter((item) => item.category === category);
 }
+
+/**
+ * Pure and client-side, same as `filterByCategory` (and meant to be chained
+ * with it): case-insensitive substring match on name or brand only -- no
+ * category, color or notes -- over the already-fetched list. A blank or
+ * whitespace-only query means "no search" and returns the list unchanged.
+ */
+export function searchItems(items: WardrobeItemRow[], query: string): WardrobeItemRow[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return items;
+  }
+  return items.filter(
+    (item) =>
+      (item.name ?? '').toLowerCase().includes(needle) || (item.brand ?? '').toLowerCase().includes(needle),
+  );
+}

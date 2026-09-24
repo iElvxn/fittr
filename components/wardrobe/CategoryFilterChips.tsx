@@ -5,7 +5,25 @@ import { CATEGORY_OPTIONS, type WardrobeItemCategory } from '@/lib/wardrobe/addI
 
 export type CategoryFilter = WardrobeItemCategory | 'all';
 
-const OPTIONS: { value: CategoryFilter; label: string }[] = [{ value: 'all', label: 'All' }, ...CATEGORY_OPTIONS];
+/**
+ * Plural chip labels ("Tops", not "Top") -- a filter names a group of
+ * pieces. `CATEGORY_OPTIONS` stays singular because add-item's picker
+ * labels a single piece. Shared by My Closet and the Fit builder's
+ * `CatalogSheet`.
+ */
+export const CATEGORY_FILTER_LABELS: Record<CategoryFilter, string> = {
+  all: 'All',
+  top: 'Tops',
+  bottom: 'Bottoms',
+  shoes: 'Shoes',
+  outerwear: 'Outerwear',
+  accessory: 'Accessories',
+};
+
+const OPTIONS: { value: CategoryFilter; label: string }[] = [
+  { value: 'all', label: CATEGORY_FILTER_LABELS.all },
+  ...CATEGORY_OPTIONS.map((option) => ({ value: option.value, label: CATEGORY_FILTER_LABELS[option.value] })),
+];
 
 type Props = {
   selected: CategoryFilter;
