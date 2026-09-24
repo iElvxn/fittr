@@ -95,7 +95,7 @@ export default function FitDetail() {
   }, [isListError, listError]);
 
   // Story 4.2: whether *today's* fit_wears row already exists for this Fit,
-  // separate from `useWornFitIds`'s "ever worn" (used by the My Fits Worn
+  // separate from `useFitWearCounts`'s "ever worn" (used by the My Fits Worn
   // filter) -- powers the Wear-today button's already-logged state.
   const { data: todayWornFitIds } = useTodayWornFitIds(userId);
 

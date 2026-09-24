@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { render, screen, userEvent, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -22,11 +23,70 @@ function renderCell(overrides: Partial<React.ComponentProps<typeof FitsGridCell>
         fitId="fit-1"
         isFavorite={false}
         userId="user-1"
+        backgroundColor={null}
+        meta="Worn 3×"
         {...overrides}
       />
     </QueryClientProvider>,
   );
 }
+
+describe('FitsGridCell tile', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  });
+
+  it('renders a fixed 3:4 well, whatever the cover size', async () => {
+    await renderCell({ columnWidth: 150 });
+
+    const style = StyleSheet.flatten(screen.getByTestId('fits-grid-tile').props.style);
+    expect(style.width).toBe(150);
+    expect(style.height).toBe(200);
+  });
+
+  it("fills the well with the Fit's canvas background color", async () => {
+    await renderCell({ backgroundColor: '#DCE8DC' });
+
+    const tile = screen.getByTestId('fits-grid-tile');
+    expect(StyleSheet.flatten(tile.props.style).backgroundColor).toBe('#DCE8DC');
+    expect(tile.props.className ?? '').not.toContain('bg-surface-raised');
+  });
+
+  it('falls back to surface-raised when the Fit has no background color', async () => {
+    await renderCell({ backgroundColor: null });
+
+    const tile = screen.getByTestId('fits-grid-tile');
+    expect(StyleSheet.flatten(tile.props.style).backgroundColor).toBeUndefined();
+    expect(tile.props.className).toContain('bg-surface-raised');
+    expect(tile.props.className).toContain('dark:bg-surface-raisedDark');
+  });
+
+  it('contains the cover instead of cropping it', async () => {
+    await renderCell();
+
+    expect(screen.getByTestId('fits-grid-thumbnail-image').props.contentFit).toBe('contain');
+  });
+
+  it('shows no image when there is no cover URL, keeping the 3:4 well', async () => {
+    await renderCell({ thumbnailUrl: null, columnWidth: 150 });
+
+    expect(screen.queryByTestId('fits-grid-thumbnail-image')).toBeNull();
+    expect(StyleSheet.flatten(screen.getByTestId('fits-grid-tile').props.style).height).toBe(200);
+  });
+
+  it('renders the name in the serif on one line and the meta line as a secondary caption', async () => {
+    await renderCell({ name: 'Weekend Look', meta: 'Saved Sep 21' });
+
+    const name = screen.getByText('Weekend Look');
+    expect(StyleSheet.flatten(name.props.style).fontFamily).toBe('Newsreader_400Regular');
+    expect(name.props.numberOfLines).toBe(1);
+
+    const meta = screen.getByText('Saved Sep 21');
+    expect(StyleSheet.flatten(meta.props.style).textTransform).toBe('uppercase');
+    expect(meta.props.className).toContain('text-ink-secondary');
+  });
+});
 
 describe('FitsGridCell favorite badge', () => {
   beforeEach(() => {
@@ -154,7 +214,7 @@ describe('FitsGridCell favorite badge', () => {
     await renderCell({ name: 'Weekend Look', onPress });
 
     const user = userEvent.setup();
-    await user.press(screen.getByRole('button', { name: 'Weekend Look' }));
+    await user.press(screen.getByRole('button', { name: 'Weekend Look, Worn 3×' }));
 
     expect(onPress).toHaveBeenCalled();
   });

@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, View, useColorScheme } from 'react-native';
+import { PixelRatio, Pressable, View, useColorScheme } from 'react-native';
 import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { HeartIcon } from '@/components/ui/icons/HeartIcon';
-import { useImageAspectRatio } from '@/lib/theme/useImageAspectRatio';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { FitError } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import { colors } from '@/lib/theme/colors';
 
-const DEFAULT_ASPECT_RATIO = 3 / 4;
+/** Height ÷ width of every My Fits tile (3:4); shared with `FitsGridSkeleton`. */
+export const TILE_HEIGHT_RATIO = 4 / 3;
+/** The mockup's 2-column name size -- `title`'s serif, scaled down for a grid cell. */
+const NAME_FONT_SIZE = 17;
+const NAME_LINE_HEIGHT = 21;
 const FAVORITE_ICON_SIZE = 14;
 const FAVORITE_BADGE_SIZE = 28;
 const FAVORITE_HIT_SLOP = 8;
@@ -24,26 +27,39 @@ type Props = {
   fitId: string;
   isFavorite: boolean;
   userId: string | undefined;
+  /** The Fit's `canvas_background_color`; null falls back to `surface-raised`. */
+  backgroundColor: string | null;
+  /** Line 2 under the name, e.g. "Worn 3×" or "Saved Sep 21". */
+  meta: string;
 };
 
 /**
- * Fit covers aren't captured at a fixed size and the app doesn't persist
- * their dimensions, so height starts at a portrait guess and settles to the
- * cover's real aspect ratio once the image reports its own size -- that's
- * what gives the columns their uneven, Pinterest-board look instead of
- * forcing every cover into a square crop.
+ * My Fits' grid tile: a fixed 3:4 well filled with the Fit's own canvas
+ * color (`surface-raised` when it has none). The builder's canvas is
+ * `flex-1`, so covers vary in shape by device; whatever its shape, the
+ * cover is contained (letterboxed) -- never cropped -- on that same color,
+ * so the rows stay aligned.
  *
- * The name sits below the photo, not overlaid on it -- DESIGN.md's grid
- * cell rule is "no card chrome" on the photography itself. The favorite
+ * The name and meta line sit below the well, never on it. The favorite
  * heart is the one deliberate exception (Story 4.2 fast-follow): DESIGN.md's
  * own favorite-indicator convention already lives on top of content
  * elsewhere (the Fit detail action row), and Depop/Pinterest (Mobbin) both
  * place this exact affordance directly over the photo, behind a small
  * semi-transparent circular backing for legibility rather than a full pill.
  */
-export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress, fitId, isFavorite, userId }: Props) {
-  const { aspectRatio, handleLoad } = useImageAspectRatio(DEFAULT_ASPECT_RATIO);
-  const height = columnWidth / aspectRatio;
+export function FitsGridCell({
+  name,
+  thumbnailUrl,
+  columnWidth,
+  onPress,
+  fitId,
+  isFavorite,
+  userId,
+  backgroundColor,
+  meta,
+}: Props) {
+  const height = columnWidth * TILE_HEIGHT_RATIO;
+  const fontScale = PixelRatio.getFontScale();
   const queryClient = useQueryClient();
   const scheme = useColorScheme();
   const inkPrimary = scheme === 'dark' ? colors.dark.inkPrimary : colors.light.inkPrimary;
@@ -104,14 +120,17 @@ export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress, fitId, 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={name}
+      accessibilityLabel={`${name}, ${meta}`}
       onPress={onPress}
       style={{ width: columnWidth }}
       className="active:opacity-80"
     >
       <View
-        style={{ width: columnWidth, height }}
-        className="overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-baseDark"
+        testID="fits-grid-tile"
+        style={[{ width: columnWidth, height }, backgroundColor ? { backgroundColor } : null]}
+        className={
+          backgroundColor ? 'overflow-hidden rounded-lg' : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
+        }
       >
         {thumbnailUrl ? (
           <Image
@@ -119,11 +138,10 @@ export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress, fitId, 
             accessibilityLabel=""
             source={{ uri: thumbnailUrl }}
             style={{ width: '100%', height: '100%' }}
-            contentFit="cover"
-            onLoad={handleLoad}
+            contentFit="contain"
           />
         ) : (
-          <View testID="fits-grid-thumbnail-fallback" className="h-full w-full bg-surface-raised dark:bg-surface-baseDark" />
+          <View testID="fits-grid-thumbnail-fallback" className="h-full w-full" />
         )}
         <Pressable
           accessibilityRole="button"
@@ -138,9 +156,19 @@ export function FitsGridCell({ name, thumbnailUrl, columnWidth, onPress, fitId, 
           <HeartIcon size={FAVORITE_ICON_SIZE} color={favoriteBusy ? inkDisabled : inkPrimary} filled={favorite} />
         </Pressable>
       </View>
-      <Text variant="meta" numberOfLines={1} className="mt-1.5 text-ink-secondary dark:text-ink-secondaryDark">
-        {name}
-      </Text>
+      <View className="mt-2 px-0.5">
+        <Text
+          variant="title"
+          numberOfLines={1}
+          style={{ fontSize: NAME_FONT_SIZE * fontScale, lineHeight: NAME_LINE_HEIGHT * fontScale }}
+          className="text-ink-primary dark:text-ink-primaryDark"
+        >
+          {name}
+        </Text>
+        <Text variant="caption" numberOfLines={1} className="mt-0.5 text-ink-secondary dark:text-ink-secondaryDark">
+          {meta}
+        </Text>
+      </View>
     </Pressable>
   );
 }

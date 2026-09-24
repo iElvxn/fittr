@@ -154,3 +154,19 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-1-my-closet.md`
   summary: My Closet's empty-closet and no-results states are plain views, so pull-to-refresh doesn't work there; it's only on the grid. A piece added on another device won't appear until the user leaves the tab.
   evidence: Blind and edge-case reviewers. The pre-v2 screen had the same gap. The fix is to render those states through the FlashList's `ListEmptyComponent`, or wrap them in a refreshable ScrollView.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: Wear counts come from an unbounded `fit_wears` `select('fit_id')`, so past PostgREST's `max_rows` (1000 by default) "Worn n×" undercounts and some worn Fits show "Saved".
+  evidence: Edge-case and blind reviewers. The query predates Phase 2; the fix is server-side aggregation (a view or an RPC doing `count(*) group by fit_id`), which Phase 2's intent ruled out.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: A Fit saved with no canvas color bakes that moment's light or dark `surface-raised` into its cover PNG, so after a light/dark switch the letterboxed cover shows a seam against the tile (and Fit detail's well).
+  evidence: Blind reviewer. `FitCanvas.tsx` paints null backgrounds with `bg-surface-raised dark:bg-surface-raisedDark` inside the captured view; Fit detail (`app/fit/[id].tsx:387-402`) has the same well and contain. Possible fixes: capture with a transparent background, or save the resolved color on the Fit.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: Coming back to My Fits after a save keeps the grid's old scroll position, so the newly saved Fit (sorted first) can still be off-screen.
+  evidence: Blind reviewer. `router.dismissTo` returns to the mounted tab. This predates Phase 2, which only resets the filter. The fix is a list ref plus `scrollToOffset({ offset: 0 })` when the ack appears.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: The ink "saved" banners (My Fits and My Closet) rely on `accessibilityRole="alert"`, which VoiceOver doesn't announce automatically, so iOS screen-reader users may never hear the confirmation.
+  evidence: Blind reviewer. The pattern is shared with Phase 1 `wardrobe.tsx:168`. The fix is `AccessibilityInfo.announceForAccessibility` when the ack appears.
