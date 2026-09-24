@@ -170,3 +170,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
   summary: The ink "saved" banners (My Fits and My Closet) rely on `accessibilityRole="alert"`, which VoiceOver doesn't announce automatically, so iOS screen-reader users may never hear the confirmation.
   evidence: Blind reviewer. The pattern is shared with Phase 1 `wardrobe.tsx:168`. The fix is `AccessibilityInfo.announceForAccessibility` when the ack appears.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
+  summary: `fit_items` has no index on `item_id`, so Item detail's new "In N Fits" read (`.eq('item_id', …)`) becomes a sequential scan (plus a per-row RLS check) as Fits grow.
+  evidence: The blind reviewer found it. `0004_fits.sql` only indexes `fit_id`, and Phase 3's intent ruled out schema changes. The fix is a migration adding `fit_items_item_id_idx`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
+  summary: In Item detail's edit mode the keyboard covers the pinned Save/Cancel bar and the lower inputs (Brand, Notes), so the user has to dismiss it to reach Save.
+  evidence: Blind and edge-case reviewers. The pre-v2 screen had the same layout with no keyboard avoidance. The fix is `KeyboardAvoidingView` around the screen, or `automaticallyAdjustKeyboardInsets` plus moving the bar inside the avoiding view.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
+  summary: Once a piece has a color, it can't be cleared back to "Not set", because `ColorSwatchPicker` has no deselect or "None" option.
+  evidence: Blind reviewer. This predates Phase 3, but is more visible now that Details shows "Not set". The fix is tapping the selected swatch to clear it, or a "None" swatch, with `onChange` accepting `null`.
