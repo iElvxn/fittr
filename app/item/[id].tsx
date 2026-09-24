@@ -1,28 +1,26 @@
-import { useEffect, useState } from 'react';
-import {
-  ActionSheetIOS,
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActionSheetIOS, ActivityIndicator, ScrollView, TextInput, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { BackHeader } from '@/components/ui/BackHeader';
+import { ACTION_ICON_SIZE, DetailAction } from '@/components/ui/DetailAction';
+import { PencilIcon } from '@/components/ui/icons/PencilIcon';
+import { TrashIcon } from '@/components/ui/icons/TrashIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { CategoryPicker } from '@/components/wardrobe/CategoryPicker';
 import { ColorSwatchPicker, colorLabel } from '@/components/wardrobe/ColorSwatchPicker';
-import { SectionLabel } from '@/components/wardrobe/SectionLabel';
+import { ItemFitsStrip } from '@/components/wardrobe/ItemFitsStrip';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
+import { useItemFitIds } from '@/lib/wardrobe/itemFits';
+import { useFits } from '@/lib/fits/listFits';
+import { FitError, isNoConnectionError as isFitsNoConnectionError } from '@/lib/fits/errors';
 import { updateWardrobeItem } from '@/lib/wardrobe/updateItem';
 import { deleteWardrobeItem } from '@/lib/wardrobe/deleteItem';
 import { CATEGORY_LABELS, type WardrobeItemCategory } from '@/lib/wardrobe/addItem';
@@ -33,17 +31,95 @@ import {
   UNKNOWN_ERROR_MESSAGE,
 } from '@/lib/wardrobe/errors';
 import { Sentry } from '@/lib/observability/sentry';
+import { colors } from '@/lib/theme/colors';
 
-const GUTTER = 16;
+/** Same fixed 4:5 as Fit detail's collage frame; the cutout is contained, never cropped. */
+const PHOTO_ASPECT_RATIO = 4 / 5;
+/** Edit mode shrinks the photo well so the form gets the room. */
+const EDIT_PHOTO_HEIGHT = 220;
+const COLOR_DOT_SIZE = 12;
+const NOTES_INPUT_HEIGHT = 96;
+const ITALIC_SERIF = 'Newsreader_400Regular_Italic';
+const ADDED_AT_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const INPUT_CLASS =
+  'min-h-12 rounded-sm border border-border-hairline bg-surface-raised px-3.5 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:bg-surface-raisedDark dark:text-ink-primaryDark';
+
+function Caption({ children, className }: { children: string; className?: string }) {
+  return (
+    <Text variant="caption" className={['text-ink-secondary dark:text-ink-secondaryDark', className ?? ''].join(' ')}>
+      {children}
+    </Text>
+  );
+}
+
+type DetailRowProps = {
+  testID: string;
+  label: string;
+  value: string;
+  /** Muted value, e.g. Color's "Not set". */
+  muted?: boolean;
+  swatch?: string | null;
+};
+
+/** One hairline Details row: label left, value right. */
+function DetailRow({ testID, label, value, muted, swatch }: DetailRowProps) {
+  return (
+    <View
+      testID={testID}
+      className="min-h-12 flex-row items-center justify-between gap-4 border-b border-border-hairline dark:border-border-hairlineDark"
+    >
+      <Text variant="meta" className="text-ink-secondary dark:text-ink-secondaryDark">
+        {label}
+      </Text>
+      <View className="shrink flex-row items-center gap-2">
+        {swatch ? (
+          <View
+            testID="item-detail-color-dot"
+            className="rounded-full border border-border-hairline dark:border-border-hairlineDark"
+            style={{ width: COLOR_DOT_SIZE, height: COLOR_DOT_SIZE, backgroundColor: swatch }}
+          />
+        ) : null}
+        <Text
+          variant="meta"
+          className={
+            muted ? 'shrink text-ink-secondary dark:text-ink-secondaryDark' : 'shrink text-ink-primary dark:text-ink-primaryDark'
+          }
+        >
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** Loading state in the view layout's shape -- never a bare spinner (EXPERIENCE.md). */
+function ItemDetailSkeleton() {
+  return (
+    <View
+      testID="item-detail-skeleton"
+      className="px-gutter pt-1"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <View style={{ aspectRatio: PHOTO_ASPECT_RATIO }} className="w-full rounded-lg bg-surface-tile dark:bg-surface-tileDark" />
+      <View style={{ height: 10 }} className="mt-6 w-[30%] rounded-sm bg-surface-tile dark:bg-surface-tileDark" />
+      <View style={{ height: 30 }} className="mt-3 w-[72%] rounded-sm bg-surface-tile dark:bg-surface-tileDark" />
+      <View style={{ height: 12 }} className="mt-3 w-[26%] rounded-sm bg-surface-tile dark:bg-surface-tileDark" />
+      <View className="mt-9 h-px bg-border-hairline dark:bg-border-hairlineDark" />
+      <View style={{ height: 12 }} className="mt-4 w-full rounded-sm bg-surface-tile dark:bg-surface-tileDark" />
+      <View style={{ height: 12 }} className="mt-5 w-full rounded-sm bg-surface-tile dark:bg-surface-tileDark" />
+    </View>
+  );
+}
 
 export default function ItemDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useSession();
   const userId = session?.user.id;
-  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const cutoutSize = width - GUTTER * 2;
+  const scheme = useColorScheme();
+  const palette = scheme === 'dark' ? colors.dark : colors.light;
 
   // Phase 1 has no pagination, so the grid's already-cached list is the
   // single source of truth here too -- no separate single-item query.
@@ -59,6 +135,48 @@ export default function ItemDetail() {
 
   const { data: thumbnailUrls } = useThumbnailUrls(item ? [item.cutout_path] : []);
   const cutoutUrl = item ? (thumbnailUrls?.[item.cutout_path] ?? null) : null;
+
+  // The Fits that use this piece: its distinct fit_ids, joined on the device
+  // against the cached `useFits` list -- so a soft-deleted Fit (absent from
+  // that list) drops out, and the strip follows that list's order.
+  const {
+    data: itemFitIds,
+    isError: isItemFitsError,
+    error: itemFitsError,
+    refetch: refetchItemFitIds,
+  } = useItemFitIds(item?.id);
+  const { data: fits, isError: isFitsError, error: fitsError } = useFits(userId);
+
+  // Opening a Fit from the strip and editing it (adding/removing this piece)
+  // returns to this still-mounted screen, so refetch on every focus.
+  useFocusEffect(
+    useCallback(() => {
+      if (item?.id) {
+        refetchItemFitIds();
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch is stable; re-running per focus, not per identity change.
+    }, [item?.id]),
+  );
+
+  useEffect(() => {
+    if (isFitsError && !isFitsNoConnectionError(fitsError)) {
+      Sentry.captureException(fitsError);
+    }
+  }, [isFitsError, fitsError]);
+  const isItemFitsNoConnection = itemFitsError instanceof FitError && itemFitsError.kind === 'no_connection';
+
+  useEffect(() => {
+    if (isItemFitsError && !isItemFitsNoConnection) {
+      Sentry.captureException(itemFitsError);
+    }
+  }, [isItemFitsError, isItemFitsNoConnection, itemFitsError]);
+
+  // `null` until both reads resolve (and on failure), which hides the whole
+  // Fits section -- never a false "Not in a Fit yet.".
+  const itemFits =
+    !isItemFitsError && itemFitIds && fits
+      ? fits.filter((fit) => itemFitIds.includes(fit.id))
+      : null;
 
   const [isEditing, setIsEditing] = useState(false);
   const [editCategory, setEditCategory] = useState<WardrobeItemCategory>('top');
@@ -156,9 +274,9 @@ export default function ItemDetail() {
 
   if (!userId || isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-surface-base dark:bg-surface-baseDark">
+      <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
         {header}
-        <ActivityIndicator />
+        <ItemDetailSkeleton />
       </View>
     );
   }
@@ -191,129 +309,214 @@ export default function ItemDetail() {
     );
   }
 
-  return (
-    <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
-      {header}
-      <ScrollView contentContainerClassName="px-gutter pb-6">
-        <View style={{ width: cutoutSize, height: cutoutSize }} className="mb-12 self-center">
-          {cutoutUrl ? (
-            <Image
-              testID="item-detail-cutout"
-              accessibilityLabel="Item photo"
-              source={{ uri: cutoutUrl }}
-              style={{ width: '100%', height: '100%' }}
-              contentFit="contain"
-            />
-          ) : (
+  const cutout = cutoutUrl ? (
+    <Image
+      testID="item-detail-cutout"
+      accessibilityLabel="Item photo"
+      source={{ uri: cutoutUrl }}
+      style={{ width: '100%', height: '100%' }}
+      contentFit="contain"
+    />
+  ) : (
+    <View testID="item-detail-cutout-fallback" className="h-full w-full" />
+  );
+
+  if (isEditing) {
+    return (
+      <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
+        {header}
+        <ScrollView contentContainerClassName="pb-6" keyboardShouldPersistTaps="handled">
+          <View className="px-gutter pt-1">
             <View
-              testID="item-detail-cutout-fallback"
-              className="h-full w-full rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
-            />
-          )}
-        </View>
-
-        {isEditing ? (
-          <View>
-            <SectionLabel>Category</SectionLabel>
-            <CategoryPicker value={editCategory} onChange={setEditCategory} />
-
-            <View className="mt-5">
-              <SectionLabel>Color</SectionLabel>
+              style={{ height: EDIT_PHOTO_HEIGHT }}
+              className="w-full overflow-hidden rounded-lg bg-surface-tile dark:bg-surface-tileDark"
+            >
+              {cutout}
             </View>
-            <ColorSwatchPicker value={editColorHex} onChange={setEditColorHex} />
+          </View>
 
-            <View className="mt-5">
+          <View className="gap-6 px-gutter pt-6">
+            <View>
+              <Caption className="mb-2.5">Category</Caption>
+              <CategoryPicker value={editCategory} onChange={setEditCategory} />
+            </View>
+
+            <View>
+              <Caption className="mb-1.5">Color</Caption>
+              <ColorSwatchPicker value={editColorHex} onChange={setEditColorHex} />
+            </View>
+
+            <View>
+              <Caption className="mb-2">Name</Caption>
               <TextInput
                 value={editName}
                 onChangeText={setEditName}
-                placeholder="Name (optional)"
+                placeholder="Optional"
+                placeholderTextColor={palette.inkSecondary}
                 accessibilityLabel="Item name"
-                className="mb-3 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
+                className={INPUT_CLASS}
               />
+            </View>
+
+            <View>
+              <Caption className="mb-2">Brand</Caption>
               <TextInput
                 value={editBrand}
                 onChangeText={setEditBrand}
-                placeholder="Brand (optional)"
+                placeholder="Optional"
+                placeholderTextColor={palette.inkSecondary}
                 accessibilityLabel="Item brand"
-                className="mb-3 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
+                className={INPUT_CLASS}
               />
+            </View>
+
+            <View>
+              <Caption className="mb-2">Notes</Caption>
               <TextInput
                 value={editNotes}
                 onChangeText={setEditNotes}
-                placeholder="Notes (optional)"
+                placeholder="Optional"
+                placeholderTextColor={palette.inkSecondary}
                 multiline
+                textAlignVertical="top"
                 accessibilityLabel="Item notes"
-                className="mb-3 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
+                className={INPUT_CLASS}
+                style={{ minHeight: NOTES_INPUT_HEIGHT }}
               />
             </View>
           </View>
-        ) : (
-          <View>
-            <Text variant="display" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
-              {item.name?.trim() || CATEGORY_LABELS[item.category]}
-            </Text>
-            <Text variant="meta" className="mb-9 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">
-              {[
-                item.name ? CATEGORY_LABELS[item.category] : null,
-                colorLabel(item.color_hex) ?? 'No color set',
-                item.brand,
-              ]
-                .filter(Boolean)
-                .join('  ·  ')}
-            </Text>
+        </ScrollView>
+        <View
+          testID="item-detail-edit-bar"
+          style={{ paddingBottom: insets.bottom + 12 }}
+          className="gap-2 border-t border-border-hairline bg-surface-base px-gutter pt-3.5 dark:border-border-hairlineDark dark:bg-surface-baseDark"
+        >
+          {errorMessage ? (
+            <View className="mb-2">
+              <ConnectionErrorNotice message={errorMessage} />
+            </View>
+          ) : null}
+          <Button title="Save" variant="primary" loading={saving} onPress={handleSave} />
+          <Button title="Cancel" variant="secondary" onPress={handleCancelEdit} disabled={saving} />
+        </View>
+      </View>
+    );
+  }
 
-            {item.notes ? (
-              <Text variant="body" className="mb-8 text-ink-primary dark:text-ink-primaryDark">
-                {item.notes}
-              </Text>
-            ) : null}
+  const categoryLabel = CATEGORY_LABELS[item.category];
+  const title = item.name?.trim() || categoryLabel;
+  const hasCaption = Boolean(item.name?.trim());
+  const color = colorLabel(item.color_hex);
 
-            <SectionLabel>Fits</SectionLabel>
-            <Text variant="body" className="text-ink-secondary dark:text-ink-secondaryDark">
-              Not in any Fit yet.
-            </Text>
+  return (
+    <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
+      {header}
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+        <View className="px-gutter pt-1">
+          <View
+            style={{ aspectRatio: PHOTO_ASPECT_RATIO }}
+            className="w-full overflow-hidden rounded-lg bg-surface-tile dark:bg-surface-tileDark"
+          >
+            {cutout}
           </View>
-        )}
-      </ScrollView>
-      <View
-        style={{ paddingBottom: insets.bottom + 12 }}
-        className="border-t border-border-hairline px-gutter pt-4 dark:border-border-hairlineDark"
-      >
+        </View>
+
+        <View className="gap-2 px-gutter pt-6">
+          {hasCaption ? (
+            <Text
+              testID="item-detail-category-caption"
+              variant="caption"
+              className="text-ink-secondary dark:text-ink-secondaryDark"
+            >
+              {categoryLabel}
+            </Text>
+          ) : null}
+          <Text testID="item-detail-title" variant="display" className="text-ink-primary dark:text-ink-primaryDark">
+            {title}
+          </Text>
+          {item.brand ? (
+            <Text testID="item-detail-brand" variant="body" className="text-ink-secondary dark:text-ink-secondaryDark">
+              {item.brand}
+            </Text>
+          ) : null}
+        </View>
+
+        <View className="mx-gutter mt-6 flex-row border-y border-border-hairline py-2 dark:border-border-hairlineDark">
+          <DetailAction label="Edit item" caption="Edit" onPress={handleStartEdit} disabled={deleting}>
+            <PencilIcon size={ACTION_ICON_SIZE} color={deleting ? palette.inkDisabled : palette.inkPrimary} />
+          </DetailAction>
+          <DetailAction
+            label="Delete item"
+            caption="Delete"
+            tone="destructive"
+            onPress={handleDeletePress}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" />
+            ) : (
+              <TrashIcon size={ACTION_ICON_SIZE} color={palette.destructive} />
+            )}
+          </DetailAction>
+        </View>
+
         {errorMessage ? (
-          <View className="mb-4">
+          <View className="px-gutter pt-4">
             <ConnectionErrorNotice message={errorMessage} />
           </View>
         ) : null}
 
-        {isEditing ? (
-          <>
-            <View className="mb-2">
-              <Button title="Save" variant="primary" loading={saving} onPress={handleSave} />
-            </View>
-            <Button title="Cancel" onPress={handleCancelEdit} disabled={saving} />
-          </>
-        ) : (
-          <>
-            <View className="flex-row items-stretch gap-3">
-              <Button title="Edit" onPress={handleStartEdit} disabled={deleting} />
-              <View className="flex-1">
-                <Button title="Create Fit With This" disabled />
+        <View className="px-gutter pt-8">
+          <Caption className="pb-1.5">Details</Caption>
+          <DetailRow
+            testID="item-detail-row-color"
+            label="Color"
+            value={color ?? 'Not set'}
+            muted={!color}
+            swatch={item.color_hex}
+          />
+          <DetailRow testID="item-detail-row-category" label="Category" value={categoryLabel} />
+          {item.brand ? <DetailRow testID="item-detail-row-brand" label="Brand" value={item.brand} /> : null}
+          <DetailRow
+            testID="item-detail-row-added"
+            label="Added"
+            value={ADDED_AT_FORMAT.format(new Date(item.created_at))}
+          />
+        </View>
+
+        {item.notes ? (
+          <View className="gap-2.5 px-gutter pt-8">
+            <Caption>Notes</Caption>
+            <Text variant="body" className="text-ink-primary dark:text-ink-primaryDark">
+              {item.notes}
+            </Text>
+          </View>
+        ) : null}
+
+        {itemFits ? (
+          <View className="gap-3 pt-8">
+            <Caption className="px-gutter">
+              {itemFits.length === 0 ? 'Fits' : `In ${itemFits.length} ${itemFits.length === 1 ? 'Fit' : 'Fits'}`}
+            </Caption>
+            {itemFits.length > 0 ? (
+              <ItemFitsStrip fits={itemFits} />
+            ) : (
+              <View className="items-start gap-2 px-gutter">
+                <Text
+                  variant="title"
+                  style={{ fontFamily: ITALIC_SERIF }}
+                  className="text-ink-primary dark:text-ink-primaryDark"
+                >
+                  Not in a Fit yet.
+                </Text>
+                <Text variant="body" className="text-ink-secondary dark:text-ink-secondaryDark">
+                  Put it on the canvas with a few other pieces and save the look.
+                </Text>
               </View>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Delete item"
-              onPress={handleDeletePress}
-              disabled={deleting}
-              className="mt-2 items-center py-2"
-            >
-              <Text variant="label" className="uppercase tracking-widest text-destructive dark:text-destructiveDark">
-                {deleting ? 'Deleting…' : 'Delete'}
-              </Text>
-            </Pressable>
-          </>
-        )}
-      </View>
+            )}
+          </View>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }

@@ -36,10 +36,22 @@ type Props = {
   onChange: (hex: string) => void;
 };
 
-/** Swatch row shared by the batch-review editor and the item-detail edit form. */
+const SWATCH_TARGET = 44;
+const SWATCH_SIZE = 30;
+/** The selected ring: a 2pt gap of the surface, then a 1.5pt ink ring. */
+const RING_GAP = 2;
+const RING_WIDTH = 1.5;
+const RING_SIZE = SWATCH_SIZE + (RING_GAP + RING_WIDTH) * 2;
+
+/**
+ * Swatch row shared by the batch-review editor and the item-detail edit
+ * form. Each swatch is a 30pt dot inside a 44pt touch target; the selected
+ * one gets a two-ring treatment (surface gap, then an ink ring) -- state by
+ * shape, never color. The hairline edge keeps White visible on cream.
+ */
 export function ColorSwatchPicker({ value, onChange }: Props) {
   return (
-    <View className="flex-row flex-wrap gap-2">
+    <View className="flex-row flex-wrap gap-1.5">
       {COLOR_SWATCHES.map(({ hex, name }) => {
         const selected = hex.toLowerCase() === value?.toLowerCase();
         return (
@@ -49,15 +61,23 @@ export function ColorSwatchPicker({ value, onChange }: Props) {
             accessibilityLabel={name}
             accessibilityState={{ selected }}
             onPress={() => onChange(hex)}
-            hitSlop={8}
-            className={[
-              'h-9 w-9 rounded-full border',
-              selected
-                ? 'border-2 border-ink-primary dark:border-ink-primaryDark'
-                : 'border-border-hairline dark:border-border-hairlineDark',
-            ].join(' ')}
-            style={{ backgroundColor: hex }}
-          />
+            className="items-center justify-center"
+            style={{ width: SWATCH_TARGET, height: SWATCH_TARGET }}
+          >
+            <View
+              testID={selected ? 'color-swatch-ring' : undefined}
+              className={[
+                'items-center justify-center rounded-full',
+                selected ? 'border-ink-primary dark:border-ink-primaryDark' : 'border-transparent',
+              ].join(' ')}
+              style={{ width: RING_SIZE, height: RING_SIZE, borderWidth: RING_WIDTH }}
+            >
+              <View
+                className="rounded-full border border-border-hairline dark:border-border-hairlineDark"
+                style={{ width: SWATCH_SIZE, height: SWATCH_SIZE, backgroundColor: hex }}
+              />
+            </View>
+          </Pressable>
         );
       })}
     </View>

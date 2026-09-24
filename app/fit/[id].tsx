@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { BackHeader } from '@/components/ui/BackHeader';
+import { ACTION_ICON_SIZE, ACTION_TOUCH_TARGET, DetailAction } from '@/components/ui/DetailAction';
 import { PencilIcon } from '@/components/ui/icons/PencilIcon';
 import { TrashIcon } from '@/components/ui/icons/TrashIcon';
 import { HeartIcon } from '@/components/ui/icons/HeartIcon';
@@ -32,10 +33,6 @@ import { colors } from '@/lib/theme/colors';
 
 const ACK_DURATION_MS = 2500;
 const UPDATED_AT_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const ACTION_ICON_SIZE = 22;
-const ACTION_TOUCH_TARGET = 44;
-const CAPTION_FONT_SIZE = 10;
-const CAPTION_LINE_HEIGHT = 14;
 const COVER_ASPECT_RATIO = 4 / 5;
 
 /**
@@ -427,7 +424,7 @@ export default function FitDetail() {
          * red is "never decorative"). State is fill/glyph only, never color.
          */}
         <View className="mx-gutter mt-6 flex-row border-y border-border-hairline py-2 dark:border-border-hairlineDark">
-          <FitAction
+          <DetailAction
             label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
             caption="Favorite"
             selected={isFavorite}
@@ -435,8 +432,8 @@ export default function FitDetail() {
             disabled={deleting || favoriteBusy}
           >
             <HeartIcon size={ACTION_ICON_SIZE} color={deleting || favoriteBusy ? inkDisabled : inkPrimary} filled={isFavorite} />
-          </FitAction>
-          <FitAction
+          </DetailAction>
+          <DetailAction
             label={isWornToday ? "Remove today's wear entry" : 'Wear today'}
             caption={isWornToday ? 'Worn today' : 'Wear today'}
             selected={isWornToday}
@@ -448,21 +445,21 @@ export default function FitDetail() {
             ) : (
               <CalendarIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
             )}
-          </FitAction>
+          </DetailAction>
           {/* Empty state above already offers its own "Add item" CTA for this exact action -- avoid two differently-labeled controls for the same thing. */}
           {isEmptyFit ? null : (
-            <FitAction label="Edit Fit" caption="Edit" onPress={handleEditPress} disabled={deleting}>
+            <DetailAction label="Edit Fit" caption="Edit" onPress={handleEditPress} disabled={deleting}>
               <PencilIcon size={ACTION_ICON_SIZE} color={deleting ? inkDisabled : inkPrimary} />
-            </FitAction>
+            </DetailAction>
           )}
-          <FitAction
+          <DetailAction
             label="Delete Fit"
             caption="Delete"
             onPress={handleDeletePress}
             disabled={deleting || favoriteBusy || wearBusy || sharing}
           >
             {deleting ? <ActivityIndicator size="small" /> : <TrashIcon size={ACTION_ICON_SIZE} color={inkPrimary} />}
-          </FitAction>
+          </DetailAction>
         </View>
 
         {errorMessage ? (
@@ -480,56 +477,5 @@ export default function FitDetail() {
         ) : null}
       </ScrollView>
     </View>
-  );
-}
-
-type FitActionProps = {
-  /** VoiceOver label -- the full action, which can differ from the short visible caption. */
-  label: string;
-  caption: string;
-  onPress: () => void;
-  disabled: boolean;
-  selected?: boolean;
-  children: ReactNode;
-};
-
-/**
- * One captioned action: icon over a tiny tracked uppercase caption. Defined
- * at module scope (not inside `FitDetail`) so it isn't a new component type
- * on every render. The caption is visual only -- `accessibilityLabel`
- * carries the spoken name, so VoiceOver doesn't read both.
- */
-function FitAction({ label, caption, onPress, disabled, selected, children }: FitActionProps) {
-  // Reactive (unlike `PixelRatio.getFontScale()`), so a Dynamic Type change
-  // while this screen is open re-renders the captions at the new size.
-  const { fontScale: scale } = useWindowDimensions();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={selected === undefined ? undefined : { selected }}
-      onPress={onPress}
-      disabled={disabled}
-      hitSlop={4}
-      // Equal-width columns (`flex-1`) rather than a fixed min width, so four
-      // actions always fit the row; at large Dynamic Type sizes a caption
-      // wraps to a second line instead of truncating or overflowing.
-      className="flex-1 items-center justify-center active:opacity-60"
-      style={{ minHeight: ACTION_TOUCH_TARGET, paddingVertical: 6 }}
-    >
-      {children}
-      <Text
-        variant="meta"
-        numberOfLines={2}
-        className={
-          disabled
-            ? 'mt-1.5 text-center uppercase text-ink-disabled dark:text-ink-disabledDark'
-            : 'mt-1.5 text-center uppercase text-ink-secondary dark:text-ink-secondaryDark'
-        }
-        style={{ fontSize: CAPTION_FONT_SIZE * scale, lineHeight: CAPTION_LINE_HEIGHT * scale, letterSpacing: 1.2 }}
-      >
-        {caption}
-      </Text>
-    </Pressable>
   );
 }
