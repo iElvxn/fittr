@@ -37,11 +37,11 @@ describe('FitsGridCell tile', () => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   });
 
-  it('renders a fixed 4:5 well, whatever the cover size', async () => {
-    await renderCell({ columnWidth: 160 });
+  it('renders a fixed 3:4 well, whatever the cover size', async () => {
+    await renderCell({ columnWidth: 150 });
 
     const style = StyleSheet.flatten(screen.getByTestId('fits-grid-tile').props.style);
-    expect(style.width).toBe(160);
+    expect(style.width).toBe(150);
     expect(style.height).toBe(200);
   });
 
@@ -68,8 +68,8 @@ describe('FitsGridCell tile', () => {
     expect(screen.getByTestId('fits-grid-thumbnail-image').props.contentFit).toBe('contain');
   });
 
-  it('shows no image when there is no cover URL, keeping the 4:5 well', async () => {
-    await renderCell({ thumbnailUrl: null, columnWidth: 160 });
+  it('shows no image when there is no cover URL, keeping the 3:4 well', async () => {
+    await renderCell({ thumbnailUrl: null, columnWidth: 150 });
 
     expect(screen.queryByTestId('fits-grid-thumbnail-image')).toBeNull();
     expect(StyleSheet.flatten(screen.getByTestId('fits-grid-tile').props.style).height).toBe(200);

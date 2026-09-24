@@ -19,7 +19,7 @@ context:
 **Approach:** Rebuild the Fits tab to match the approved mockup (P2 artboards, https://claude.ai/artifact/PDK6UMqaS7gpozd844FxWj). It reuses the Phase 0 tokens and Phase 1's patterns: the header, the prose states and the ink banner.
 
 **Decisions (user-locked):**
-- **Grid:** 2 columns of equal 4:5 tiles in aligned rows, not masonry. Every cover has the same shape, because the canvas is a fixed flex-1 card.
+- **Grid:** 2 columns of equal 3:4 tiles in aligned rows, not masonry. Every cover has the same shape, because the canvas is a fixed flex-1 card.
   - Each tile is `rounded-lg` and filled with the Fit's `canvas_background_color`, or `surface-raised` when that is null.
   - The cover is contained inside the tile and never cropped.
   - The existing favorite heart stays in the top-right corner, and its toggle behavior is unchanged.
@@ -30,7 +30,7 @@ context:
 - **Header:** a `caption` count ("8 Fits", "1 Fit") over a `display` "My Fits", with the existing `CirclePlusButton` ("New Fit") on the right. It reserves the count's height before data loads, as My Closet does.
 - **Chips:** All, Favorites and Worn stay as they are.
 - **States:**
-  - Loading: a uniform 4:5 skeleton in `surface-tile`.
+  - Loading: a uniform 3:4 skeleton in `surface-tile`.
   - No Fits: *No Fits yet.* in italic serif, then "Put pieces from your closet together on the canvas, then save the looks you'd actually wear.", then a primary "Build your first Fit" button that goes to `/new-fit`. No chips.
   - Empty filter:
     - Favorites: *No favorites yet.* / "Tap the heart on a Fit to keep it here."
@@ -63,7 +63,7 @@ context:
 | Never worn | no rows for fit B, updated_at 2026-09-21 | line 2 "Saved Sep 21" (locale short month + day); B not in Worn | N/A |
 | Worn read fails | `fit_wears` query errors | grid renders, every tile shows "Saved …", Worn filter empty | fails open, Sentry unless no-connection |
 | No background | canvas_background_color null | tile fill `surface-raised` (light/dark) | N/A |
-| No cover URL | cover_path null or unsigned | 4:5 tile with its fill, no image | N/A |
+| No cover URL | cover_path null or unsigned | 3:4 tile with its fill, no image | N/A |
 | Empty filter | Favorites with no favorites | *No favorites yet.* + Show all Fits → All | N/A |
 | Save ack with filter | filter Worn, returns with fitSaved=1 | banner shows, filter resets to All | N/A |
 
@@ -82,29 +82,29 @@ context:
   - **Keep the query key `['wornFitIds', userId]`**, because `app/fit/[id].tsx:195` invalidates it after "Wear today".
   - Leave `getTodayWornFitIds`/`useTodayWornFitIds` untouched.
 - `components/fits/FitsGridCell.tsx`:
-  - Fixed 4:5 height (`columnWidth * 1.25`), `contentFit="contain"`.
+  - Fixed 3:4 height (`columnWidth * 4 / 3`), `contentFit="contain"`.
   - Fill from a new `backgroundColor: string | null` prop, falling back to `bg-surface-raised dark:bg-surface-raisedDark`.
   - Name in `title`-sized Newsreader, either through a `Text` style override or a smaller size. Match the mockup: 17/21 at 2 columns, `numberOfLines={1}`.
   - New `meta: string` prop rendered as `caption` `ink-secondary`.
   - Remove `useImageAspectRatio`. Keep the heart code as it is.
 - `lib/theme/useImageAspectRatio.ts`: delete it once `FitsGridCell` stops using it; it has no other users.
-- `components/fits/FitsGridSkeleton.tsx`: 4:5 `surface-tile` blocks with two text bars, 2 columns, 3 rows.
+- `components/fits/FitsGridSkeleton.tsx`: 3:4 `surface-tile` blocks with two text bars, 2 columns, 3 rows.
 - Date format: add a module-level `Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })`, like `app/fit/[id].tsx:34`, and build "Saved {date}" in `fits.tsx` or a small pure helper.
 - Tests to update:
   - `__tests__/fits.test.tsx` (ack text, empty and filter copy, header);
-  - `__tests__/fitsGridCell.test.tsx` (the aspect-ratio tests become fixed-4:5 and fill tests);
+  - `__tests__/fitsGridCell.test.tsx` (the aspect-ratio tests become fixed-3:4 and fill tests);
   - `__tests__/wornFitIds.test.ts` (Set → counts).
 
 ## Tasks & Acceptance
 
 **Execution:**
 - [x] `__tests__/wornFitIds.test.ts`: tests first for `getFitWearCounts`: the counts per Fit, empty rows, and the no-connection error.
-- [x] `__tests__/fitsGridCell.test.tsx`: tests first for the fixed 4:5 well, the background fill and null fallback, contain, the name and meta lines, and that the heart toggle still passes.
+- [x] `__tests__/fitsGridCell.test.tsx`: tests first for the fixed 3:4 well, the background fill and null fallback, contain, the name and meta lines, and that the heart toggle still passes.
 - [x] `__tests__/fits.test.tsx`: update it and add header count, "Worn n×" vs "Saved Mon D", the worn read failing open, both filter-empty states with Show all Fits, the empty-state button, and the banner resetting the filter.
 - [x] Implement `wornFitIds.ts`, `FitsGridCell`, `FitsGridSkeleton` and `fits.tsx`, then delete `useImageAspectRatio.ts`.
 
 **Acceptance Criteria:**
-- Given Fits in light or dark mode, when My Fits opens, then it matches the P2 mockup: caption count, serif title with "+", chips, and 2 columns of equal 4:5 color-filled tiles with the heart, serif names and caption lines.
+- Given Fits in light or dark mode, when My Fits opens, then it matches the P2 mockup: caption count, serif title with "+", chips, and 2 columns of equal 3:4 color-filled tiles with the heart, serif names and caption lines.
 - Given a Fit marked worn from Fit detail, when the user returns to My Fits, then its count has gone up by one.
 
 ## Verification
@@ -120,6 +120,10 @@ context:
   - hearts toggle correctly;
   - Worn counts go up after "Wear today";
   - the empty, filter-empty, loading and banner states each appear correctly.
+
+## Spec Change Log
+
+- 2026-09-24, after review: the user tried a 3:4 tile on a device and preferred it to 4:5, because outfits are tall and the `flex-1` builder canvas is usually taller than 4:5. The tile ratio, the skeleton and their tests are now 3:4 (`TILE_HEIGHT_RATIO = 4 / 3`). The user chose to leave the builder canvas ratio unchanged, so covers are still contained on the canvas color.
 
 ## Review Triage Log
 

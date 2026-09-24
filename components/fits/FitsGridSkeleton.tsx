@@ -11,7 +11,7 @@ type Props = {
 };
 
 /**
- * My Fits' loading state: uniform 4:5 `surface-tile` wells, each with two
+ * My Fits' loading state: uniform 3:4 `surface-tile` wells, each with two
  * short text bars under it, matching the real grid's shape (EXPERIENCE.md's
  * "never a bare spinner" rule). Hidden from screen readers -- it carries no
  * content.

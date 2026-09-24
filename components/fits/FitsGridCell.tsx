@@ -10,8 +10,8 @@ import { FitError } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import { colors } from '@/lib/theme/colors';
 
-/** Height ÷ width of every My Fits tile (4:5); shared with `FitsGridSkeleton`. */
-export const TILE_HEIGHT_RATIO = 1.25;
+/** Height ÷ width of every My Fits tile (3:4); shared with `FitsGridSkeleton`. */
+export const TILE_HEIGHT_RATIO = 4 / 3;
 /** The mockup's 2-column name size -- `title`'s serif, scaled down for a grid cell. */
 const NAME_FONT_SIZE = 17;
 const NAME_LINE_HEIGHT = 21;
@@ -34,7 +34,7 @@ type Props = {
 };
 
 /**
- * My Fits' grid tile: a fixed 4:5 well filled with the Fit's own canvas
+ * My Fits' grid tile: a fixed 3:4 well filled with the Fit's own canvas
  * color (`surface-raised` when it has none). The builder's canvas is
  * `flex-1`, so covers vary in shape by device; whatever its shape, the
  * cover is contained (letterboxed) -- never cropped -- on that same color,

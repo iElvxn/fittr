@@ -319,7 +319,7 @@ describe('Fits tab', () => {
   });
 
   describe('loading', () => {
-    it('shows a uniform 4:5 skeleton grid, not a bare spinner, while loading', async () => {
+    it('shows a uniform 3:4 skeleton grid, not a bare spinner, while loading', async () => {
       mockFits({ data: undefined, isLoading: true });
 
       await renderFits();
@@ -329,7 +329,7 @@ describe('Fits tab', () => {
       expect(tiles).toHaveLength(6);
       for (const tile of tiles) {
         const { width, height } = tile.props.style;
-        expect(height / width).toBeCloseTo(1.25);
+        expect(height / width).toBeCloseTo(4 / 3);
         expect(tile.props.className).toContain('bg-surface-tile');
       }
     });
