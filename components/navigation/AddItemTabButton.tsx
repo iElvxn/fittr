@@ -14,8 +14,9 @@ type Props = {
  * The tab bar's center action -- replaces the "Fits" tab slot (still an
  * unbuilt Phase 2 placeholder) with the app's actual highest-value action,
  * "Add item," one tap away from anywhere. Sits flush and vertically
- * centered within the bar, like the other tabs, just accent-filled and
- * icon-only to stand out.
+ * centered within the bar, like the other tabs, just ink-filled and
+ * icon-only to stand out (fill = `inkPrimary`, glyph = `surfaceBase`, the
+ * same inverse pair as the primary `Button`, so it flips with the scheme).
  *
  * The received `style` (from React Navigation's per-item layout, which
  * varies its flexDirection/justifyContent by platform/variant) is applied
@@ -25,7 +26,7 @@ type Props = {
  */
 export function AddItemTabButton({ onPress, style }: Props) {
   const scheme = useColorScheme();
-  const accent = scheme === 'dark' ? colors.dark.accent : colors.light.accent;
+  const palette = scheme === 'dark' ? colors.dark : colors.light;
 
   return (
     <Pressable
@@ -42,7 +43,7 @@ export function AddItemTabButton({ onPress, style }: Props) {
           borderRadius: CIRCLE_SIZE / 2,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: accent,
+          backgroundColor: palette.inkPrimary,
           shadowColor: '#000',
           shadowOpacity: 0.18,
           shadowRadius: 8,
@@ -50,7 +51,7 @@ export function AddItemTabButton({ onPress, style }: Props) {
           elevation: 6,
         }}
       >
-        <PlusIcon size={24} color={colors.light.surfaceRaised} />
+        <PlusIcon size={24} color={palette.surfaceBase} />
       </View>
     </Pressable>
   );

@@ -122,7 +122,7 @@ export function TemplatePicker({ onSelectTemplate, onSkip }: Props) {
               key={template.id}
               className={
                 index === pageIndex
-                  ? 'h-2 w-2 rounded-full bg-accent dark:bg-accentDark'
+                  ? 'h-2 w-2 rounded-full bg-ink-primary dark:bg-ink-primaryDark'
                   : 'h-2 w-2 rounded-full bg-border-hairline dark:bg-border-hairlineDark'
               }
             />

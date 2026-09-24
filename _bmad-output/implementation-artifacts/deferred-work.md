@@ -130,3 +130,23 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-3-share-a-fit.md`
   summary: `supabase/.temp/` (Supabase CLI state) is untracked but missing from `.gitignore`, so it could be committed by accident.
   evidence: Code-review finding (blind-hunter). It predates this story; `git status` showed it at the start of the session.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: The `expo-splash-screen` config in `app.json` has only a light `backgroundColor` (`#F6F4EE`), so dark-mode users see a cream flash before the `#1A1816` app base on cold start.
+  evidence: Edge-case and blind reviewers. The same gap existed before v2 (light `#FAFAF9` vs dark `#000000`). The fix is `"dark": { "backgroundColor": "#1A1816" }` in the plugin config, and it only takes effect after a dev-client rebuild.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: The new `surface-tile` token is not used anywhere yet; photo wells (Fit detail collage, `FitsGridCell`, `FitsGridSkeleton`, `FitItemsList`) still use `bg-surface-raised`, and `FitsGridCell:114` pairs light `bg-surface-raised` with `dark:bg-surface-baseDark`.
+  evidence: Blind reviewer. Phase 0 deliberately left screen work to Phases 1–7, so apply the photo-well treatment when the grids and detail screens are redesigned.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: Hand-styled tracked uppercase labels (`SectionLabel`, the meta lines at `app/fit/[id].tsx:416` and `app/item/[id].tsx:255`, the Fit-detail action captions and the item delete label) still use `label`/`meta` plus Tailwind `tracking-*` instead of the new `caption` role, so their tracking does not scale with Dynamic Type.
+  evidence: Blind reviewer. These predate the change; move them to `caption` during the screen phases.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: Unselected chips are marked only by a `border-hairline` outline, which is about 1.2:1 against the base surface. That is far below WCAG 1.4.11's 3:1 for non-text UI, and no test covers non-text contrast or `ink-disabled`.
+  evidence: Blind reviewer, verdict medium. The old palette had the same problem (`#E7E5E4` on `#FAFAF9`), so it predates v2. The label text (ink-secondary, AA) still identifies each chip, but the selected/unselected boundary relies on the fill.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: Two color changes have no rendered test: the Save Fit check icon's scheme-aware color (`app/new-fit.tsx:394`), and the `text-ink-primary dark:text-ink-primaryDark` display names on Fit and Item detail. A regression could hide them in dark mode.
+  evidence: Verification-gap reviewer (disposition defer). Consider having `Button` pass an inverse icon color so callers don't compute it by hand.

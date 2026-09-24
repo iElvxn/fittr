@@ -91,7 +91,7 @@ Behavioral. Visual specs live in `DESIGN.md.Components`.
 Behavioral. Visual contrast lives in `DESIGN.md`.
 
 - VoiceOver: every icon-only control (tab bar items, favorite heart, close/back buttons) has an accessible label; the wear-streak count announces as "N day streak," not just the bare number.
-- Dynamic Type: since `display`/`title`/`body` use custom fonts (Cormorant/Montserrat), components must scale against the user's font-size setting explicitly — verified at the largest accessibility size with no truncation or overlap, especially on the Fit-builder canvas where item labels sit over photography.
+- Dynamic Type: since `display`/`title`/`body` use custom fonts (Newsreader/Montserrat), components must scale against the user's font-size setting explicitly — verified at the largest accessibility size with no truncation or overlap, especially on the Fit-builder canvas where item labels sit over photography.
 - Reduce Motion: skip the wear-streak increment animation and any press-spring easing; show the end state immediately.
 - Touch targets ≥44×44pt everywhere, including wardrobe/Fit grid cells and canvas items — use `hitSlop` when the visual cutout is smaller than that.
 - Fittr has no accent color at all — favorited/active/selected states are shown through weight and fill-vs-outline (see `DESIGN.md.Components`), which also means color is never relied on as a signal anywhere in the product.

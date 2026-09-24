@@ -31,7 +31,7 @@ export function CategoryPicker({ value, onChange }: Props) {
               variant="body"
               className={
                 selected
-                  ? 'text-surface-raised dark:text-surface-baseDark'
+                  ? 'text-surface-base dark:text-surface-baseDark'
                   : 'text-ink-primary dark:text-ink-primaryDark'
               }
             >

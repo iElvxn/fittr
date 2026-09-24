@@ -207,7 +207,7 @@ export default function ItemDetail() {
           ) : (
             <View
               testID="item-detail-cutout-fallback"
-              className="h-full w-full rounded-sm bg-surface-raised dark:bg-surface-raisedDark"
+              className="h-full w-full rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
             />
           )}
         </View>
@@ -249,7 +249,7 @@ export default function ItemDetail() {
           </View>
         ) : (
           <View>
-            <Text variant="display" className="mb-2 text-accent dark:text-accentDark">
+            <Text variant="display" className="mb-2 text-ink-primary dark:text-ink-primaryDark">
               {item.name?.trim() || CATEGORY_LABELS[item.category]}
             </Text>
             <Text variant="meta" className="mb-9 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">

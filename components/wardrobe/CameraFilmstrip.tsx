@@ -43,7 +43,7 @@ export function CameraFilmstrip({ shots }: Props) {
             source={{ uri: shot.photoUri }}
             style={{ width: THUMB_SIZE, height: THUMB_SIZE }}
             contentFit="cover"
-            className="rounded-sm"
+            className="rounded-lg"
           />
           <View
             className="absolute bottom-1 right-1 items-center justify-center rounded-full bg-surface-base dark:bg-surface-baseDark"

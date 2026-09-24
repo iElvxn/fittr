@@ -410,7 +410,7 @@ export default function FitDetail() {
         </View>
 
         <View className="px-gutter pt-6">
-          <Text variant="display" numberOfLines={3} className="text-accent dark:text-accentDark">
+          <Text variant="display" numberOfLines={3} className="text-ink-primary dark:text-ink-primaryDark">
             {fit.name}
           </Text>
           <Text variant="meta" className="mt-2 uppercase tracking-widest text-ink-secondary dark:text-ink-secondaryDark">

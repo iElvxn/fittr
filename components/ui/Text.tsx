@@ -8,13 +8,16 @@ type Props = TextProps & {
 };
 
 /**
- * Fraunces/Montserrat are custom fonts, so they don't ride iOS Dynamic
+ * Newsreader/Montserrat are custom fonts, so they don't ride iOS Dynamic
  * Type's automatic scaling the way system fonts do — this multiplies the
- * base size by the user's font-scale setting explicitly, per the
- * Accessibility Floor in EXPERIENCE.md.
+ * base size (and tracking, where a role has any) by the user's font-scale
+ * setting explicitly, per the Accessibility Floor in EXPERIENCE.md.
  */
 export function Text({ variant = 'body', style, className, ...props }: Props) {
-  const { fontFamily, fontSize, lineHeight } = typeScale[variant];
+  const role = typeScale[variant];
+  const { fontFamily, fontSize, lineHeight } = role;
+  const letterSpacing = 'letterSpacing' in role ? role.letterSpacing : undefined;
+  const textTransform = 'textTransform' in role ? role.textTransform : undefined;
   const scale = PixelRatio.getFontScale();
 
   return (
@@ -26,6 +29,8 @@ export function Text({ variant = 'body', style, className, ...props }: Props) {
           fontFamily,
           fontSize: fontSize * scale,
           lineHeight: lineHeight * scale,
+          ...(letterSpacing !== undefined ? { letterSpacing: letterSpacing * scale } : null),
+          ...(textTransform ? { textTransform } : null),
         },
         style,
       ]}

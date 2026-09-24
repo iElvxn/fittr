@@ -31,7 +31,7 @@ export function WardrobeGridCell({ category, name, thumbnailUrl, size, onPress }
           contentFit="contain"
         />
       ) : (
-        <View testID="wardrobe-thumbnail-fallback" className="h-full w-full rounded-sm bg-surface-raised dark:bg-surface-raisedDark" />
+        <View testID="wardrobe-thumbnail-fallback" className="h-full w-full rounded-lg bg-surface-raised dark:bg-surface-raisedDark" />
       )}
     </Pressable>
   );

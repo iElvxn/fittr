@@ -1,32 +1,50 @@
 import {
-  Fraunces_500Medium,
-  Fraunces_600SemiBold,
-} from '@expo-google-fonts/fraunces';
-import {
   Montserrat_400Regular,
   Montserrat_500Medium,
 } from '@expo-google-fonts/montserrat';
+import {
+  Newsreader_400Regular,
+  Newsreader_400Regular_Italic,
+  Newsreader_500Medium,
+} from '@expo-google-fonts/newsreader';
 
 /** Passed to `useFonts` in the root layout. Keys are used as `fontFamily` values. */
 export const appFonts = {
-  Fraunces_600SemiBold,
-  Fraunces_500Medium,
+  Newsreader_400Regular,
+  Newsreader_500Medium,
+  Newsreader_400Regular_Italic,
   Montserrat_400Regular,
   Montserrat_500Medium,
 };
 
+type TypeStyle = {
+  fontFamily: keyof typeof appFonts;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing?: number;
+  textTransform?: 'uppercase';
+};
+
 /**
- * DESIGN.md's five type roles, mapped to the loaded font family + base
- * size/line-height. Fraunces (display/title) swapped in for Cormorant for a
- * more idiosyncratic, editorial-fashion display face — its optical-size wonk
- * gives it more character than a conventional garalde serif at large sizes.
+ * DESIGN.md's six type roles, mapped to the loaded font family + base
+ * size/line-height. Newsreader (display/title) is the v2 editorial serif --
+ * set at regular weight, where its fine contrast reads most refined;
+ * Montserrat carries everything read at length. `caption` is the small,
+ * tracked, uppercase label used for chips, button labels and section labels.
  */
 export const typeScale = {
-  display: { fontFamily: 'Fraunces_600SemiBold', fontSize: 34, lineHeight: 40 },
-  title: { fontFamily: 'Fraunces_500Medium', fontSize: 22, lineHeight: 28 },
+  display: { fontFamily: 'Newsreader_400Regular', fontSize: 36, lineHeight: 40, letterSpacing: -0.4 },
+  title: { fontFamily: 'Newsreader_400Regular', fontSize: 24, lineHeight: 30 },
   body: { fontFamily: 'Montserrat_400Regular', fontSize: 16, lineHeight: 22 },
   label: { fontFamily: 'Montserrat_500Medium', fontSize: 14, lineHeight: 20 },
   meta: { fontFamily: 'Montserrat_400Regular', fontSize: 13, lineHeight: 18 },
-} as const;
+  caption: {
+    fontFamily: 'Montserrat_500Medium',
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+} as const satisfies Record<string, TypeStyle>;
 
 export type TypeRole = keyof typeof typeScale;

@@ -12,8 +12,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/montserrat": "^0.4.2",
+    "@expo-google-fonts/newsreader": "^0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
     "@sentry/react-native": "~7.11.0",

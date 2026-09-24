@@ -17,7 +17,7 @@ export function WardrobeGridSkeleton({ columns, cellSize, gap, rows = 4 }: Props
         <View
           key={index}
           style={{ width: cellSize, height: cellSize }}
-          className="rounded-sm bg-surface-raised dark:bg-surface-raisedDark"
+          className="rounded-lg bg-surface-raised dark:bg-surface-raisedDark"
         />
       ))}
     </View>
