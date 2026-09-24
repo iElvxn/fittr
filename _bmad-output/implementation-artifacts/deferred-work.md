@@ -150,3 +150,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
   summary: Two color changes have no rendered test: the Save Fit check icon's scheme-aware color (`app/new-fit.tsx:394`), and the `text-ink-primary dark:text-ink-primaryDark` display names on Fit and Item detail. A regression could hide them in dark mode.
   evidence: Verification-gap reviewer (disposition defer). Consider having `Button` pass an inverse icon color so callers don't compute it by hand.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-1-my-closet.md`
+  summary: My Closet's empty-closet and no-results states are plain views, so pull-to-refresh doesn't work there; it's only on the grid. A piece added on another device won't appear until the user leaves the tab.
+  evidence: Blind and edge-case reviewers. The pre-v2 screen had the same gap. The fix is to render those states through the FlashList's `ListEmptyComponent`, or wrap them in a refreshable ScrollView.
