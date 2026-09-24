@@ -1,4 +1,4 @@
-import { act, render, screen, userEvent } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, userEvent } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
@@ -64,6 +64,7 @@ function mockWearCounts(overrides: Record<string, unknown> = {}) {
     isLoading: false,
     isError: false,
     error: null,
+    refetch: jest.fn(),
     ...overrides,
   });
 }
@@ -275,6 +276,32 @@ describe('Fits tab', () => {
       expect(screen.getByText(SAVED_LABEL)).toBeTruthy();
       expect(Sentry.captureException).not.toHaveBeenCalled();
     });
+  });
+
+  it('refetches Fits and wear counts on pull to refresh, spinning only for the pull', async () => {
+    let finishFits: () => void = () => {};
+    const refetch = jest.fn(() => new Promise<void>((resolve) => (finishFits = resolve)));
+    const refetchWearCounts = jest.fn(() => Promise.resolve());
+    mockFits({ data: [fit()], refetch });
+    mockWearCounts({ refetch: refetchWearCounts });
+
+    await renderFits();
+    const grid = screen.getByTestId('fits-grid');
+    expect(grid.props.refreshing).toBe(false);
+
+    await act(async () => {
+      fireEvent(grid, 'refresh');
+    });
+
+    expect(refetch).toHaveBeenCalled();
+    expect(refetchWearCounts).toHaveBeenCalled();
+    expect(screen.getByTestId('fits-grid').props.refreshing).toBe(true);
+
+    await act(async () => {
+      finishFits();
+    });
+
+    expect(screen.getByTestId('fits-grid').props.refreshing).toBe(false);
   });
 
   it('always keeps New Fit reachable even with saved Fits present', async () => {

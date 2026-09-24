@@ -86,8 +86,21 @@ export default function Fits() {
     isLoading: isWornLoading,
     isError: isWornError,
     error: wornError,
+    refetch: refetchWearCounts,
   } = useFitWearCounts(userId);
   const [filter, setFilter] = useState<FitsFilter>('all');
+
+  // Tracks only a pull the user made, not the focus refetch below, so the
+  // spinner doesn't flash every time the tab regains focus.
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  async function handlePullRefresh() {
+    setIsPullRefreshing(true);
+    try {
+      await Promise.all([refetch(), refetchWearCounts()]);
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }
 
   // The banner confirms a Fit was just saved -- make sure it's actually
   // visible, not hidden behind a leftover Favorites/Worn filter. Adjusted
@@ -284,6 +297,8 @@ export default function Fits() {
           contentContainerClassName="px-gutter pt-5"
           contentContainerStyle={{ paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ gap: COLUMN_GAP, marginBottom: ROW_GAP }}
+          refreshing={isPullRefreshing}
+          onRefresh={handlePullRefresh}
           renderItem={renderCell}
         />
       )}
