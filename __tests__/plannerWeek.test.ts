@@ -1,17 +1,6 @@
 import { toLocalDate } from '@/lib/fits/localDate';
 import { addDays, daysBetween, shiftWeek, weekDays, weekRangeLabel, weekStartOf } from '@/lib/planner/week';
 
-// A zone with daylight saving, so the DST case below actually crosses a
-// 25-hour day whatever the machine's own zone is. Restored afterwards
-// because Jest may reuse this worker for other suites.
-const originalTZ = process.env.TZ;
-beforeAll(() => {
-  process.env.TZ = 'America/Los_Angeles';
-});
-afterAll(() => {
-  process.env.TZ = originalTZ;
-});
-
 describe('toLocalDate', () => {
   it('formats the device-local calendar date, zero-padded', () => {
     expect(toLocalDate(new Date(2025, 0, 5, 23, 30))).toBe('2025-01-05');
@@ -52,7 +41,9 @@ describe('addDays / shiftWeek / daysBetween', () => {
   });
 
   it('is not thrown off by a daylight-saving change inside the span', () => {
-    // US DST ends Nov 2 2025 -- a 25-hour day must still count as one.
+    // US DST ends Nov 2 2025 -- a 25-hour day must still count as one. The
+    // first line proves the run really is in a DST zone (`jest.config.js`
+    // pins it), so this can't pass vacuously under UTC.
     expect(new Date(2025, 10, 3).getTime() - new Date(2025, 10, 1).getTime()).toBe(49 * 3600 * 1000);
     expect(daysBetween('2025-11-01', '2025-11-03')).toBe(2);
     expect(addDays('2025-11-01', 2)).toBe('2025-11-03');
