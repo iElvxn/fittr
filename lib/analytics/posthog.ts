@@ -31,3 +31,8 @@ export function trackSignedUp(method: SignUpMethod) {
 export function trackItemAdded(source: CaptureSource, category: WardrobeItemCategory, batchSize: number) {
   posthog.capture('item_added', { source, category, batch_size: batchSize });
 }
+
+/** Fired on every successful Planner assign or replace; `days_ahead` is negative for a past day. */
+export function trackFitPlanned(daysAhead: number) {
+  posthog.capture('fit_planned', { days_ahead: daysAhead });
+}
