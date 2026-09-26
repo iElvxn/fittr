@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from '@/lib/fits/errors';
-import { addDays } from './week';
+import { addDays, monthEndOf } from './week';
 
 export type PlannedFitRow = {
   planned_on: string;
@@ -97,5 +97,29 @@ export function useWeekWears(userId: string | undefined, weekStart: string) {
     queryKey: ['fitWearsRange', userId, weekStart],
     queryFn: () => getWearsBetween(weekStart, addDays(weekStart, 6)),
     enabled: Boolean(userId),
+  });
+}
+
+/**
+ * Story 5.3's month view: the same reads over the whole month. The `'month'`
+ * key segment keeps a month whose 1st is a Monday from sharing the entry of
+ * the week that starts that day. Write invalidations (`['plannedFits',
+ * userId]`, `invalidateWearQueries`) are prefixes, so they cover these too.
+ * `enabled` is false while the week view is showing.
+ */
+export function usePlannedMonth(userId: string | undefined, monthStart: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['plannedFits', userId, 'month', monthStart],
+    queryFn: () => getPlannedFits(monthStart, monthEndOf(monthStart)),
+    enabled: Boolean(userId) && enabled,
+  });
+}
+
+/** Mirrors `usePlannedMonth` for the month's wears. */
+export function useMonthWears(userId: string | undefined, monthStart: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['fitWearsRange', userId, 'month', monthStart],
+    queryFn: () => getWearsBetween(monthStart, monthEndOf(monthStart)),
+    enabled: Boolean(userId) && enabled,
   });
 }

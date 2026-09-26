@@ -14,7 +14,9 @@ import {
   getWearsBetween,
   planFit,
   unplanDay,
+  useMonthWears,
   usePlannedFits,
+  usePlannedMonth,
   useWeekWears,
 } from '@/lib/planner/plannedFits';
 import { supabase } from '@/lib/supabase';
@@ -208,6 +210,59 @@ describe('week hooks', () => {
 
     await renderHook(() => usePlannedFits(undefined, '2025-09-29'), { wrapper });
     await renderHook(() => useWeekWears(undefined, '2025-09-29'), { wrapper });
+
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+});
+
+describe('month hooks', () => {
+  let queryClient: QueryClient;
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: queryClient }, children);
+
+  beforeEach(() => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  });
+
+  it('usePlannedMonth reads the first to the last of the month under a month key', async () => {
+    const { gte, lte } = mockRangeChain({ data: [], error: null });
+
+    const { result } = await renderHook(() => usePlannedMonth('user-1', '2026-09-01', true), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(gte).toHaveBeenCalledWith('planned_on', '2026-09-01');
+    expect(lte).toHaveBeenCalledWith('planned_on', '2026-09-30');
+    expect(queryClient.getQueryData(['plannedFits', 'user-1', 'month', '2026-09-01'])).toEqual([]);
+  });
+
+  it('useMonthWears reads the same month under its own key', async () => {
+    const { gte, lte } = mockRangeChain({ data: [], error: null });
+
+    const { result } = await renderHook(() => useMonthWears('user-1', '2026-02-01', true), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(gte).toHaveBeenCalledWith('worn_on', '2026-02-01');
+    expect(lte).toHaveBeenCalledWith('worn_on', '2026-02-28');
+    expect(queryClient.getQueryData(['fitWearsRange', 'user-1', 'month', '2026-02-01'])).toEqual(new Set());
+  });
+
+  it("never shares a week's cache entry, even for a month starting on Monday", async () => {
+    // Jun 1 2026 is a Monday, so the month and its first week start on the same date.
+    mockRangeChain({ data: [], error: null });
+
+    await renderHook(() => usePlannedMonth('user-1', '2026-06-01', true), { wrapper });
+
+    await waitFor(() => expect(queryClient.getQueryData(['plannedFits', 'user-1', 'month', '2026-06-01'])).toEqual([]));
+    expect(queryClient.getQueryData(['plannedFits', 'user-1', '2026-06-01'])).toBeUndefined();
+  });
+
+  it('does not read while the month view is off, or before there is a user', async () => {
+    mockRangeChain({ data: [], error: null });
+
+    await renderHook(() => usePlannedMonth('user-1', '2026-09-01', false), { wrapper });
+    await renderHook(() => useMonthWears('user-1', '2026-09-01', false), { wrapper });
+    await renderHook(() => usePlannedMonth(undefined, '2026-09-01', true), { wrapper });
+    await renderHook(() => useMonthWears(undefined, '2026-09-01', true), { wrapper });
 
     expect(supabase.from).not.toHaveBeenCalled();
   });
