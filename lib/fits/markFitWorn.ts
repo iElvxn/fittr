@@ -1,4 +1,5 @@
 import * as Crypto from 'expo-crypto';
+import type { QueryClient } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
@@ -54,4 +55,18 @@ export async function unmarkFitWornToday(userId: string, fitId: string): Promise
     }
     throw error;
   }
+}
+
+/**
+ * Every read that reflects a wear, invalidated together after any wear
+ * write (Home's Mark worn, Fit detail's Wear today): the My Fits counts and
+ * Worn filter, today's worn state, the Planner's week "Worn" captions and
+ * the wear streak. Resolves once every refetch has landed.
+ */
+export async function invalidateWearQueries(queryClient: QueryClient, userId: string): Promise<void> {
+  await Promise.all(
+    ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates'].map((key) =>
+      queryClient.invalidateQueries({ queryKey: [key, userId] }),
+    ),
+  );
 }

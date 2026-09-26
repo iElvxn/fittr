@@ -24,11 +24,12 @@ import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { deleteFit } from '@/lib/fits/deleteFit';
 import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
-import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
+import { invalidateWearQueries, markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { shareFitCover } from '@/lib/fits/shareFit';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
+import { trackFitWorn } from '@/lib/analytics/posthog';
 import { colors } from '@/lib/theme/colors';
 
 const ACK_DURATION_MS = 2500;
@@ -183,15 +184,13 @@ export default function FitDetail() {
     try {
       if (next) {
         await markFitWornToday(userId, fit.id);
+        trackFitWorn('detail');
       } else {
         await unmarkFitWornToday(userId, fit.id);
       }
       // Awaited, same reasoning as `handleToggleFavorite` -- clear the
-      // override only once both refetches have actually landed.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['wornFitIds', userId] }),
-        queryClient.invalidateQueries({ queryKey: ['todayWornFitIds', userId] }),
-      ]);
+      // override only once every wear read has actually refetched.
+      await invalidateWearQueries(queryClient, userId);
       setWornTodayOverride(null);
     } catch (error) {
       setWornTodayOverride(!next);
