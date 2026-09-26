@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * `crypto.randomUUID()` would need Node's types, but this project's
@@ -847,5 +847,201 @@ describeIfConfigured('fits trigger: favorite-only update does not bump updated_a
       await admin.from('fits').delete().eq('id', fitId);
       if (userId) await admin.auth.admin.deleteUser(userId);
     }
+  });
+});
+
+/**
+ * Story 5.1: cross-user isolation for `planned_fits` (0012_planned_fits.sql).
+ * Unlike the blocks above, the two users and their Fits are shared across
+ * the cases (created once in `beforeAll`) -- each case only adds and cleans
+ * up its own plan rows, so there's no need to pay for four more user pairs.
+ * Plans are hard-deleted, so there's a real DELETE policy to check, and
+ * insert/update additionally require the Fit to be the caller's own live Fit.
+ */
+describeIfConfigured('planned_fits RLS: cross-user isolation', () => {
+  jest.setTimeout(30000);
+
+  // Created in `beforeAll`, not here: `describe.skip` still runs this body,
+  // and `createClient` throws without a URL.
+  let admin: SupabaseClient;
+  let client1: SupabaseClient;
+  let client2: SupabaseClient;
+  const password = 'Test-password-123!';
+  const fit1Id = randomUUID();
+  const fit1bId = randomUUID();
+  const deletedFitId = randomUUID();
+  const fit2Id = randomUUID();
+  let user1Id: string | undefined;
+  let user2Id: string | undefined;
+
+  beforeAll(async () => {
+    admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+    client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+
+    const stamp = Date.now();
+    const email1 = `rls-planned-fits-1-${stamp}@mailinator.com`;
+    const email2 = `rls-planned-fits-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    user1Id = created1.data.user?.id;
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    user2Id = created2.data.user?.id;
+
+    expect((await client1.auth.signInWithPassword({ email: email1, password })).error).toBeNull();
+    expect((await client2.auth.signInWithPassword({ email: email2, password })).error).toBeNull();
+
+    const fits1 = await client1.from('fits').insert(
+      [fit1Id, fit1bId, deletedFitId].map((id) => ({
+        id,
+        user_id: user1Id,
+        name: 'Weekend brunch',
+        cover_path: `${user1Id}/fits/${id}/cover.png`,
+      })),
+    );
+    expect(fits1.error).toBeNull();
+    const softDelete = await client1
+      .from('fits')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', deletedFitId);
+    expect(softDelete.error).toBeNull();
+
+    const fits2 = await client2.from('fits').insert({
+      id: fit2Id,
+      user_id: user2Id,
+      name: 'Office day',
+      cover_path: `${user2Id}/fits/${fit2Id}/cover.png`,
+    });
+    expect(fits2.error).toBeNull();
+  });
+
+  afterEach(async () => {
+    if (user1Id) await admin.from('planned_fits').delete().eq('user_id', user1Id);
+    if (user2Id) await admin.from('planned_fits').delete().eq('user_id', user2Id);
+  });
+
+  afterAll(async () => {
+    await admin.from('fits').delete().in('id', [fit1Id, fit1bId, deletedFitId, fit2Id]);
+    if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+    if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+  });
+
+  async function planAsUser1(plannedOn: string, fitId = fit1Id) {
+    const { data, error } = await client1
+      .from('planned_fits')
+      .upsert({ user_id: user1Id, planned_on: plannedOn, fit_id: fitId }, { onConflict: 'user_id,planned_on' })
+      .select('id, fit_id')
+      .single();
+    expect(error).toBeNull();
+    return data!;
+  }
+
+  it("a second user cannot SELECT the first user's plan", async () => {
+    const plan = await planAsUser1('2026-09-25');
+
+    // The owner still reads it back.
+    const own = await client1.from('planned_fits').select('id').eq('id', plan.id).maybeSingle();
+    expect(own.data?.id).toBe(plan.id);
+
+    const { data, error } = await client2.from('planned_fits').select('*').eq('id', plan.id).maybeSingle();
+
+    // RLS denies the row rather than erroring: an empty result, not a thrown error.
+    expect(error).toBeNull();
+    expect(data).toBeNull();
+  });
+
+  it("a second user cannot INSERT a plan under the first user's user_id", async () => {
+    const impersonated = await client2
+      .from('planned_fits')
+      .insert({ user_id: user1Id, planned_on: '2026-09-25', fit_id: fit1Id });
+    expect(impersonated.error).not.toBeNull();
+
+    const { data } = await admin.from('planned_fits').select('id').eq('user_id', user1Id!);
+    expect(data).toEqual([]);
+  });
+
+  it("a user cannot plan another user's Fit, even under their own user_id", async () => {
+    const borrowed = await client2
+      .from('planned_fits')
+      .insert({ user_id: user2Id, planned_on: '2026-09-25', fit_id: fit1Id });
+    expect(borrowed.error).not.toBeNull();
+
+    // Their own Fit still goes through.
+    const own = await client2
+      .from('planned_fits')
+      .insert({ user_id: user2Id, planned_on: '2026-09-25', fit_id: fit2Id });
+    expect(own.error).toBeNull();
+  });
+
+  it('the owner cannot plan a soft-deleted Fit', async () => {
+    const result = await client1
+      .from('planned_fits')
+      .insert({ user_id: user1Id, planned_on: '2026-09-25', fit_id: deletedFitId });
+    expect(result.error).not.toBeNull();
+  });
+
+  it("the owner's upsert replaces the day's Fit in place, keeping one row and its id", async () => {
+    const first = await planAsUser1('2026-09-25', fit1Id);
+    const replaced = await planAsUser1('2026-09-25', fit1bId);
+
+    expect(replaced.id).toBe(first.id);
+    expect(replaced.fit_id).toBe(fit1bId);
+    const { data } = await admin.from('planned_fits').select('id').eq('user_id', user1Id!);
+    expect(data).toHaveLength(1);
+  });
+
+  it("a second user cannot UPDATE the first user's plan", async () => {
+    const plan = await planAsUser1('2026-09-25');
+
+    // RLS hides the row from the update rather than erroring: a no-op.
+    const hijack = await client2.from('planned_fits').update({ user_id: user2Id, fit_id: fit2Id }).eq('id', plan.id);
+    expect(hijack.error).toBeNull();
+
+    const { data } = await admin.from('planned_fits').select('user_id, fit_id').eq('id', plan.id).single();
+    expect(data).toEqual({ user_id: user1Id, fit_id: fit1Id });
+  });
+
+  it("a second user's upsert on the first user's day cannot take it over", async () => {
+    const plan = await planAsUser1('2026-09-25');
+
+    // The client's exact write, aimed at user 1's row: the insert half fails
+    // its WITH CHECK, so the conflict never gets to the update half.
+    const takeover = await client2
+      .from('planned_fits')
+      .upsert({ user_id: user1Id, planned_on: '2026-09-25', fit_id: fit2Id }, { onConflict: 'user_id,planned_on' });
+    expect(takeover.error).not.toBeNull();
+
+    const { data } = await admin.from('planned_fits').select('user_id, fit_id').eq('id', plan.id).single();
+    expect(data).toEqual({ user_id: user1Id, fit_id: fit1Id });
+  });
+
+  it('the owner cannot repoint a plan at their own soft-deleted Fit', async () => {
+    const plan = await planAsUser1('2026-09-25');
+
+    const repoint = await client1.from('planned_fits').update({ fit_id: deletedFitId }).eq('id', plan.id);
+    expect(repoint.error).not.toBeNull();
+  });
+
+  it("the owner cannot repoint a plan at another user's Fit", async () => {
+    const plan = await planAsUser1('2026-09-25');
+
+    const repoint = await client1.from('planned_fits').update({ fit_id: fit2Id }).eq('id', plan.id);
+    expect(repoint.error).not.toBeNull();
+  });
+
+  it("a second user cannot DELETE the first user's plan, but the owner can", async () => {
+    const plan = await planAsUser1('2026-09-25');
+
+    const impersonatedDelete = await client2.from('planned_fits').delete().eq('id', plan.id);
+    expect(impersonatedDelete.error).toBeNull();
+    const { data: stillThere } = await admin.from('planned_fits').select('id').eq('id', plan.id).maybeSingle();
+    expect(stillThere?.id).toBe(plan.id);
+
+    const ownDelete = await client1.from('planned_fits').delete().eq('planned_on', '2026-09-25');
+    expect(ownDelete.error).toBeNull();
+    const { data: gone } = await admin.from('planned_fits').select('id').eq('id', plan.id).maybeSingle();
+    expect(gone).toBeNull();
   });
 });

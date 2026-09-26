@@ -1,3 +1,10 @@
+// Every suite runs in one fixed zone, set here before Jest spawns its
+// workers: a test file can't change it for itself, since each file gets its
+// own copy of `process.env`. A zone with daylight saving (not UTC, which CI
+// runners default to) so date code is exercised across 23/25-hour days --
+// see `__tests__/plannerWeek.test.ts`.
+process.env.TZ = 'America/Los_Angeles';
+
 module.exports = {
   collectCoverageFrom: ['lib/**/*.{ts,tsx}', '!lib/**/*.d.ts'],
   projects: [
