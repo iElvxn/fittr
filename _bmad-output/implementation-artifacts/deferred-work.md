@@ -182,3 +182,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
   summary: Once a piece has a color, it can't be cleared back to "Not set", because `ColorSwatchPicker` has no deselect or "None" option.
   evidence: Blind reviewer. This predates Phase 3, but is more visible now that Details shows "Not set". The fix is tapping the selected swatch to clear it, or a "None" swatch, with `onChange` accepting `null`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2-today-on-home-and-wear-streak.md`
+  summary: The Supabase CLI's `supabase/.temp/` directory is untracked and not in `.gitignore`, so a broad `git add` would commit it.
+  evidence: It showed as `?? supabase/.temp/` in git status before Story 5.2 started; flagged by the 5.2 blind review.

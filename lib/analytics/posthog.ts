@@ -36,3 +36,8 @@ export function trackItemAdded(source: CaptureSource, category: WardrobeItemCate
 export function trackFitPlanned(daysAhead: number) {
   posthog.capture('fit_planned', { days_ahead: daysAhead });
 }
+
+/** Fired on every successful wear write: Home's Mark worn, or Fit detail's Wear today. Never on undo. */
+export function trackFitWorn(source: 'home' | 'detail') {
+  posthog.capture('fit_worn', { source });
+}

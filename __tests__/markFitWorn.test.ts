@@ -11,7 +11,9 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
-import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
+import { QueryClient } from '@tanstack/react-query';
+
+import { invalidateWearQueries, markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { supabase } from '@/lib/supabase';
 
 function mockInsertChain(result: { error: unknown }) {
@@ -104,5 +106,29 @@ describe('unmarkFitWornToday', () => {
     mockDeleteChain({ error: new Error('boom') });
 
     await expect(unmarkFitWornToday('user-1', 'fit-1')).rejects.toThrow('boom');
+  });
+});
+
+describe('invalidateWearQueries', () => {
+  it('invalidates every wear read for the user, and only theirs', async () => {
+    const queryClient = new QueryClient();
+    const keys = [
+      ['wornFitIds', 'user-1'],
+      ['todayWornFitIds', 'user-1'],
+      ['fitWearsRange', 'user-1', '2026-09-21'],
+      ['wearDates', 'user-1'],
+      ['wearDates', 'user-2'],
+      ['plannedFits', 'user-1', '2026-09-21'],
+    ];
+    for (const key of keys) {
+      queryClient.setQueryData(key, 'cached');
+    }
+
+    await invalidateWearQueries(queryClient, 'user-1');
+
+    const invalidated = (key: string[]) => queryClient.getQueryState(key)?.isInvalidated;
+    expect(keys.slice(0, 4).every(invalidated)).toBe(true);
+    expect(invalidated(['wearDates', 'user-2'])).toBe(false);
+    expect(invalidated(['plannedFits', 'user-1', '2026-09-21'])).toBe(false);
   });
 });

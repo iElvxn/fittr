@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react-native';
 import { createElement, type ReactNode } from 'react';
 
-import { getFitWearCounts, getTodayWornFitIds, useFitWearCounts } from '@/lib/fits/wornFitIds';
+import { getFitWearCounts, getTodayWornFitIds, useFitWearCounts, useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { supabase } from '@/lib/supabase';
 
 function mockSelectChain(result: { data: unknown; error: unknown }) {
@@ -126,5 +126,19 @@ describe('getTodayWornFitIds', () => {
     mockTwoEqSelectChain({ data: null, error: new Error('boom') });
 
     await expect(getTodayWornFitIds('user-1')).rejects.toThrow('boom');
+  });
+});
+
+describe('useTodayWornFitIds', () => {
+  it("caches under ['todayWornFitIds', userId], the key every wear write invalidates", async () => {
+    mockTwoEqSelectChain({ data: [{ fit_id: 'fit-1' }], error: null });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+
+    const { result } = await renderHook(() => useTodayWornFitIds('user-1'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(queryClient.getQueryData(['todayWornFitIds', 'user-1'])).toEqual(new Set(['fit-1']));
   });
 });

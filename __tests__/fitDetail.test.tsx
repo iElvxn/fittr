@@ -16,7 +16,13 @@ jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }
 jest.mock('@/lib/fits/deleteFit', () => ({ deleteFit: jest.fn() }));
 jest.mock('@/lib/fits/getFitItems', () => ({ getFitItems: jest.fn() }));
 jest.mock('@/lib/fits/toggleFavorite', () => ({ toggleFitFavorite: jest.fn() }));
-jest.mock('@/lib/fits/markFitWorn', () => ({ markFitWornToday: jest.fn(), unmarkFitWornToday: jest.fn() }));
+// The shared invalidation stays real so the tests see every key it touches.
+jest.mock('@/lib/fits/markFitWorn', () => ({
+  ...jest.requireActual('@/lib/fits/markFitWorn'),
+  markFitWornToday: jest.fn(),
+  unmarkFitWornToday: jest.fn(),
+}));
+jest.mock('@/lib/analytics/posthog', () => ({ trackFitWorn: jest.fn() }));
 jest.mock('@/lib/fits/wornFitIds', () => ({ useTodayWornFitIds: jest.fn() }));
 jest.mock('@/lib/fits/shareFit', () => ({ shareFitCover: jest.fn() }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
@@ -33,6 +39,7 @@ import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { shareFitCover } from '@/lib/fits/shareFit';
 import { Sentry } from '@/lib/observability/sentry';
+import { trackFitWorn } from '@/lib/analytics/posthog';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import type { FitRow } from '@/lib/fits/listFits';
 
@@ -548,6 +555,43 @@ describe('Fit detail', () => {
 
       resolveUnmark!();
       await waitFor(() => {});
+    });
+
+    it("tracks fit_worn from detail and refetches every wear read, including the Planner's and the streak", async () => {
+      (markFitWornToday as jest.Mock).mockResolvedValue(undefined);
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Wear today' }));
+
+      await waitFor(() => expect(trackFitWorn).toHaveBeenCalledWith('detail'));
+      for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates']) {
+        await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: [key, 'user-1'] }));
+      }
+    });
+
+    it('does not track fit_worn on undo', async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (unmarkFitWornToday as jest.Mock).mockResolvedValue(undefined);
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+      await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalled());
+      expect(trackFitWorn).not.toHaveBeenCalled();
+    });
+
+    it('does not track fit_worn when the write fails', async () => {
+      (markFitWornToday as jest.Mock).mockRejectedValue(new Error('boom'));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Wear today' }));
+
+      expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+      expect(trackFitWorn).not.toHaveBeenCalled();
     });
 
     it('reverts the optimistic flip and shows a connection error when marking worn fails offline', async () => {

@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState, Pressable, ScrollView, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -15,11 +14,11 @@ import { PlanDaySheet } from '@/components/planner/PlanDaySheet';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { todayLocalDate } from '@/lib/fits/localDate';
-import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
-import { planFit, unplanDay, usePlannedFits, useWeekWears } from '@/lib/planner/plannedFits';
-import { daysBetween, shiftWeek, weekDays, weekRangeLabel, weekStartOf } from '@/lib/planner/week';
+import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
+import { usePlannedFits, useWeekWears } from '@/lib/planner/plannedFits';
+import { usePlanDayWrites } from '@/lib/planner/usePlanDayWrites';
+import { shiftWeek, weekDays, weekRangeLabel, weekStartOf } from '@/lib/planner/week';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
-import { trackFitPlanned } from '@/lib/analytics/posthog';
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { colors } from '@/lib/theme/colors';
 import { Sentry } from '@/lib/observability/sentry';
@@ -27,20 +26,11 @@ import { Sentry } from '@/lib/observability/sentry';
 const ITALIC_SERIF = 'Newsreader_400Regular_Italic';
 const WEEK_BUTTON_SIZE = 44;
 
-/**
- * The plans/wears reads throw an already-classified `FitError`, while
- * `useFits` lets the raw Supabase error through -- this covers both.
- */
-function isOffline(error: unknown) {
-  return error instanceof FitError ? error.kind === 'no_connection' : isNoConnectionError(error);
-}
-
 export default function Planner() {
   const insets = useSafeAreaInsets();
   const tabBarClearance = useTabBarClearance();
   const scheme = useColorScheme();
   const palette = scheme === 'dark' ? colors.dark : colors.light;
-  const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user.id;
 
@@ -128,75 +118,12 @@ export default function Planner() {
   const coverPaths = useMemo(() => fits.flatMap((fit) => (fit.cover_path ? [fit.cover_path] : [])), [fits]);
   const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
 
-  const [sheetDate, setSheetDate] = useState<string | null>(null);
-  const [writeError, setWriteError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // State alone can't stop a second tap landing before the re-render that disables the controls.
-  const busyRef = useRef(false);
-
+  const { sheetDate, sheetFit, busy, writeError, openDay, closeSheet, pickFit, removeFit } = usePlanDayWrites({
+    userId,
+    today,
+    planByDate,
+  });
   const sheetDay = days.find((day) => day.date === sheetDate) ?? null;
-  const sheetFit = sheetDate ? (planByDate.get(sheetDate) ?? null) : null;
-
-  function openDay(date: string) {
-    setWriteError(null);
-    setSheetDate(date);
-  }
-
-  function closeSheet() {
-    if (busyRef.current) {
-      return;
-    }
-    setSheetDate(null);
-    setWriteError(null);
-  }
-
-  async function runWrite(write: () => Promise<void>, onSuccess?: () => void) {
-    if (busyRef.current) {
-      return;
-    }
-    busyRef.current = true;
-    setBusy(true);
-    setWriteError(null);
-    try {
-      await write();
-      onSuccess?.();
-      await queryClient.invalidateQueries({ queryKey: ['plannedFits', userId] });
-      setSheetDate(null);
-    } catch (error) {
-      const offline = isOffline(error);
-      if (!offline) {
-        Sentry.captureException(error);
-      }
-      setWriteError(offline ? NO_CONNECTION_MESSAGE : UNKNOWN_ERROR_MESSAGE);
-    } finally {
-      busyRef.current = false;
-      setBusy(false);
-    }
-  }
-
-  function pickFit(fitId: string) {
-    if (!userId || !sheetDate) {
-      return;
-    }
-    if (fitId === sheetFit?.id) {
-      // Already the day's Fit -- nothing to write.
-      closeSheet();
-      return;
-    }
-    const date = sheetDate;
-    void runWrite(
-      () => planFit(userId, date, fitId),
-      () => trackFitPlanned(daysBetween(today, date)),
-    );
-  }
-
-  function removeFit() {
-    if (!sheetDate) {
-      return;
-    }
-    const date = sheetDate;
-    void runWrite(() => unplanDay(date));
-  }
 
   const header = (
     <View style={{ paddingTop: insets.top + 12 }} className="flex-row items-end justify-between gap-3 px-gutter">

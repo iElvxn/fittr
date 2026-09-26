@@ -21,6 +21,14 @@ export class FitError extends Error {
 export { isNoConnectionError };
 
 /**
+ * The Fits, plans and wears reads throw an already-classified `FitError`,
+ * while `useFits` lets the raw Supabase error through -- this covers both.
+ */
+export function isOffline(error: unknown) {
+  return error instanceof FitError ? error.kind === 'no_connection' : isNoConnectionError(error);
+}
+
+/**
  * Own copy of this string, not a shared import -- `lib/wardrobe/errors.ts`
  * keeps its own copy separate from `lib/auth/errors.ts`'s for the same
  * reason: each domain's wording is free to diverge later even though it
