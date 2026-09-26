@@ -140,8 +140,9 @@ Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite
 **FRs covered:** FR23, FR24, FR25, FR29, FR34
 
 ### Epic 5: Planner
-Users can assign a saved Fit to a day on a weekly calendar, view/replace/remove that assignment, and see today's planned Fit on Home, with the option to mark it worn directly from there.
+Users can assign a saved Fit to a day on a weekly calendar, view/replace/remove that assignment, and see today's planned Fit on Home, with the option to mark it worn directly from there. They can also see a whole month of plans and wears at a glance, and attach a real-life photo of how an outfit actually looked on a day they wore it.
 **FRs covered:** FR26, FR27, FR28
+*Scope added after the PRD (user request, 2026-09-24):* Stories 5.3 (month view) and 5.4 (outfit photos) have no PRD FR of their own.
 
 ### Epic 6: Launch Readiness & Account Lifecycle
 Users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
@@ -481,7 +482,7 @@ So that I have a reason to keep coming back.
 
 ## Epic 5: Planner
 
-Users can assign a saved Fit to a day on a weekly calendar, view/replace/remove that assignment, and see today's planned Fit on Home, with the option to mark it worn directly from there.
+Users can assign a saved Fit to a day on a weekly calendar, view/replace/remove that assignment, and see today's planned Fit on Home, with the option to mark it worn directly from there. They can also see a whole month of plans and wears at a glance, and attach a real-life photo of how an outfit actually looked on a day they wore it.
 
 ### Story 5.1: Plan Fits for the Week
 
@@ -518,6 +519,56 @@ So that I don't have to go dig through the Planner every morning.
 **Given** today's planned Fit card on Home
 **When** I tap "mark worn"
 **Then** a `fit_wears` row is written for today, feeding both the Worn filter (Story 4.2) and the wear streak (Story 4.4)
+
+*Implementation note: Story 4.4 (wear streak) ships with or right after this story, so the streak lands on the new Home. Add a streak line to the P4 Home mockup before this story's spec.*
+
+### Story 5.3: See a Month of Plans at a Glance
+
+*Added 2026-09-26 from a user request on 2026-09-24; not in the original PRD.*
+
+As a user,
+I want a month view in the Planner,
+So that I can see further ahead than one week and look back at what I wore.
+
+**Acceptance Criteria:**
+
+**Given** the Planner
+**When** I switch to the month view
+**Then** I see the current month as a calendar grid, and each day with a planned Fit shows a small indicator of it (worn days distinguished from merely planned ones by weight or fill, never color)
+
+**Given** the month view
+**When** I move to the previous or next month
+**Then** the grid shows that month's plans
+
+**Given** any day in the month view
+**When** I tap it
+**Then** I can assign, replace or remove its Fit with the same day sheet and rules as the week view (Story 5.1)
+
+*Implementation note: reads the same `planned_fits` and `fit_wears` data as Story 5.1, with a month-range query instead of a week one; no schema change. Needs a mockup on the design canvas (P4 row) before its spec.*
+
+### Story 5.4: Attach a Photo of the Outfit Actually Worn
+
+*Added 2026-09-26 from a user request on 2026-09-24; not in the original PRD.*
+
+As a user,
+I want to attach a real-life photo of myself in an outfit on a day I wore it,
+So that I remember how it actually looked, not just the collage.
+
+**Acceptance Criteria:**
+
+**Given** a Fit marked worn on a day
+**When** I add a photo to that wear (camera or library)
+**Then** the photo is saved against that wear, not the Fit, so each time the Fit is worn can have its own photo
+
+**Given** a wear with a photo
+**When** I view that day in the Planner
+**Then** I see the photo alongside the planned Fit, and I can replace or remove it
+
+**Given** another user
+**When** they try to read or write my wear photos
+**Then** RLS and Storage policies deny it
+
+*Implementation note: a nullable photo path column on `fit_wears` plus a private per-user Storage folder, RLS-scoped like the wardrobe bucket (NFR5). Unlike wardrobe items (NFR4), the photo itself is the thing kept, so it counts against the storage budget (NFR6): compress on-device before upload. Account deletion (Story 6.2) must also remove these files. Needs a mockup on the design canvas before its spec.*
 
 ## Epic 6: Launch Readiness & Account Lifecycle
 
