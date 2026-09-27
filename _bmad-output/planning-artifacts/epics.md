@@ -618,6 +618,30 @@ So that I don't have to hunt for the selected Fit in the grid or go back to Home
 
 *Implementation note: reuses Home's mark-worn and undo path and Story 5.4's photo section; no schema change. Grid tiles get no second action (decided with the user). Spec'd without a new board at the user's request, in the P5 sheet's visual language.*
 
+### Story 5.7: Swipe Between Today's Photo and the Fit on Home
+
+*Added 2026-09-27 from a user request after Story 5.6; not in the original PRD.*
+
+As a user,
+I want Home's big tile to lead with the photo I took today, and swipe to the Fit's collage,
+So that I see how the outfit actually looked without losing the plan.
+
+**Acceptance Criteria:**
+
+**Given** today's wear has a photo
+**When** I open Home
+**Then** the big 3:4 tile shows the photo first, with two small square markers under it, and swiping shows the Fit's collage (the second marker fills)
+
+**Given** the photo page or the collage page
+**When** I tap the tile
+**Then** the photo opens today's day sheet (to replace or remove it) and the collage opens Fit detail
+
+**Given** no photo yet, or today not worn
+**When** I open Home
+**Then** the tile shows the collage alone with no markers, unchanged
+
+*Implementation note: reverses Story 5.4's "the big tile always keeps the collage": the "Today's photo" row under the buttons goes, since the photo now lives in the tile. Minimal by the user's request: no labels or overlays, a plain paging swipe, and it opens on the photo each time. Mockup approved: the Phase 6 (P6*) row on the design canvas. No schema change.*
+
 ## Epic 6: Launch Readiness & Account Lifecycle
 
 Users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
