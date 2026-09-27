@@ -18,10 +18,10 @@ function randomUUID(): string {
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
 const describeIfConfigured =
-  supabaseUrl && supabasePublishableKey && supabaseServiceRoleKey ? describe : describe.skip;
+  supabaseUrl && supabasePublishableKey && supabaseSecretKey ? describe : describe.skip;
 
 /**
  * Automated cross-user RLS check for `profiles` (per the spec: "an
@@ -41,10 +41,11 @@ const describeIfConfigured =
  * sends a real confirmation email through Supabase's rate-limited default
  * email service — two signups per test run quickly exhausts that quota. The
  * Admin API creates a pre-confirmed user directly, with no email sent and
- * no rate-limit interaction, using the `service_role` key (bypasses RLS —
+ * no rate-limit interaction, using the project's secret key (`sb_secret_...`,
+ * the successor to the legacy `service_role` key). It bypasses RLS, so it's
  * used ONLY here to set up fixtures, never for the actual RLS assertion
  * below, which goes through a normal signed-in client exactly like the app
- * does).
+ * does.
  *
  * No manual `profiles` insert here: the `handle_new_user` trigger on
  * `auth.users` (0001_profiles.sql) creates the row automatically as part of
@@ -54,7 +55,7 @@ describeIfConfigured('profiles RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's profiles row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -114,7 +115,7 @@ describeIfConfigured('wardrobe storage RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot read or overwrite the first user's avatar object", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -186,7 +187,7 @@ describeIfConfigured('wardrobe_items RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's wardrobe_items row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -262,7 +263,7 @@ describeIfConfigured('wardrobe_items RLS: cross-user isolation', () => {
    * test can't exercise.
    */
   it("a second user cannot INSERT or UPDATE a row under the first user's user_id", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -358,7 +359,7 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's fits row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -407,7 +408,7 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot INSERT or UPDATE a row under the first user's user_id, but the owner can update their own", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -481,7 +482,7 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot SELECT, INSERT into, UPDATE, or DELETE the first user's fit_items rows", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -604,7 +605,7 @@ describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's fit_wears row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -660,7 +661,7 @@ describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot INSERT a fit_wears row under the first user's user_id, but the owner can", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -722,7 +723,7 @@ describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot DELETE the first user's fit_wears row, but the owner can", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -808,7 +809,7 @@ describeIfConfigured('wear photos RLS: fit_wears photo columns and wear-photos s
   const webp = new Uint8Array([1, 2, 3, 4]);
 
   beforeAll(async () => {
-    admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    admin = createClient(supabaseUrl!, supabaseSecretKey!);
     client1 = createClient(supabaseUrl!, supabasePublishableKey!);
     client2 = createClient(supabaseUrl!, supabasePublishableKey!);
 
@@ -988,7 +989,7 @@ describeIfConfigured('fits trigger: favorite-only update does not bump updated_a
   jest.setTimeout(30000);
 
   it('leaves updated_at unchanged when only is_favorite changes, but bumps it for a name change', async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -1065,7 +1066,7 @@ describeIfConfigured('planned_fits RLS: cross-user isolation', () => {
   let user2Id: string | undefined;
 
   beforeAll(async () => {
-    admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    admin = createClient(supabaseUrl!, supabaseSecretKey!);
     client1 = createClient(supabaseUrl!, supabasePublishableKey!);
     client2 = createClient(supabaseUrl!, supabasePublishableKey!);
 
