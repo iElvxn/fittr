@@ -304,7 +304,7 @@ describe('Home tab', () => {
 
       await act(async () => resolve());
       await waitFor(() => expect(trackFitWorn).toHaveBeenCalledWith('home'));
-      for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates']) {
+      for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates', 'fitWearPhotos']) {
         expect(invalidate).toHaveBeenCalledWith({ queryKey: [key, 'user-1'] });
       }
     });

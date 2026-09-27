@@ -18,6 +18,7 @@ import { ShareIcon } from '@/components/ui/icons/ShareIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { SectionLabel } from '@/components/wardrobe/SectionLabel';
 import { FitItemsList } from '@/components/fits/FitItemsList';
+import { FitWearPhotosStrip } from '@/components/fits/FitWearPhotosStrip';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
@@ -27,8 +28,11 @@ import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { invalidateWearQueries, markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
+import { useFitWearPhotos } from '@/lib/fits/fitWearPhotos';
+import { useWearPhotoActions } from '@/lib/fits/useWearPhotoActions';
+import { todayLocalDate } from '@/lib/fits/localDate';
 import { shareFitCover } from '@/lib/fits/shareFit';
-import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
+import { FitError, isNoConnectionError, isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import { trackFitWorn } from '@/lib/analytics/posthog';
 import { colors } from '@/lib/theme/colors';
@@ -99,6 +103,24 @@ export default function FitDetail() {
   // filter) -- powers the Wear-today button's already-logged state.
   const { data: todayWornFitIds } = useTodayWornFitIds(userId);
 
+  // Story 5.5: the "Worn" strip. A failed read just hides the photos (no
+  // notice, since nothing the user did failed) and is reported like the
+  // items read above.
+  const {
+    data: wearPhotos,
+    isLoading: isWearPhotosLoading,
+    isError: isWearPhotosError,
+    error: wearPhotosError,
+  } = useFitWearPhotos(userId, fit?.id);
+  useEffect(() => {
+    if (isWearPhotosError && !isOffline(wearPhotosError)) {
+      Sentry.captureException(wearPhotosError);
+    }
+  }, [isWearPhotosError, wearPhotosError]);
+  // Adding today's photo, through the same flow as Home and the Planner.
+  // One lock with the wear toggle and Delete: each blocks the others.
+  const photoActions = useWearPhotoActions(userId);
+
   const showAck = fitUpdated === '1';
   useEffect(() => {
     if (!showAck) {
@@ -144,6 +166,12 @@ export default function FitDetail() {
   const isFavorite = favoriteOverride ?? fit?.is_favorite ?? false;
   const isWornToday = wornTodayOverride ?? (fit ? (todayWornFitIds?.has(fit.id) ?? false) : false);
 
+  /** Every action starts from a clean notice, whichever write set the last one. */
+  function clearErrors() {
+    setErrorMessage(null);
+    photoActions.clearError();
+  }
+
   function reportUnknownError(error: unknown) {
     Sentry.captureException(error);
     setErrorMessage(UNKNOWN_ERROR_MESSAGE);
@@ -153,7 +181,7 @@ export default function FitDetail() {
     if (!fit || favoriteBusy) {
       return;
     }
-    setErrorMessage(null);
+    clearErrors();
     const next = !isFavorite;
     setFavoriteOverride(next);
     setFavoriteBusy(true);
@@ -179,10 +207,10 @@ export default function FitDetail() {
   }
 
   async function handleToggleWornToday() {
-    if (!fit || !userId || wearBusy) {
+    if (!fit || !userId || wearBusy || photoActions.busy) {
       return;
     }
-    setErrorMessage(null);
+    clearErrors();
     const next = !isWornToday;
     // Story 5.4: undoing a wear deletes its photo too, so that one undo asks first.
     if (!next && todayWornFitIds?.get(fit.id)?.photo && !(await confirmUndoWearWithPhoto())) {
@@ -217,7 +245,7 @@ export default function FitDetail() {
     if (!fit) {
       return;
     }
-    setErrorMessage(null);
+    clearErrors();
     setDeleting(true);
     try {
       await deleteFit(fit.id);
@@ -244,7 +272,7 @@ export default function FitDetail() {
     if (!fit || !coverPath || !coverUrl || sharing || deleting) {
       return;
     }
-    setErrorMessage(null);
+    clearErrors();
     setSharing(true);
     try {
       let url: string | null = coverUrl;
@@ -281,10 +309,10 @@ export default function FitDetail() {
    * leave the photos out.
    */
   async function handleDeletePress() {
-    if (!fit || countingRef.current) {
+    if (!fit || countingRef.current || photoActions.busy) {
       return;
     }
-    setErrorMessage(null);
+    clearErrors();
     // Locked while the count loads, so a double tap can't stack two confirmations.
     countingRef.current = true;
     setCountingPhotos(true);
@@ -317,6 +345,21 @@ export default function FitDetail() {
         }
       },
     );
+  }
+
+  /** Story 5.5: a photo of today's wear, when it has none yet (the Add tile applies only then). */
+  function handleAddPhoto() {
+    const todayWear = fit ? todayWornFitIds?.get(fit.id) : undefined;
+    if (!todayWear || todayWear.photo || wearBusy || deleting || countingRef.current) {
+      return;
+    }
+    setErrorMessage(null);
+    photoActions.addPhoto(todayWear);
+  }
+
+  /** Opens the day's sheet in the Planner, in whichever view the user last chose. */
+  function handleOpenWearDay(date: string) {
+    router.navigate({ pathname: '/planner', params: { date } });
   }
 
   function handleEditPress() {
@@ -391,6 +434,20 @@ export default function FitDetail() {
       )}
     </Pressable>
   );
+
+  // Story 5.5: the "Worn" strip. Today's photo follows the worn toggle, so an
+  // undo drops it at once and a failed undo brings it back. Only today's
+  // wear, saved and still without a photo, offers Add -- never a past one.
+  const today = todayLocalDate();
+  const todayWear = todayWornFitIds?.get(fit.id);
+  const stripPhotos = isWearPhotosError
+    ? []
+    : (wearPhotos ?? []).filter((wear) => isWornToday || wear.wornOn !== today);
+  const canAddPhoto = Boolean(isWornToday && todayWear && !todayWear.photo);
+  const photoSavingUri = todayWear && photoActions.saving?.wearId === todayWear.id ? photoActions.saving.uri : null;
+  const photoBusy = photoActions.busy || wearBusy || deleting || countingPhotos;
+  const showWornSection = canAddPhoto || stripPhotos.length > 0 || isWearPhotosLoading;
+  const noticeMessage = errorMessage ?? photoActions.error;
 
   const updatedLabel = `Updated ${UPDATED_AT_FORMAT.format(new Date(fit.updated_at))}`;
   // Item count only once `getFitItems` has resolved -- never a guessed or
@@ -480,18 +537,21 @@ export default function FitDetail() {
             caption={isWornToday ? 'Worn today' : 'Wear today'}
             selected={isWornToday}
             onPress={handleToggleWornToday}
-            disabled={deleting || wearBusy}
+            disabled={deleting || wearBusy || photoActions.busy}
           >
             {isWornToday ? (
               // Solid when worn, like Favorite's filled heart, so the state reads at a glance.
               <CheckIcon
                 size={ACTION_ICON_SIZE}
-                color={deleting || wearBusy ? inkDisabled : inkPrimary}
+                color={deleting || wearBusy || photoActions.busy ? inkDisabled : inkPrimary}
                 filled
                 checkColor={surfaceBase}
               />
             ) : (
-              <CalendarIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
+              <CalendarIcon
+                size={ACTION_ICON_SIZE}
+                color={deleting || wearBusy || photoActions.busy ? inkDisabled : inkPrimary}
+              />
             )}
           </DetailAction>
           {/* Empty state above already offers its own "Add item" CTA for this exact action -- avoid two differently-labeled controls for the same thing. */}
@@ -504,15 +564,31 @@ export default function FitDetail() {
             label="Delete Fit"
             caption="Delete"
             onPress={() => void handleDeletePress()}
-            disabled={deleting || countingPhotos || favoriteBusy || wearBusy || sharing}
+            disabled={deleting || countingPhotos || favoriteBusy || wearBusy || sharing || photoActions.busy}
           >
             {deleting ? <ActivityIndicator size="small" /> : <TrashIcon size={ACTION_ICON_SIZE} color={inkPrimary} />}
           </DetailAction>
         </View>
 
-        {errorMessage ? (
+        {noticeMessage ? (
           <View className="px-gutter pt-4">
-            <ConnectionErrorNotice message={errorMessage} />
+            <ConnectionErrorNotice message={noticeMessage} />
+          </View>
+        ) : null}
+
+        {/* Story 5.5: hidden when there's nothing to show, so an unworn Fit looks as it always has. */}
+        {showWornSection ? (
+          <View className="pt-8">
+            <View className="px-gutter">
+              <SectionLabel>Worn</SectionLabel>
+            </View>
+            <FitWearPhotosStrip
+              photos={stripPhotos}
+              today={today}
+              loading={isWearPhotosLoading}
+              add={canAddPhoto ? { savingUri: photoSavingUri, busy: photoBusy, onPress: handleAddPhoto } : null}
+              onOpenDay={handleOpenWearDay}
+            />
           </View>
         ) : null}
 

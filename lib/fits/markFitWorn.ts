@@ -72,12 +72,13 @@ export async function unmarkFitWornToday(userId: string, fitId: string): Promise
 /**
  * Every read that reflects a wear, invalidated together after any wear
  * write (Home's Mark worn, Fit detail's Wear today): the My Fits counts and
- * Worn filter, today's worn state, the Planner's week "Worn" captions and
- * the wear streak. Resolves once every refetch has landed.
+ * Worn filter, today's worn state, the Planner's week "Worn" captions, the
+ * wear streak and Fit detail's "Worn" photo strip. Resolves once every
+ * refetch has landed.
  */
 export async function invalidateWearQueries(queryClient: QueryClient, userId: string): Promise<void> {
   await Promise.all(
-    ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates'].map((key) =>
+    ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates', 'fitWearPhotos'].map((key) =>
       queryClient.invalidateQueries({ queryKey: [key, userId] }),
     ),
   );

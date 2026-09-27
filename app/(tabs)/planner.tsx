@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState, Pressable, ScrollView, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -30,6 +30,7 @@ import { usePlanDayWrites } from '@/lib/planner/usePlanDayWrites';
 import { loadPlannerView, savePlannerView, type PlannerView } from '@/lib/planner/viewPreference';
 import {
   dayOf,
+  isLocalDate,
   monthGrid,
   monthLabel,
   monthStartOf,
@@ -350,6 +351,32 @@ export default function Planner() {
     wornToday.clearError();
     closeSheet();
   }
+
+  // Story 5.5: Fit detail's "Worn" strip opens a day here as `?date=YYYY-MM-DD`.
+  // The tab stays mounted, so this follows the param rather than reading it
+  // once. Once the remembered view is known it shows the week or month
+  // holding that day and opens its sheet -- adjusted during render, like
+  // `seenToday` above -- then the param is cleared so a later visit to the
+  // tab doesn't open it again. A malformed date is just cleared.
+  const { date: dateParam } = useLocalSearchParams<{ date?: string }>();
+  const [handledDate, setHandledDate] = useState<string | null>(null);
+  if (!dateParam && handledDate) {
+    // Cleared, so the same day can be opened again later.
+    setHandledDate(null);
+  } else if (dateParam && view !== null && dateParam !== handledDate && !sheetBusy) {
+    // Waits out a day-sheet write, as closing or leaving the sheet does.
+    setHandledDate(dateParam);
+    if (isLocalDate(dateParam)) {
+      setWeekStart(weekStartOf(dateParam));
+      setMonthStart(monthStartOf(dateParam));
+      openSheet(dateParam);
+    }
+  }
+  useEffect(() => {
+    if (dateParam && dateParam === handledDate) {
+      router.setParams({ date: undefined });
+    }
+  }, [dateParam, handledDate]);
 
   function viewFit(fitId: string) {
     if (busy || photoActions.busy || wornToday.isBusy()) {
