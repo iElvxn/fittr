@@ -590,6 +590,34 @@ So that I can look back at how it looked each time.
 
 *Implementation note: reuses Story 5.4's thumbnails, disk cache and signed URLs (no new storage); one small query for the Fit's most recent wears with photos. Needs a mockup on the design canvas before its spec.*
 
+### Story 5.6: See and Act on a Day's Fit from the Planner
+
+*Added 2026-09-27 from a user request after Story 5.4; not in the original PRD.*
+
+As a user,
+I want the Planner's day sheet to show which Fit a day already has, and let me mark today's worn right there,
+So that I don't have to hunt for the selected Fit in the grid or go back to Home to log a wear.
+
+**Acceptance Criteria:**
+
+**Given** a day with a planned Fit
+**When** I open its day sheet
+**Then** the sheet leads with that Fit (collage, name and status), with a "View Fit" link to its Fit detail, and the Fit grid sits below under "Change Fit", still planning in one tap
+
+**Given** today's day sheet with a planned Fit
+**When** I tap "Mark worn"
+**Then** a wear is recorded for today exactly as from Home, the button becomes "Worn today" (tap to undo, confirming first if the wear has a photo), and the Story 5.4 photo section appears
+
+**Given** a past or future day
+**When** I open its day sheet
+**Then** there is no "Mark worn" (wears are only recorded for today; no backfilling)
+
+**Given** an empty day
+**When** I open its day sheet
+**Then** it opens straight on the grid, unchanged
+
+*Implementation note: reuses Home's mark-worn and undo path and Story 5.4's photo section; no schema change. Grid tiles get no second action (decided with the user). Spec'd without a new board at the user's request, in the P5 sheet's visual language.*
+
 ## Epic 6: Launch Readiness & Account Lifecycle
 
 Users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.

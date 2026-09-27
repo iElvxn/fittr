@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-10-2026 22:05
-last_updated: 09-27-2026 02:00
+last_updated: 09-27-2026 03:00
 project: fittr
 project_key: NOKEY
 tracking_system: file-system
@@ -66,8 +66,9 @@ development_status:
   5-1-plan-fits-for-the-week: done
   5-2-see-and-act-on-today-s-planned-fit-from-home: done
   5-3-see-a-month-of-plans-at-a-glance: done
-  5-4-attach-a-photo-of-the-outfit-actually-worn: review
+  5-4-attach-a-photo-of-the-outfit-actually-worn: done
   5-5-see-a-fit-s-wear-photos-on-fit-detail: backlog
+  5-6-see-and-act-on-a-day-s-fit-from-the-planner: ready-for-dev
   epic-5-retrospective: optional
 
   epic-6: backlog
