@@ -131,7 +131,7 @@ context:
 - Copy not on the boards: undo confirm button "Undo wear"; camera denial alert "Camera access is off" with "Open Settings".
 - Fit detail counts photos when Delete is pressed; a failed count shows the error instead of a confirmation.
 - Mobbin check (native Take Photo / Library / Cancel sheet) matched the approved boards; no design change.
-- Open: the RLS suite has not run (no service-role key locally, migration not applied), so the "Other user" matrix row and the RLS acceptance criterion are unverified until it does.
+- RLS suite run by the user against the dev project on 2026-09-27, with 0013 applied through the SQL Editor: 30 passed, so the "Other user" matrix row and the RLS acceptance criterion are verified. The RLS test's key is now `SUPABASE_SECRET_KEY` (`sb_secret_...`), replacing the legacy `service_role` key.
 
 ## Spec Change Log
 
