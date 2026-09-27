@@ -1,6 +1,6 @@
-import { act, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ActionSheetIOS, Alert, AppState, StyleSheet } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, ScrollView, StyleSheet } from 'react-native';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/profile/useProfile', () => ({ useProfile: jest.fn() }));
@@ -134,12 +134,16 @@ function pendingWrite(mock: unknown) {
   return () => act(async () => resolve());
 }
 
-async function renderHome() {
-  const result = await render(
+function homeTree() {
+  return (
     <QueryClientProvider client={queryClient}>
       <Home />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+async function renderHome() {
+  const result = await render(homeTree());
   return { ...result, user: userEvent.setup() };
 }
 
@@ -388,6 +392,8 @@ describe('Home tab', () => {
       thumbPath: 'user-1/wear-fit-a/p_thumb.webp',
       thumbhash: 'hash-a',
     };
+    const PHOTO_PAGE = 'Your photo from today, 1 of 2. Open to replace or remove';
+    const FIT_PAGE = 'Open Sunday Market, 2 of 2';
 
     function wornToday(photo?: WearPhoto) {
       mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
@@ -509,29 +515,6 @@ describe('Home tab', () => {
       expect(Sentry.captureException).toHaveBeenCalled();
     });
 
-    it("shows today's photo as a row that opens today's sheet, keeping the collage on the big tile", async () => {
-      wornToday(PHOTO);
-      (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: { [PHOTO.thumbPath]: 'https://signed/thumb-a' } });
-      const { user } = await renderHome();
-
-      expect(screen.queryByRole('button', { name: 'Add a photo' })).toBeNull();
-      const photoRow = button("Today's photo. Open to replace or remove");
-      expect(within(photoRow).getByText("Today's photo")).toBeTruthy();
-      expect(within(photoRow).getByText('Replace or remove it in the Planner')).toBeTruthy();
-      expect(useWearPhotoUrls).toHaveBeenLastCalledWith([PHOTO.thumbPath]);
-      const thumb = screen.getByTestId('home-wear-photo');
-      expect(imageProp(thumb, 'source')).toEqual({ uri: 'https://signed/thumb-a', cacheKey: PHOTO.thumbPath });
-      expect(imageProp(thumb, 'placeholder')).toEqual({ uri: thumbhashUri('hash-a') });
-      expect(thumb.props.cachePolicy).toBe('memory-disk');
-      expect(screen.queryByTestId('home-wear-photo-full')).toBeNull();
-
-      await user.press(photoRow);
-
-      expect(within(screen.getByTestId('day-fit-header')).getByText('Sunday Market')).toBeTruthy();
-      expect(button('Replace photo')).toBeTruthy();
-      expect(button('Remove photo')).toBeTruthy();
-    });
-
     it("gives today's sheet the photo section for a Fit worn with nothing planned", async () => {
       mockPlans([]);
       mockTodayWorn(['fit-a']);
@@ -593,7 +576,273 @@ describe('Home tab', () => {
 
       expect(unmarkFitWornToday).not.toHaveBeenCalled();
       expect(button('Worn today. Tap to undo')).toBeTruthy();
-      expect(button("Today's photo. Open to replace or remove")).toBeTruthy();
+      expect(button(PHOTO_PAGE)).toBeTruthy();
+    });
+
+    describe('tile pager (Story 5.7)', () => {
+      const PAGE_WIDTH = 343;
+
+      function pager() {
+        return screen.getByTestId('home-tile-pager');
+      }
+
+      /** Signs every path to `https://signed/{path}`. */
+      function mockSignedUrls() {
+        (useWearPhotoUrls as jest.Mock).mockImplementation((paths: string[]) => ({
+          data: Object.fromEntries(paths.map((path) => [path, `https://signed/${path}`])),
+        }));
+      }
+
+      /** Lays the pager out, then ends a swipe's momentum on `page`. */
+      async function swipeTo(page: number) {
+        await fireEvent(pager(), 'layout', {
+          nativeEvent: { layout: { x: 0, y: 0, width: PAGE_WIDTH, height: (PAGE_WIDTH * 4) / 3 } },
+        });
+        await fireEvent(pager(), 'momentumScrollEnd', {
+          nativeEvent: {
+            contentOffset: { x: PAGE_WIDTH * page, y: 0 },
+            layoutMeasurement: { width: PAGE_WIDTH, height: (PAGE_WIDTH * 4) / 3 },
+          },
+        });
+      }
+
+      /**
+       * React Native's test ScrollView puts `scrollTo` on its prototype as one
+       * shared `jest.fn`; the pager's calls are the ones made on its instance.
+       */
+      function pagerScrollTos() {
+        const scrollTo = ScrollView.prototype.scrollTo as unknown as jest.Mock;
+        return scrollTo.mock.calls.filter(
+          (_call, index) => (scrollTo.mock.contexts[index] as { props?: { testID?: string } })?.props?.testID === 'home-tile-pager',
+        );
+      }
+
+      function clearScrollTos() {
+        (ScrollView.prototype.scrollTo as unknown as jest.Mock).mockClear();
+      }
+
+      function expectScrolledBackToPhoto() {
+        expect(pagerScrollTos()).toEqual([[{ x: 0, y: 0, animated: false }]]);
+      }
+
+      function isFilled(marker: number) {
+        return /(^| )bg-ink-primary( |$)/.test(screen.getByTestId(`home-tile-marker-${marker}`).props.className);
+      }
+
+      /** The one filled marker, checking the other is outlined in secondary ink. */
+      function activeMarker() {
+        const active = [0, 1].filter(isFilled);
+        expect(active).toHaveLength(1);
+        const other = screen.getByTestId(`home-tile-marker-${1 - active[0]}`);
+        expect(other.props.className).toMatch(/(^| )border-ink-secondary( |$)/);
+        return active[0];
+      }
+
+      function expectNoPager() {
+        expect(screen.queryByTestId('home-tile-pager')).toBeNull();
+        expect(screen.queryByTestId('home-tile-marker-0')).toBeNull();
+        expect(screen.queryByTestId('home-tile-marker-1')).toBeNull();
+        expect(screen.queryByRole('button', { name: PHOTO_PAGE })).toBeNull();
+      }
+
+      beforeEach(() => mockSignedUrls());
+
+      it('leads the tile with the full-size photo, then the collage, with the first marker filled and no photo row', async () => {
+        wornToday(PHOTO);
+
+        await renderHome();
+
+        const pages = within(pager()).getAllByRole('button');
+        expect(pages.map((page) => page.props.accessibilityLabel)).toEqual([PHOTO_PAGE, FIT_PAGE]);
+        expect(screen.getByTestId('home-tile-page-photo')).toBe(button(PHOTO_PAGE));
+        expect(screen.getByTestId('home-tile-page-fit')).toBe(button(FIT_PAGE));
+        expect(StyleSheet.flatten(button(FIT_PAGE).props.style)).toMatchObject({ backgroundColor: '#DCE8DC' });
+
+        // The full photo, not the 240px thumbnail, cached by its path.
+        expect(useWearPhotoUrls).toHaveBeenCalledWith([PHOTO.path]);
+        expect(useWearPhotoUrls).not.toHaveBeenCalledWith([PHOTO.thumbPath]);
+        const photo = within(button(PHOTO_PAGE)).getByTestId('home-wear-photo');
+        expect(imageProp(photo, 'source')).toEqual({ uri: `https://signed/${PHOTO.path}`, cacheKey: PHOTO.path });
+        expect(imageProp(photo, 'placeholder')).toEqual({ uri: thumbhashUri('hash-a') });
+        expect(photo.props.cachePolicy).toBe('memory-disk');
+
+        expect(activeMarker()).toBe(0);
+        // Nothing on the tile but the two pages: no labels, captions or badges.
+        expect(within(pager()).queryByText(/.+/)).toBeNull();
+        expect(screen.queryByText("Today's photo")).toBeNull();
+        expect(screen.queryByRole('button', { name: /^Today's photo/ })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Add a photo' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Open Sunday Market' })).toBeNull();
+      });
+
+      it('fills the second marker once swiped to the collage, and the first again on the way back', async () => {
+        wornToday(PHOTO);
+        await renderHome();
+
+        await swipeTo(1);
+        expect(activeMarker()).toBe(1);
+        // Each page is sized from the pager's measured width, at 3:4.
+        expect(StyleSheet.flatten(button(PHOTO_PAGE).props.style)).toMatchObject({
+          width: PAGE_WIDTH,
+          height: (PAGE_WIDTH * 4) / 3,
+        });
+        expect(StyleSheet.flatten(screen.getByTestId('home-tile-collage-frame').props.style)).toMatchObject({
+          width: PAGE_WIDTH,
+        });
+
+        await swipeTo(0);
+        expect(activeMarker()).toBe(0);
+      });
+
+      it("opens today's day sheet from the photo page", async () => {
+        wornToday(PHOTO);
+        const { user } = await renderHome();
+
+        await user.press(button(PHOTO_PAGE));
+
+        expect(within(screen.getByTestId('day-fit-header')).getByText('Sunday Market')).toBeTruthy();
+        expect(button('Replace photo')).toBeTruthy();
+        expect(button('Remove photo')).toBeTruthy();
+        expect(router.push).not.toHaveBeenCalled();
+      });
+
+      it('opens Fit detail from the collage page', async () => {
+        wornToday(PHOTO);
+        const { user } = await renderHome();
+
+        await swipeTo(1);
+        await user.press(button(FIT_PAGE));
+
+        expect(router.push).toHaveBeenCalledWith('/fit/fit-a');
+        expect(screen.queryByTestId('day-fit-header')).toBeNull();
+      });
+
+      it('opens on the photo again when Home regains focus', async () => {
+        wornToday(PHOTO);
+        await renderHome();
+        await swipeTo(1);
+        expect(activeMarker()).toBe(1);
+        clearScrollTos();
+
+        await focus();
+
+        expect(activeMarker()).toBe(0);
+        expectScrolledBackToPhoto();
+        expect(button(PHOTO_PAGE)).toBeTruthy();
+      });
+
+      it('stays on the collage through an inactive spell, and opens on the photo after the background', async () => {
+        wornToday(PHOTO);
+        await renderHome();
+        const onChange = (AppState.addEventListener as jest.Mock).mock.calls.at(-1)?.[1] as (state: string) => void;
+        await swipeTo(1);
+        clearScrollTos();
+
+        // Control Center or a system prompt: inactive, then active again.
+        await act(async () => onChange('inactive'));
+        await act(async () => onChange('active'));
+        expect(activeMarker()).toBe(1);
+        expect(pagerScrollTos()).toEqual([]);
+
+        await act(async () => onChange('background'));
+        await act(async () => onChange('active'));
+        expect(activeMarker()).toBe(0);
+        expectScrolledBackToPhoto();
+      });
+
+      it('opens on the photo again when the photo changes', async () => {
+        wornToday(PHOTO);
+        const { rerender } = await renderHome();
+        await swipeTo(1);
+        clearScrollTos();
+
+        const replaced: WearPhoto = {
+          path: 'user-1/wear-fit-a/q.webp',
+          thumbPath: 'user-1/wear-fit-a/q_thumb.webp',
+          thumbhash: 'hash-q',
+        };
+        mockTodayWorn(['fit-a'], {}, { 'fit-a': replaced });
+        await rerender(homeTree());
+
+        expect(activeMarker()).toBe(0);
+        expectScrolledBackToPhoto();
+        const photo = within(button(PHOTO_PAGE)).getByTestId('home-wear-photo');
+        expect(imageProp(photo, 'source')).toEqual({ uri: `https://signed/${replaced.path}`, cacheKey: replaced.path });
+      });
+
+      it('shows the collage alone, with no markers, and Add a photo when the wear has no photo', async () => {
+        wornToday();
+
+        await renderHome();
+
+        expectNoPager();
+        expect(button('Open Sunday Market')).toBeTruthy();
+        expect(button('Add a photo')).toBeTruthy();
+      });
+
+      it('shows the collage alone, with no markers or Add a photo, before the Fit is worn', async () => {
+        mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+
+        await renderHome();
+
+        expectNoPager();
+        expect(button('Open Sunday Market')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Add a photo' })).toBeNull();
+      });
+
+      it('turns the tile into the pager, on the photo, once Add a photo saves', async () => {
+        wornToday();
+        const { user, rerender } = await renderHome();
+
+        await user.press(button('Add a photo'));
+        await waitFor(() => expect(saveWearPhoto).toHaveBeenCalled());
+        mockTodayWorn(['fit-a'], {}, { 'fit-a': PHOTO });
+        await rerender(homeTree());
+
+        expect(await screen.findByTestId('home-tile-pager')).toBeTruthy();
+        expect(button(PHOTO_PAGE)).toBeTruthy();
+        expect(activeMarker()).toBe(0);
+        expect(screen.queryByRole('button', { name: 'Add a photo' })).toBeNull();
+      });
+
+      it('collapses to the collage at once when a wear with a photo is undone', async () => {
+        wornToday(PHOTO);
+        mockConfirm(0);
+        const settle = pendingWrite(unmarkFitWornToday);
+        const { user } = await renderHome();
+
+        await user.press(button('Worn today. Tap to undo'));
+
+        expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a');
+        expectNoPager();
+        expect(button('Open Sunday Market')).toBeTruthy();
+        await settle();
+      });
+
+      it('brings the pager back when the undo fails', async () => {
+        wornToday(PHOTO);
+        mockConfirm(0);
+        (unmarkFitWornToday as jest.Mock).mockRejectedValue(new Error('boom'));
+        const { user } = await renderHome();
+
+        await user.press(button('Worn today. Tap to undo'));
+
+        expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+        expect(button(PHOTO_PAGE)).toBeTruthy();
+        expect(button(FIT_PAGE)).toBeTruthy();
+        expect(activeMarker()).toBe(0);
+      });
+
+      it("shows the thumbhash on the photo page while the full photo's URL is signed", async () => {
+        wornToday(PHOTO);
+        (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: {} });
+
+        await renderHome();
+
+        const photo = within(button(PHOTO_PAGE)).getByTestId('home-wear-photo');
+        expect(imageProp(photo, 'source')?.uri).toBeUndefined();
+        expect(imageProp(photo, 'placeholder')).toEqual({ uri: thumbhashUri('hash-a') });
+      });
     });
   });
 

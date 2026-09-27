@@ -5,9 +5,9 @@
  * image modules that the upload path needs.
  */
 export type WearPhoto = {
-  /** Full 1080px WebP in the `wear-photos` bucket. Only the day sheet loads it. */
+  /** Full 1080px WebP in the `wear-photos` bucket. Only the day sheet and Home's big tile load it. */
   path: string;
-  /** 240px WebP beside it. Every tile loads this, never `path`. */
+  /** 240px WebP beside it. Every other tile loads this, never `path`. */
   thumbPath: string;
   /** Placeholder shown while the thumbnail loads, or null if none was made. */
   thumbhash: string | null;

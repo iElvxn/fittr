@@ -4,8 +4,7 @@ import { Image } from 'expo-image';
 import { Text } from '@/components/ui/Text';
 import { WornTodayButton } from '@/components/fits/WornTodayButton';
 import { CameraIcon } from '@/components/ui/icons/CameraIcon';
-import { ChevronRightIcon } from '@/components/ui/icons/ChevronRightIcon';
-import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
+import { TodayTilePager } from '@/components/home/TodayTilePager';
 import type { WearPhoto } from '@/lib/fits/wearRef';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import type { FitRow } from '@/lib/fits/listFits';
@@ -15,10 +14,6 @@ const TILE_ASPECT_RATIO = 3 / 4;
 const NAME_FONT_SIZE = 28;
 const NAME_LINE_HEIGHT = 34;
 const CHANGE_BUTTON_WIDTH = 104;
-const PHOTO_THUMB_WIDTH = 45;
-const PHOTO_THUMB_HEIGHT = 60;
-const PHOTO_HINT_FONT_SIZE = 13;
-const PHOTO_HINT_LINE_HEIGHT = 18;
 
 type Props = {
   fit: FitRow;
@@ -32,7 +27,7 @@ type Props = {
   onOpen: () => void;
   onToggleWorn: () => void;
   onChange: () => void;
-  /** Story 5.4: today's wear photo and its thumbnail's signed URL, once there is one. */
+  /** Today's wear photo and its full-size file's signed URL, once there is one (Stories 5.4, 5.7). */
   photo?: (WearPhoto & { url: string | null }) | null;
   /** Today's wear exists and has no photo yet. */
   canAddPhoto?: boolean;
@@ -42,6 +37,8 @@ type Props = {
   onAddPhoto?: () => void;
   /** Opens today's day sheet, where the photo is replaced or removed. */
   onOpenPhoto?: () => void;
+  /** Any change sends the tile back to the photo page (Story 5.7). */
+  tileResetKey?: string | number;
 };
 
 /**
@@ -51,9 +48,10 @@ type Props = {
  * "Mark worn" becomes a solid "Worn today" with a check that undoes the
  * wear (`WornTodayButton`).
  *
- * Story 5.4: once today's wear exists, "Add a photo" sits under the buttons;
- * with a photo, a row shows its thumbnail and opens today's day sheet. The
- * big tile always keeps the collage.
+ * Story 5.4: once today's wear exists, "Add a photo" sits under the buttons.
+ * Story 5.7: with a photo, the big tile becomes a two-page swipe
+ * (`TodayTilePager`) -- the full photo first, opening today's day sheet,
+ * then the collage, opening Fit detail. With no photo it is the collage alone.
  */
 export function TodayFitCard({
   fit,
@@ -71,16 +69,18 @@ export function TodayFitCard({
   photoSaving = false,
   onAddPhoto,
   onOpenPhoto,
+  tileResetKey = 0,
 }: Props) {
   const scheme = useColorScheme();
   const palette = scheme === 'dark' ? colors.dark : colors.light;
   const fontScale = PixelRatio.getFontScale();
 
-  return (
-    <View>
+  function renderCollage(label: string, testID?: string) {
+    return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open ${fit.name}`}
+        testID={testID}
+        accessibilityLabel={label}
         onPress={onOpen}
         style={[
           { width: '100%', aspectRatio: TILE_ASPECT_RATIO },
@@ -96,6 +96,21 @@ export function TodayFitCard({
           <Image accessibilityLabel="" source={{ uri: coverUrl }} style={{ width: '100%', height: '100%' }} contentFit="contain" />
         ) : null}
       </Pressable>
+    );
+  }
+
+  return (
+    <View>
+      {photo ? (
+        <TodayTilePager
+          photo={photo}
+          onOpenPhoto={onOpenPhoto}
+          collage={renderCollage(`Open ${fit.name}, 2 of 2`, 'home-tile-page-fit')}
+          resetKey={tileResetKey}
+        />
+      ) : (
+        renderCollage(`Open ${fit.name}`)
+      )}
 
       <View className="gap-1 px-0.5 pt-4">
         <Text
@@ -127,34 +142,7 @@ export function TodayFitCard({
         </Pressable>
       </View>
 
-      {photo ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Today's photo. Open to replace or remove"
-          onPress={onOpenPhoto}
-          className="mt-3.5 flex-row items-center gap-3 border-t border-border-hairline pt-3.5 active:opacity-70 dark:border-border-hairlineDark"
-        >
-          <View
-            style={{ width: PHOTO_THUMB_WIDTH, height: PHOTO_THUMB_HEIGHT }}
-            className="overflow-hidden rounded-md bg-surface-tile dark:bg-surface-tileDark"
-          >
-            <WearPhotoImage testID="home-wear-photo" path={photo.thumbPath} url={photo.url} thumbhash={photo.thumbhash} />
-          </View>
-          <View className="min-w-0 flex-1 gap-0.5">
-            <Text variant="caption" className="text-ink-primary dark:text-ink-primaryDark">
-              Today&apos;s photo
-            </Text>
-            <Text
-              variant="body"
-              style={{ fontSize: PHOTO_HINT_FONT_SIZE * fontScale, lineHeight: PHOTO_HINT_LINE_HEIGHT * fontScale }}
-              className="text-ink-secondary dark:text-ink-secondaryDark"
-            >
-              Replace or remove it in the Planner
-            </Text>
-          </View>
-          <ChevronRightIcon size={16} color={palette.inkSecondary} />
-        </Pressable>
-      ) : canAddPhoto ? (
+      {canAddPhoto && !photo ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Add a photo"

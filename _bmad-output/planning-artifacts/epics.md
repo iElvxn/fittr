@@ -630,7 +630,7 @@ So that I see how the outfit actually looked without losing the plan.
 
 **Given** today's wear has a photo
 **When** I open Home
-**Then** the big 3:4 tile shows the photo first, with two small square markers under it, and swiping shows the Fit's collage (the second marker fills)
+**Then** the big 3:4 tile shows the photo first, with two small round markers under it, and swiping shows the Fit's collage (the second marker fills)
 
 **Given** the photo page or the collage page
 **When** I tap the tile

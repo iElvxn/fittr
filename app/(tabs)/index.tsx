@@ -62,6 +62,11 @@ export default function Home() {
   // on a later day, so "today" is re-read on focus and on returning to the
   // foreground rather than fixed at mount.
   const [today, setToday] = useState(todayLocalDate);
+  // Story 5.7: bumped each time Home comes back into view -- a tab focus, or
+  // a return from the background -- so the big tile opens on today's photo
+  // again. Not bumped by `refresh()` alone: an inactive -> active change
+  // (Control Center, a Face ID prompt) leaves the page where the user left it.
+  const [focusCount, setFocusCount] = useState(0);
   const weekStart = weekStartOf(today);
   const days = useMemo(() => weekDays(weekStart, today), [weekStart, today]);
   const todayDay = days.find((day) => day.isToday) ?? days[0];
@@ -90,10 +95,23 @@ export default function Home() {
   useEffect(() => {
     refreshRef.current = refresh;
   });
-  useFocusEffect(useCallback(() => refreshRef.current(), []));
+  useFocusEffect(
+    useCallback(() => {
+      setFocusCount((count) => count + 1);
+      refreshRef.current();
+    }, []),
+  );
   useEffect(() => {
+    // Whether the app went to the background since it was last active.
+    let backgrounded = false;
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
+      if (state === 'background') {
+        backgrounded = true;
+      } else if (state === 'active') {
+        if (backgrounded) {
+          backgrounded = false;
+          setFocusCount((count) => count + 1);
+        }
         refreshRef.current();
       }
     });
@@ -167,10 +185,11 @@ export default function Home() {
   });
 
   const todayPhoto = todayFit && isWornToday ? (todayWear?.photo ?? null) : null;
-  const { data: todayPhotoUrls } = useWearPhotoUrls(todayPhoto ? [todayPhoto.thumbPath] : []);
+  // Story 5.7: the photo fills the big tile, so it loads the full-size file, not the thumbnail.
+  const { data: todayPhotoUrls } = useWearPhotoUrls(todayPhoto ? [todayPhoto.path] : []);
 
   // The sheet's worn Fit and its photo section follow the toggle, so an undo
-  // takes the section away at once, as it does the card's photo row.
+  // takes the section away at once, as it does the card's photo page.
   const sheetWorn: { fit: FitRow; wear: WearRef } | null =
     sheetDate === today && toggleFit && todayWear && isWornToday && (!sheetFit || sheetFit.id === toggleFit.id)
       ? { fit: toggleFit, wear: todayWear }
@@ -318,7 +337,8 @@ export default function Home() {
             onOpen={() => router.push(`/fit/${todayFit.id}`)}
             onToggleWorn={() => void toggleWornToday()}
             onChange={() => openSheet()}
-            photo={todayPhoto ? { ...todayPhoto, url: todayPhotoUrls?.[todayPhoto.thumbPath] ?? null } : null}
+            photo={todayPhoto ? { ...todayPhoto, url: todayPhotoUrls?.[todayPhoto.path] ?? null } : null}
+            tileResetKey={`${focusCount}|${todayPhoto?.path ?? ''}`}
             canAddPhoto={isWornToday && Boolean(todayWear) && !todayPhoto}
             photoBusy={photoActions.busy || wearBusy}
             photoSaving={Boolean(photoActions.saving)}
