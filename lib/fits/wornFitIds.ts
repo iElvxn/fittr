@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
 import { todayLocalDate } from './localDate';
+import { toWearRef, WEAR_PHOTO_COLUMNS, type WearPhotoRow, type WearRef } from './wearRef';
 
 /**
  * Plain, directly-testable core (same split as `getFitItems.ts`): how many
@@ -42,13 +43,16 @@ export function useFitWearCounts(userId: string | undefined) {
 
 /**
  * Story 4.2: distinct from `getFitWearCounts` ("ever worn") -- this narrows to
- * *today's* local calendar date, so the Fit detail screen can render an
+ * *today's* local calendar date, so Fit detail and Home can render an
  * already-worn-today state and decide insert-vs-delete on a "Wear today" tap.
+ * Story 5.4: each Fit id maps to today's wear and its photo, so an undo can
+ * confirm first when a photo would go with it, and Home can add one. It's a
+ * Map, so `.has(fitId)` still answers "worn today?".
  */
-export async function getTodayWornFitIds(userId: string): Promise<Set<string>> {
+export async function getTodayWornFitIds(userId: string): Promise<Map<string, WearRef>> {
   const { data, error } = await supabase
     .from('fit_wears')
-    .select('fit_id')
+    .select(`id, fit_id, ${WEAR_PHOTO_COLUMNS}`)
     .eq('user_id', userId)
     .eq('worn_on', todayLocalDate());
 
@@ -59,7 +63,7 @@ export async function getTodayWornFitIds(userId: string): Promise<Set<string>> {
     throw error;
   }
 
-  return new Set((data ?? []).map((row: { fit_id: string }) => row.fit_id));
+  return new Map(((data ?? []) as (WearPhotoRow & { fit_id: string })[]).map((row) => [row.fit_id, toWearRef(row)]));
 }
 
 /** Mirrors `useFitWearCounts` -- live Supabase read, no local cache-of-record. */

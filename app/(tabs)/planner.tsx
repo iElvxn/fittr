@@ -20,6 +20,7 @@ import { todayLocalDate } from '@/lib/fits/localDate';
 import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import {
   type PlannedFitRow,
+  type WearsInRange,
   useMonthWears,
   usePlannedFits,
   usePlannedMonth,
@@ -40,6 +41,9 @@ import {
   weekStartOf,
 } from '@/lib/planner/week';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
+import { useWearPhotoUrls } from '@/lib/fits/wearPhoto';
+import { wearKey, type WearRef } from '@/lib/fits/wearRef';
+import { useWearPhotoActions } from '@/lib/fits/useWearPhotoActions';
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { colors } from '@/lib/theme/colors';
 import { Sentry } from '@/lib/observability/sentry';
@@ -57,6 +61,31 @@ function joinPlans(plans: PlannedFitRow[] | undefined, fitsById: Map<string, Fit
     }
   }
   return map;
+}
+
+/**
+ * The Fit a day counts as worn, and its wear: the planned Fit if that was
+ * worn, else (with nothing planned) the first live Fit worn that day. A
+ * planned Fit that wasn't worn wins over a different Fit that was, same as
+ * the month tiles, so that day has no photo section.
+ */
+function wornOnDay(
+  date: string,
+  plannedFit: FitRow | undefined,
+  fits: FitRow[],
+  wears: WearsInRange | undefined,
+): { fit: FitRow; wear: WearRef } | null {
+  if (!wears) {
+    return null;
+  }
+  const candidates = plannedFit ? [plannedFit] : fits;
+  for (const fit of candidates) {
+    const wear = wears.byKey.get(wearKey(fit.id, date));
+    if (wear) {
+      return { fit, wear };
+    }
+  }
+  return null;
 }
 
 export default function Planner() {
@@ -194,19 +223,45 @@ export default function Planner() {
   // Each month day shows its planned Fit, else a live Fit worn that day
   // (first in the Fits list's order), badged when that Fit was worn then.
   const monthDayFits = useMemo(() => {
-    const wears = monthWearsQuery.data ?? new Set<string>();
     const map = new Map<string, MonthDayFit>();
     for (const day of weeks.flat()) {
       if (!day) {
         continue;
       }
-      const fit = monthPlanByDate.get(day.date) ?? fits.find((candidate) => wears.has(`${candidate.id}|${day.date}`));
+      const planned = monthPlanByDate.get(day.date);
+      const worn = wornOnDay(day.date, planned, fits, monthWearsQuery.data);
+      const fit = planned ?? worn?.fit;
       if (fit) {
-        map.set(day.date, { fit, worn: wears.has(`${fit.id}|${day.date}`) });
+        map.set(day.date, { fit, worn: Boolean(worn), photo: worn?.wear.photo ?? null });
       }
     }
     return map;
   }, [weeks, monthPlanByDate, monthWearsQuery.data, fits]);
+
+  // Story 5.4: a week row shows only its planned Fit, so its photo is that
+  // Fit's wear photo. (A day worn with nothing planned stays an empty row, as
+  // before; its photo shows in the month and in the day's sheet.)
+  const weekDayWears = useMemo(() => {
+    const map = new Map<string, { fit: FitRow; wear: WearRef }>();
+    for (const day of days) {
+      const planned = weekPlanByDate.get(day.date);
+      const worn = planned ? wornOnDay(day.date, planned, fits, wearsQuery.data) : null;
+      if (worn) {
+        map.set(day.date, worn);
+      }
+    }
+    return map;
+  }, [days, weekPlanByDate, fits, wearsQuery.data]);
+
+  // Only the photos on screen are signed, and only their thumbnails; the
+  // full photo is loaded by the day sheet alone.
+  const photoThumbPaths = useMemo(() => {
+    const photos = isMonth
+      ? [...monthDayFits.values()].map((dayFit) => (dayFit.worn ? dayFit.photo : null))
+      : [...weekDayWears.values()].map((worn) => worn.wear.photo);
+    return photos.flatMap((photo) => (photo ? [photo.thumbPath] : []));
+  }, [isMonth, monthDayFits, weekDayWears]);
+  const { data: photoUrls } = useWearPhotoUrls(photoThumbPaths);
 
   const coverPaths = useMemo(() => fits.flatMap((fit) => (fit.cover_path ? [fit.cover_path] : [])), [fits]);
   const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
@@ -217,6 +272,25 @@ export default function Planner() {
     planByDate,
   });
   const sheetDay = sheetDate ? dayOf(sheetDate, today) : null;
+  const sheetWorn = sheetDate
+    ? wornOnDay(sheetDate, planByDate.get(sheetDate), fits, isMonth ? monthWearsQuery.data : wearsQuery.data)
+    : null;
+
+  const photoActions = useWearPhotoActions(userId);
+  const sheetBusy = busy || photoActions.busy;
+
+  function openSheet(date: string) {
+    photoActions.clearError();
+    openDay(date);
+  }
+
+  function closeDaySheet() {
+    if (photoActions.busy) {
+      return;
+    }
+    photoActions.clearError();
+    closeSheet();
+  }
 
   const header = (
     <View style={{ paddingTop: insets.top + 12 }} className="flex-row items-end justify-between gap-3 px-gutter">
@@ -331,7 +405,13 @@ export default function Planner() {
           contentContainerStyle={{ paddingBottom: tabBarClearance }}
         >
           <MonthWeekdayHeader />
-          <PlannerMonthGrid weeks={weeks} dayFits={monthDayFits} thumbnailUrls={thumbnailUrls} onOpenDay={openDay} />
+          <PlannerMonthGrid
+            weeks={weeks}
+            dayFits={monthDayFits}
+            thumbnailUrls={thumbnailUrls}
+            photoUrls={photoUrls}
+            onOpenDay={openSheet}
+          />
         </ScrollView>
       ) : (
         <ScrollView
@@ -342,9 +422,10 @@ export default function Planner() {
           {days.map((day) => {
             const fit = planByDate.get(day.date) ?? null;
             const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
+            const photo = weekDayWears.get(day.date)?.wear.photo ?? null;
             const meta = !fit
               ? ''
-              : wearsQuery.data?.has(`${fit.id}|${day.date}`)
+              : weekDayWears.has(day.date)
                 ? 'Worn'
                 : day.isToday
                   ? 'Planned for today'
@@ -356,7 +437,9 @@ export default function Planner() {
                 fit={fit}
                 coverUrl={coverUrl}
                 meta={meta}
-                onPress={() => openDay(day.date)}
+                photo={photo}
+                photoUrl={photo ? (photoUrls?.[photo.thumbPath] ?? null) : null}
+                onPress={() => openSheet(day.date)}
               />
             );
           })}
@@ -367,11 +450,17 @@ export default function Planner() {
         fits={fits}
         selectedFitId={sheetFit?.id ?? null}
         thumbnailUrls={thumbnailUrls}
-        busy={busy}
-        errorMessage={writeError}
+        busy={sheetBusy}
+        errorMessage={writeError ?? photoActions.error}
         onPick={pickFit}
         onRemove={removeFit}
-        onClose={closeSheet}
+        onClose={closeDaySheet}
+        worn={sheetWorn}
+        photoSavingUri={
+          sheetWorn && photoActions.saving?.wearId === sheetWorn.wear.id ? photoActions.saving.uri : null
+        }
+        onAddPhoto={photoActions.addPhoto}
+        onRemovePhoto={photoActions.removePhoto}
       />
     </>,
   );

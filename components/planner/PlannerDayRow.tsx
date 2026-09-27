@@ -4,6 +4,8 @@ import { Image } from 'expo-image';
 import { Text } from '@/components/ui/Text';
 import { ChevronRightIcon } from '@/components/ui/icons/ChevronRightIcon';
 import { PlusIcon } from '@/components/ui/icons/PlusIcon';
+import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
+import type { WearPhoto } from '@/lib/fits/wearRef';
 import type { FitRow } from '@/lib/fits/listFits';
 import type { WeekDay } from '@/lib/planner/week';
 import { colors } from '@/lib/theme/colors';
@@ -28,6 +30,10 @@ type Props = {
   coverUrl: string | null;
   /** "Worn", "Planned for today" or "Planned"; unused on an empty day. */
   meta: string;
+  /** Story 5.4: the photo of that Fit's wear that day, shown instead of the collage. */
+  photo?: WearPhoto | null;
+  /** Signed URL for `photo`'s thumbnail. */
+  photoUrl?: string | null;
   onPress: () => void;
 };
 
@@ -37,7 +43,7 @@ type Props = {
  * button that opens the day sheet. Today is marked by weight alone -- the
  * "Today" caption in full ink and a small ink dot -- never a color.
  */
-export function PlannerDayRow({ day, fit, coverUrl, meta, onPress }: Props) {
+export function PlannerDayRow({ day, fit, coverUrl, meta, photo = null, photoUrl = null, onPress }: Props) {
   const scheme = useColorScheme();
   const palette = scheme === 'dark' ? colors.dark : colors.light;
   const fontScale = PixelRatio.getFontScale();
@@ -75,27 +81,42 @@ export function PlannerDayRow({ day, fit, coverUrl, meta, onPress }: Props) {
 
       {fit ? (
         <>
-          <View
-            testID={`planner-tile-${day.date}`}
-            style={[
-              { width: DAY_TILE_WIDTH, height: DAY_TILE_HEIGHT },
-              fit.canvas_background_color ? { backgroundColor: fit.canvas_background_color } : null,
-            ]}
-            className={
-              fit.canvas_background_color
-                ? 'overflow-hidden rounded-lg'
-                : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
-            }
-          >
-            {coverUrl ? (
-              <Image
-                accessibilityLabel=""
-                source={{ uri: coverUrl }}
-                style={{ width: '100%', height: '100%' }}
-                contentFit="contain"
+          {photo ? (
+            <View
+              style={{ width: DAY_TILE_WIDTH, height: DAY_TILE_HEIGHT }}
+              className="overflow-hidden rounded-lg bg-surface-tile dark:bg-surface-tileDark"
+            >
+              <WearPhotoImage
+                testID={`planner-photo-${day.date}`}
+                path={photo.thumbPath}
+                url={photoUrl}
+                thumbhash={photo.thumbhash}
+                recyclingKey={day.date}
               />
-            ) : null}
-          </View>
+            </View>
+          ) : (
+            <View
+              testID={`planner-tile-${day.date}`}
+              style={[
+                { width: DAY_TILE_WIDTH, height: DAY_TILE_HEIGHT },
+                fit.canvas_background_color ? { backgroundColor: fit.canvas_background_color } : null,
+              ]}
+              className={
+                fit.canvas_background_color
+                  ? 'overflow-hidden rounded-lg'
+                  : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
+              }
+            >
+              {coverUrl ? (
+                <Image
+                  accessibilityLabel=""
+                  source={{ uri: coverUrl }}
+                  style={{ width: '100%', height: '100%' }}
+                  contentFit="contain"
+                />
+              ) : null}
+            </View>
+          )}
           <View className="min-w-0 flex-1 gap-1">
             <Text
               variant="title"

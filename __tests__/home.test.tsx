@@ -1,6 +1,6 @@
 import { act, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AppState, StyleSheet } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, StyleSheet } from 'react-native';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/profile/useProfile', () => ({ useProfile: jest.fn() }));
@@ -26,6 +26,14 @@ jest.mock('@/lib/fits/markFitWorn', () => ({
   unmarkFitWornToday: jest.fn(),
 }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
+jest.mock('@/lib/fits/wearPhoto', () => ({
+  chooseWearPhotoSource: jest.fn(),
+  pickWearPhoto: jest.fn(),
+  saveWearPhoto: jest.fn(),
+  removeWearPhoto: jest.fn(),
+  deleteWearPhotoFiles: jest.fn(),
+  useWearPhotoUrls: jest.fn(),
+}));
 jest.mock('@/lib/analytics/posthog', () => ({ trackFitPlanned: jest.fn(), trackFitWorn: jest.fn() }));
 // Pins "today" to Wed Sep 24 2025 (the mockup's week) without faking timers, as `planner.test.tsx` does.
 let mockToday = '2025-09-24';
@@ -50,6 +58,7 @@ import { useFitWearCounts, useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { useWearDates } from '@/lib/fits/wearStreak';
 import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
+import { chooseWearPhotoSource, pickWearPhoto, saveWearPhoto, useWearPhotoUrls, type WearPhoto } from '@/lib/fits/wearPhoto';
 import { trackFitPlanned, trackFitWorn } from '@/lib/analytics/posthog';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
@@ -91,8 +100,10 @@ function mockWearCounts(counts: [string, number][], overrides: Record<string, un
   (useFitWearCounts as jest.Mock).mockReturnValue(query({ data: new Map(counts), ...overrides }));
 }
 
-function mockTodayWorn(ids: string[], overrides: Record<string, unknown> = {}) {
-  (useTodayWornFitIds as jest.Mock).mockReturnValue(query({ data: new Set(ids), ...overrides }));
+/** Today's wears by Fit id, each with id `wear-{fitId}` and the given photo, if any. */
+function mockTodayWorn(ids: string[], overrides: Record<string, unknown> = {}, photos: Record<string, WearPhoto> = {}) {
+  const wears = new Map(ids.map((id) => [id, { id: `wear-${id}`, photo: photos[id] ?? null }]));
+  (useTodayWornFitIds as jest.Mock).mockReturnValue(query({ data: wears, ...overrides }));
 }
 
 function mockWearDates(dates: string[], overrides: Record<string, unknown> = {}) {
@@ -100,6 +111,17 @@ function mockWearDates(dates: string[], overrides: Record<string, unknown> = {})
 }
 
 let queryClient: QueryClient;
+/** expo-image's native view receives `source`/`placeholder` as arrays; the first entry is what the component passed. */
+function imageProp(element: { props: Record<string, unknown> }, name: 'source' | 'placeholder') {
+  const value = element.props[name];
+  return (Array.isArray(value) ? value[0] : value) as Record<string, string> | undefined;
+}
+
+/** How expo-image hands a `{ thumbhash }` placeholder to its native view. */
+function thumbhashUri(hash: string) {
+  return `thumbhash:/${encodeURIComponent(hash)}`;
+}
+
 
 /**
  * Holds a wear write open. Once it lands, Home drops its optimistic state
@@ -143,6 +165,10 @@ describe('Home tab', () => {
     (unmarkFitWornToday as jest.Mock).mockResolvedValue(undefined);
     (planFit as jest.Mock).mockResolvedValue(undefined);
     (unplanDay as jest.Mock).mockResolvedValue(undefined);
+    (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: {} });
+    (chooseWearPhotoSource as jest.Mock).mockResolvedValue('library');
+    (pickWearPhoto as jest.Mock).mockResolvedValue({ uri: 'file://picked.jpg' });
+    (saveWearPhoto as jest.Mock).mockResolvedValue(undefined);
     mockFits();
     mockPlans([]);
     mockWearCounts([]);
@@ -353,6 +379,222 @@ describe('Home tab', () => {
       expect(planFit).toHaveBeenCalledWith('user-1', WED, 'fit-b');
       expect(trackFitPlanned).toHaveBeenCalledWith(0);
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ['plannedFits', 'user-1'] });
+    });
+  });
+
+  describe("today's wear photo", () => {
+    const PHOTO: WearPhoto = {
+      path: 'user-1/wear-fit-a/p.webp',
+      thumbPath: 'user-1/wear-fit-a/p_thumb.webp',
+      thumbhash: 'hash-a',
+    };
+
+    function wornToday(photo?: WearPhoto) {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      mockTodayWorn(['fit-a'], {}, photo ? { 'fit-a': photo } : {});
+    }
+
+    function mockConfirm(buttonIndex: number) {
+      return jest
+        .spyOn(ActionSheetIOS, 'showActionSheetWithOptions')
+        .mockImplementation((_options, callback) => callback(buttonIndex));
+    }
+
+    // Only the native spies are put back; the module mocks keep the outer beforeEach's defaults.
+    afterEach(() => {
+      for (const fn of [ActionSheetIOS.showActionSheetWithOptions, Alert.alert]) {
+        (fn as unknown as Partial<jest.SpyInstance>).mockRestore?.();
+      }
+    });
+
+    it('offers no photo before the Fit is worn', async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+
+      await renderHome();
+
+      expect(screen.queryByRole('button', { name: 'Add a photo' })).toBeNull();
+    });
+
+    it("adds a photo to today's wear from the camera or library, then refreshes the wear reads", async () => {
+      wornToday();
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+      const { user } = await renderHome();
+
+      await user.press(button('Add a photo'));
+
+      await waitFor(() =>
+        expect(saveWearPhoto).toHaveBeenCalledWith('user-1', { id: 'wear-fit-a', photo: null }, 'file://picked.jpg'),
+      );
+      expect(pickWearPhoto).toHaveBeenCalledWith('library');
+      await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitWearsRange', 'user-1'] }));
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['todayWornFitIds', 'user-1'] });
+    });
+
+    it('shows it is saving and ignores another tap until the save lands', async () => {
+      wornToday();
+      const settle = pendingWrite(saveWearPhoto);
+      const { user } = await renderHome();
+
+      await user.press(button('Add a photo'));
+      await waitFor(() => expect(saveWearPhoto).toHaveBeenCalledTimes(1));
+      expect(button('Add a photo').props.accessibilityState).toMatchObject({ busy: true });
+      await user.press(button('Add a photo'));
+
+      expect(chooseWearPhotoSource).toHaveBeenCalledTimes(1);
+      await settle();
+    });
+
+    it('changes nothing when the picker is cancelled', async () => {
+      wornToday();
+      (pickWearPhoto as jest.Mock).mockResolvedValue({ cancelled: true });
+      const { user } = await renderHome();
+
+      await user.press(button('Add a photo'));
+
+      await waitFor(() => expect(pickWearPhoto).toHaveBeenCalled());
+      expect(saveWearPhoto).not.toHaveBeenCalled();
+    });
+
+    it('changes nothing when the source sheet is cancelled', async () => {
+      wornToday();
+      (chooseWearPhotoSource as jest.Mock).mockResolvedValue(null);
+      const { user } = await renderHome();
+
+      await user.press(button('Add a photo'));
+
+      await waitFor(() => expect(chooseWearPhotoSource).toHaveBeenCalled());
+      expect(pickWearPhoto).not.toHaveBeenCalled();
+      expect(saveWearPhoto).not.toHaveBeenCalled();
+    });
+
+    it('explains how to turn access back on in Settings when it was denied', async () => {
+      wornToday();
+      const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+      (chooseWearPhotoSource as jest.Mock).mockResolvedValue('camera');
+      (pickWearPhoto as jest.Mock).mockResolvedValue({ denied: true });
+      const { user } = await renderHome();
+
+      await user.press(button('Add a photo'));
+
+      await waitFor(() =>
+        expect(alert).toHaveBeenCalledWith(
+          'Camera access is off',
+          expect.stringContaining('Settings'),
+          expect.arrayContaining([expect.objectContaining({ text: 'Open Settings' })]),
+        ),
+      );
+      expect(saveWearPhoto).not.toHaveBeenCalled();
+    });
+
+    it('shows the no-connection notice, unreported, when the save fails offline', async () => {
+      wornToday();
+      (saveWearPhoto as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      const { user } = await renderHome();
+
+      await user.press(button('Add a photo'));
+
+      expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+      expect(button('Add a photo')).toBeTruthy();
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('shows the unknown-error notice and reports any other save failure', async () => {
+      wornToday();
+      (saveWearPhoto as jest.Mock).mockRejectedValue(new Error('boom'));
+      const { user } = await renderHome();
+
+      await user.press(button('Add a photo'));
+
+      expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalled();
+    });
+
+    it("shows today's photo as a row that opens today's sheet, keeping the collage on the big tile", async () => {
+      wornToday(PHOTO);
+      (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: { [PHOTO.thumbPath]: 'https://signed/thumb-a' } });
+      const { user } = await renderHome();
+
+      expect(screen.queryByRole('button', { name: 'Add a photo' })).toBeNull();
+      const photoRow = button("Today's photo. Open to replace or remove");
+      expect(within(photoRow).getByText("Today's photo")).toBeTruthy();
+      expect(within(photoRow).getByText('Replace or remove it in the Planner')).toBeTruthy();
+      expect(useWearPhotoUrls).toHaveBeenLastCalledWith([PHOTO.thumbPath]);
+      const thumb = screen.getByTestId('home-wear-photo');
+      expect(imageProp(thumb, 'source')).toEqual({ uri: 'https://signed/thumb-a', cacheKey: PHOTO.thumbPath });
+      expect(imageProp(thumb, 'placeholder')).toEqual({ uri: thumbhashUri('hash-a') });
+      expect(thumb.props.cachePolicy).toBe('memory-disk');
+      expect(screen.queryByTestId('home-wear-photo-full')).toBeNull();
+
+      await user.press(photoRow);
+
+      expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+      expect(button('Replace photo')).toBeTruthy();
+      expect(button('Remove photo')).toBeTruthy();
+    });
+
+    it("gives today's sheet the photo section for a Fit worn with nothing planned", async () => {
+      mockPlans([]);
+      mockTodayWorn(['fit-a']);
+      const { user } = await renderHome();
+
+      await user.press(button("Plan today's Fit"));
+
+      expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+      expect(button('Add a photo of what you wore')).toBeTruthy();
+    });
+
+    it("gives today's sheet no photo section when a different Fit than the plan was worn", async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      mockTodayWorn(['fit-b']);
+      const { user } = await renderHome();
+
+      await user.press(button("Change today's Fit"));
+
+      expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      expect(screen.queryByText(/^Worn · /)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
+    });
+
+    it('undoes a wear without a photo in one tap', async () => {
+      wornToday();
+      const confirm = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions');
+      const { user } = await renderHome();
+
+      await user.press(button('Worn today. Tap to undo'));
+
+      await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a'));
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('asks before undoing a wear that has a photo, and undoes on confirm', async () => {
+      wornToday(PHOTO);
+      const confirm = mockConfirm(0);
+      const { user } = await renderHome();
+
+      await user.press(button('Worn today. Tap to undo'));
+
+      expect(confirm).toHaveBeenCalledWith(
+        {
+          title: "Undo today's wear? Its photo will be deleted.",
+          options: ['Undo wear', 'Cancel'],
+          destructiveButtonIndex: 0,
+          cancelButtonIndex: 1,
+        },
+        expect.any(Function),
+      );
+      await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a'));
+    });
+
+    it('keeps the wear and its photo on Cancel', async () => {
+      wornToday(PHOTO);
+      mockConfirm(1);
+      const { user } = await renderHome();
+
+      await user.press(button('Worn today. Tap to undo'));
+
+      expect(unmarkFitWornToday).not.toHaveBeenCalled();
+      expect(button('Worn today. Tap to undo')).toBeTruthy();
+      expect(button("Today's photo. Open to replace or remove")).toBeTruthy();
     });
   });
 

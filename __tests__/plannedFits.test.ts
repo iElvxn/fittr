@@ -140,11 +140,18 @@ describe('unplanDay', () => {
 });
 
 describe('getWearsBetween', () => {
-  it('returns a fit|date key for every wear in the range', async () => {
+  it('returns a fit|date key for every wear in the range, and each wear with its photo', async () => {
     const { select, gte, lte } = mockRangeChain({
       data: [
-        { fit_id: 'fit-1', worn_on: '2025-09-22' },
-        { fit_id: 'fit-4', worn_on: '2025-09-23' },
+        { id: 'wear-1', fit_id: 'fit-1', worn_on: '2025-09-22', photo_path: null, photo_thumb_path: null, photo_thumbhash: null },
+        {
+          id: 'wear-2',
+          fit_id: 'fit-4',
+          worn_on: '2025-09-23',
+          photo_path: 'user-1/wear-2/p.webp',
+          photo_thumb_path: 'user-1/wear-2/p_thumb.webp',
+          photo_thumbhash: 'hash',
+        },
       ],
       error: null,
     });
@@ -152,16 +159,25 @@ describe('getWearsBetween', () => {
     const wears = await getWearsBetween('2025-09-22', '2025-09-28');
 
     expect(supabase.from).toHaveBeenCalledWith('fit_wears');
-    expect(select).toHaveBeenCalledWith('fit_id, worn_on');
+    expect(select).toHaveBeenCalledWith('id, fit_id, worn_on, photo_path, photo_thumb_path, photo_thumbhash');
     expect(gte).toHaveBeenCalledWith('worn_on', '2025-09-22');
     expect(lte).toHaveBeenCalledWith('worn_on', '2025-09-28');
-    expect(wears).toEqual(new Set(['fit-1|2025-09-22', 'fit-4|2025-09-23']));
+    expect(wears.keys).toEqual(new Set(['fit-1|2025-09-22', 'fit-4|2025-09-23']));
+    expect(wears.byKey).toEqual(
+      new Map([
+        ['fit-1|2025-09-22', { id: 'wear-1', photo: null }],
+        [
+          'fit-4|2025-09-23',
+          { id: 'wear-2', photo: { path: 'user-1/wear-2/p.webp', thumbPath: 'user-1/wear-2/p_thumb.webp', thumbhash: 'hash' } },
+        ],
+      ]),
+    );
   });
 
   it('treats a null payload as no wears', async () => {
     mockRangeChain({ data: null, error: null });
 
-    await expect(getWearsBetween('2025-09-22', '2025-09-28')).resolves.toEqual(new Set());
+    await expect(getWearsBetween('2025-09-22', '2025-09-28')).resolves.toEqual({ keys: new Set(), byKey: new Map() });
   });
 
   it('classifies a no-connection failure', async () => {
@@ -202,7 +218,7 @@ describe('week hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(gte).toHaveBeenCalledWith('worn_on', '2025-09-29');
     expect(lte).toHaveBeenCalledWith('worn_on', '2025-10-05');
-    expect(queryClient.getQueryData(['fitWearsRange', 'user-1', '2025-09-29'])).toEqual(new Set());
+    expect(queryClient.getQueryData(['fitWearsRange', 'user-1', '2025-09-29'])).toEqual({ keys: new Set(), byKey: new Map() });
   });
 
   it('does not read before there is a signed-in user', async () => {
@@ -243,7 +259,7 @@ describe('month hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(gte).toHaveBeenCalledWith('worn_on', '2026-02-01');
     expect(lte).toHaveBeenCalledWith('worn_on', '2026-02-28');
-    expect(queryClient.getQueryData(['fitWearsRange', 'user-1', 'month', '2026-02-01'])).toEqual(new Set());
+    expect(queryClient.getQueryData(['fitWearsRange', 'user-1', 'month', '2026-02-01'])).toEqual({ keys: new Set(), byKey: new Map() });
   });
 
   it("never shares a week's cache entry, even for a month starting on Monday", async () => {

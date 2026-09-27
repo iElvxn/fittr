@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from '@/lib/fits/errors';
+import { toWearRef, WEAR_PHOTO_COLUMNS, wearKey, type WearPhotoRow, type WearRef } from '@/lib/fits/wearRef';
 import { addDays, monthEndOf } from './week';
 
 export type PlannedFitRow = {
@@ -60,14 +61,18 @@ export async function unplanDay(plannedOn: string): Promise<void> {
   }
 }
 
-/**
- * Every wear in the range, as `${fit_id}|${worn_on}` keys, so a day row reads
- * "Worn" only when *its* Fit was worn on *that* day.
- */
-export async function getWearsBetween(start: string, end: string): Promise<Set<string>> {
+export type WearsInRange = {
+  /** `${fit_id}|${worn_on}` for every wear, so a day reads "Worn" only when *its* Fit was worn on *that* day. */
+  keys: Set<string>;
+  /** The same keys to each wear's id and photo (Story 5.4), for the tiles and the day sheet. */
+  byKey: Map<string, WearRef>;
+};
+
+/** Every wear in the range, with its photo. */
+export async function getWearsBetween(start: string, end: string): Promise<WearsInRange> {
   const { data, error } = await supabase
     .from('fit_wears')
-    .select('fit_id, worn_on')
+    .select(`id, fit_id, worn_on, ${WEAR_PHOTO_COLUMNS}`)
     .gte('worn_on', start)
     .lte('worn_on', end);
 
@@ -75,7 +80,11 @@ export async function getWearsBetween(start: string, end: string): Promise<Set<s
     classify(error);
   }
 
-  return new Set(((data ?? []) as { fit_id: string; worn_on: string }[]).map((row) => `${row.fit_id}|${row.worn_on}`));
+  const byKey = new Map<string, WearRef>();
+  for (const row of (data ?? []) as (WearPhotoRow & { fit_id: string; worn_on: string })[]) {
+    byKey.set(wearKey(row.fit_id, row.worn_on), toWearRef(row));
+  }
+  return { keys: new Set(byKey.keys()), byKey };
 }
 
 /**

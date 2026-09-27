@@ -13,7 +13,7 @@ jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
 // `@react-native-async-storage` native module outside app context.
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
-jest.mock('@/lib/fits/deleteFit', () => ({ deleteFit: jest.fn() }));
+jest.mock('@/lib/fits/deleteFit', () => ({ deleteFit: jest.fn(), countFitWearPhotos: jest.fn() }));
 jest.mock('@/lib/fits/getFitItems', () => ({ getFitItems: jest.fn() }));
 jest.mock('@/lib/fits/toggleFavorite', () => ({ toggleFitFavorite: jest.fn() }));
 // The shared invalidation stays real so the tests see every key it touches.
@@ -22,6 +22,8 @@ jest.mock('@/lib/fits/markFitWorn', () => ({
   markFitWornToday: jest.fn(),
   unmarkFitWornToday: jest.fn(),
 }));
+// The real `markFitWorn` imports the photo module, whose native image modules can't load here.
+jest.mock('@/lib/fits/wearPhoto', () => ({ deleteWearPhotoFiles: jest.fn() }));
 jest.mock('@/lib/analytics/posthog', () => ({ trackFitWorn: jest.fn() }));
 jest.mock('@/lib/fits/wornFitIds', () => ({ useTodayWornFitIds: jest.fn() }));
 jest.mock('@/lib/fits/shareFit', () => ({ shareFitCover: jest.fn() }));
@@ -32,7 +34,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
-import { deleteFit } from '@/lib/fits/deleteFit';
+import { countFitWearPhotos, deleteFit } from '@/lib/fits/deleteFit';
 import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
@@ -106,7 +108,8 @@ describe('Fit detail', () => {
         thumbPath: 'user-1/items/wardrobe-item-1/thumb.webp',
       },
     ]);
-    (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set() });
+    (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map() });
+    (countFitWearPhotos as jest.Mock).mockResolvedValue(0);
   });
 
   it('shows the cover image, name, and Edit/Delete controls', async () => {
@@ -187,7 +190,7 @@ describe('Fit detail', () => {
   });
 
   it('switches the wear caption to "Worn today" once today is logged', async () => {
-    (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+    (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map([['fit-1', { id: 'wear-1', photo: null }]]) });
     await renderFitDetail();
     // Let `getFitItems` settle so its state update lands inside the test's act scope.
     await screen.findByTestId('fit-items-list');
@@ -217,6 +220,97 @@ describe('Fit detail', () => {
       expect(deleteFit).toHaveBeenCalledWith('fit-1');
     });
     expect(router.back).toHaveBeenCalled();
+  });
+
+  it('confirms a plain delete with no photo line when the Fit has no wear photos', async () => {
+    mockActionSheetChoice(1);
+    await renderFitDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+    await waitFor(() =>
+      expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledWith(
+        { options: ['Delete', 'Cancel'], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
+        expect.any(Function),
+      ),
+    );
+    expect(countFitWearPhotos).toHaveBeenCalledWith('fit-1');
+  });
+
+  it("warns in the delete confirmation that the Fit's wear photos go too", async () => {
+    (countFitWearPhotos as jest.Mock).mockResolvedValue(3);
+    mockActionSheetChoice(1);
+    await renderFitDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+    await waitFor(() =>
+      expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Its 3 wear photos will be deleted too.', options: ['Delete', 'Cancel'] }),
+        expect.any(Function),
+      ),
+    );
+  });
+
+  it('says "photo" for a single wear photo', async () => {
+    (countFitWearPhotos as jest.Mock).mockResolvedValue(1);
+    mockActionSheetChoice(1);
+    await renderFitDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+    await waitFor(() =>
+      expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Its 1 wear photo will be deleted too.' }),
+        expect.any(Function),
+      ),
+    );
+  });
+
+  it("shows the connection error instead of the confirmation when the photo count can't be read offline", async () => {
+    (countFitWearPhotos as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+    mockActionSheetChoice(0);
+    await renderFitDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+    expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+    expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
+    expect(deleteFit).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports and shows the unknown-error notice, with no confirmation, when the photo count fails otherwise", async () => {
+    (countFitWearPhotos as jest.Mock).mockRejectedValue(new Error('boom'));
+    mockActionSheetChoice(0);
+    await renderFitDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+    expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+    expect(Sentry.captureException).toHaveBeenCalled();
+    expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
+    expect(deleteFit).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second Delete tap while the photo count is loading', async () => {
+    let resolveCount: (count: number) => void = () => {};
+    (countFitWearPhotos as jest.Mock).mockReturnValue(new Promise<number>((resolve) => (resolveCount = resolve)));
+    mockActionSheetChoice(1);
+    await renderFitDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+    expect(countFitWearPhotos).toHaveBeenCalledTimes(1);
+    resolveCount(0);
+    await waitFor(() => expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledTimes(1));
   });
 
   it('does nothing when delete is cancelled in the action sheet', async () => {
@@ -514,7 +608,7 @@ describe('Fit detail', () => {
     });
 
     it('shows the worn-today control when a fit_wears row already exists for today', async () => {
-      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map([['fit-1', { id: 'wear-1', photo: null }]]) });
 
       await renderFitDetail();
 
@@ -542,7 +636,7 @@ describe('Fit detail', () => {
     });
 
     it('unmarks the Fit worn today (undo) when already worn today, flipping immediately', async () => {
-      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map([['fit-1', { id: 'wear-1', photo: null }]]) });
       let resolveUnmark: () => void;
       (unmarkFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveUnmark = resolve)));
       await renderFitDetail();
@@ -555,6 +649,58 @@ describe('Fit detail', () => {
 
       resolveUnmark!();
       await waitFor(() => {});
+    });
+
+    it('undoes a wear without a photo in one tap, with no confirmation', async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map([['fit-1', { id: 'wear-1', photo: null }]]) });
+      jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions');
+      (unmarkFitWornToday as jest.Mock).mockResolvedValue(undefined);
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+      await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-1'));
+      expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
+    });
+
+    describe('when today’s wear has a photo', () => {
+      const WORN_WITH_PHOTO = new Map([
+        ['fit-1', { id: 'wear-1', photo: { path: 'user-1/wear-1/p.webp', thumbPath: 'user-1/wear-1/p_thumb.webp', thumbhash: 'h' } }],
+      ]);
+
+      it('asks first, and undoes the wear (and so its photo) on confirm', async () => {
+        (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: WORN_WITH_PHOTO });
+        (unmarkFitWornToday as jest.Mock).mockResolvedValue(undefined);
+        mockActionSheetChoice(0);
+        await renderFitDetail();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+        expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledWith(
+          {
+            title: "Undo today's wear? Its photo will be deleted.",
+            options: ['Undo wear', 'Cancel'],
+            destructiveButtonIndex: 0,
+            cancelButtonIndex: 1,
+          },
+          expect.any(Function),
+        );
+        await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-1'));
+      });
+
+      it('leaves the wear and its photo alone on Cancel', async () => {
+        (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: WORN_WITH_PHOTO });
+        mockActionSheetChoice(1);
+        await renderFitDetail();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+        expect(unmarkFitWornToday).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: "Remove today's wear entry" })).toBeTruthy();
+      });
     });
 
     it("tracks fit_worn from detail and refetches every wear read, including the Planner's and the streak", async () => {
@@ -572,7 +718,7 @@ describe('Fit detail', () => {
     });
 
     it('does not track fit_worn on undo', async () => {
-      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map([['fit-1', { id: 'wear-1', photo: null }]]) });
       (unmarkFitWornToday as jest.Mock).mockResolvedValue(undefined);
       await renderFitDetail();
 
@@ -618,7 +764,7 @@ describe('Fit detail', () => {
     });
 
     it('reverts back to worn-today and shows a connection error when undoing fails offline', async () => {
-      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map([['fit-1', { id: 'wear-1', photo: null }]]) });
       (unmarkFitWornToday as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
       await renderFitDetail();
 
@@ -630,7 +776,7 @@ describe('Fit detail', () => {
     });
 
     it('reverts back to worn-today and reports an unknown error when undoing fails', async () => {
-      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Set(['fit-1']) });
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map([['fit-1', { id: 'wear-1', photo: null }]]) });
       (unmarkFitWornToday as jest.Mock).mockRejectedValue(new Error('boom'));
       await renderFitDetail();
 
