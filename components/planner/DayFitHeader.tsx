@@ -1,11 +1,9 @@
-import { PixelRatio, Pressable, useColorScheme, View } from 'react-native';
+import { PixelRatio, Pressable, View } from 'react-native';
 import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
-import { CheckIcon } from '@/components/ui/icons/CheckIcon';
+import { WornTodayButton } from '@/components/fits/WornTodayButton';
 import type { FitRow } from '@/lib/fits/listFits';
-import { colors } from '@/lib/theme/colors';
 
 /** Same 3:4 as every Fit tile, sized to sit beside the name in the sheet. */
 const COLLAGE_WIDTH = 96;
@@ -36,12 +34,10 @@ type Props = {
  * Story 5.6: the day's Fit at the top of the day sheet -- the 3:4 collage
  * (filled like the grid tiles), the serif name and a status caption, then
  * View Fit and, on today only, the same Mark worn / Worn today toggle as
- * Home's card. Worn is shown by fill vs outline alone. The buttons wrap
+ * Home's card (`WornTodayButton`: solid means worn). The buttons wrap
  * rather than clip at large Dynamic Type sizes.
  */
 export function DayFitHeader({ fit, coverUrl, status, showCollage, busy, onViewFit, wornToggle = null }: Props) {
-  const scheme = useColorScheme();
-  const palette = scheme === 'dark' ? colors.dark : colors.light;
   const fontScale = PixelRatio.getFontScale();
 
   return (
@@ -89,24 +85,7 @@ export function DayFitHeader({ fit, coverUrl, status, showCollage, busy, onViewF
       <View className="flex-row flex-wrap gap-2.5">
         {wornToggle ? (
           <View className="grow">
-            {wornToggle.isWornToday ? (
-              <Button
-                title="Worn today"
-                variant="secondary"
-                accessibilityLabel="Worn today. Tap to undo"
-                accessibilityState={{ selected: true, busy }}
-                leftIcon={<CheckIcon size={15} color={palette.inkPrimary} />}
-                onPress={busy ? undefined : wornToggle.onToggle}
-              />
-            ) : (
-              <Button
-                title="Mark worn"
-                variant="primary"
-                accessibilityState={{ selected: false, busy }}
-                leftIcon={<CheckIcon size={15} color={palette.surfaceBase} />}
-                onPress={busy ? undefined : wornToggle.onToggle}
-              />
-            )}
+            <WornTodayButton isWornToday={wornToggle.isWornToday} busy={busy} onToggle={wornToggle.onToggle} />
           </View>
         ) : null}
         <Pressable

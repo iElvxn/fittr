@@ -2,9 +2,8 @@ import { PixelRatio, Pressable, useColorScheme, View } from 'react-native';
 import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
+import { WornTodayButton } from '@/components/fits/WornTodayButton';
 import { CameraIcon } from '@/components/ui/icons/CameraIcon';
-import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { ChevronRightIcon } from '@/components/ui/icons/ChevronRightIcon';
 import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
 import type { WearPhoto } from '@/lib/fits/wearRef';
@@ -48,9 +47,9 @@ type Props = {
 /**
  * Today's planned Fit on Home: a full-width 3:4 tile filled with the Fit's
  * canvas color (cover contained, as in the Planner), the serif name and a
- * meta line, then Mark worn and Change. Worn today is shown by fill vs
- * outline alone: the primary "Mark worn" becomes an outlined "Worn today"
- * that undoes the wear.
+ * meta line, then Mark worn and Change. Solid means worn: the outlined
+ * "Mark worn" becomes a solid "Worn today" with a check that undoes the
+ * wear (`WornTodayButton`).
  *
  * Story 5.4: once today's wear exists, "Add a photo" sits under the buttons;
  * with a photo, a row shows its thumbnail and opens today's day sheet. The
@@ -113,24 +112,7 @@ export function TodayFitCard({
 
       <View className="flex-row gap-2.5 pt-4">
         <View className="flex-1">
-          {isWornToday ? (
-            <Button
-              title="Worn today"
-              variant="secondary"
-              accessibilityLabel="Worn today. Tap to undo"
-              accessibilityState={{ selected: true, busy }}
-              leftIcon={<CheckIcon size={15} color={palette.inkPrimary} />}
-              onPress={busy ? undefined : onToggleWorn}
-            />
-          ) : (
-            <Button
-              title="Mark worn"
-              variant="primary"
-              accessibilityState={{ selected: false, busy }}
-              leftIcon={<CheckIcon size={15} color={palette.surfaceBase} />}
-              onPress={busy ? undefined : onToggleWorn}
-            />
-          )}
+          <WornTodayButton isWornToday={isWornToday} busy={busy} onToggle={onToggleWorn} />
         </View>
         <Pressable
           accessibilityRole="button"
