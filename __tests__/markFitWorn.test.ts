@@ -10,10 +10,12 @@ jest.mock('@/lib/supabase', () => ({
     from: jest.fn(),
   },
 }));
+jest.mock('@/lib/fits/wearPhoto', () => ({ deleteWearPhotoFiles: jest.fn() }));
 
 import { QueryClient } from '@tanstack/react-query';
 
 import { invalidateWearQueries, markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
+import { deleteWearPhotoFiles } from '@/lib/fits/wearPhoto';
 import { supabase } from '@/lib/supabase';
 
 function mockInsertChain(result: { error: unknown }) {
@@ -22,16 +24,18 @@ function mockInsertChain(result: { error: unknown }) {
   return { insert };
 }
 
-function mockDeleteChain(result: { error: unknown }) {
-  const eq3 = jest.fn().mockResolvedValue(result);
+function mockDeleteChain(result: { data?: unknown; error: unknown }) {
+  const select = jest.fn().mockResolvedValue({ data: [], ...result });
+  const eq3 = jest.fn().mockReturnValue({ select });
   const eq2 = jest.fn().mockReturnValue({ eq: eq3 });
   const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
   const del = jest.fn().mockReturnValue({ eq: eq1 });
   (supabase.from as jest.Mock).mockReturnValue({ delete: del });
-  return { del, eq1, eq2, eq3 };
+  return { del, eq1, eq2, eq3, select };
 }
 
 beforeEach(() => {
+  jest.clearAllMocks();
   mockUuidCounter = 0;
   // Fixed local time straddling a UTC day boundary (23:30 local, which
   // would be the *next* UTC day) -- catches a `toISOString()`-based
@@ -91,6 +95,33 @@ describe('unmarkFitWornToday', () => {
     expect(eq1).toHaveBeenCalledWith('user_id', 'user-1');
     expect(eq2).toHaveBeenCalledWith('fit_id', 'fit-1');
     expect(eq3).toHaveBeenCalledWith('worn_on', '2026-09-21');
+  });
+
+  it("deletes the wear's photo files after the row is gone", async () => {
+    const { select } = mockDeleteChain({
+      data: [{ photo_path: 'user-1/wear-1/p.webp', photo_thumb_path: 'user-1/wear-1/p_thumb.webp' }],
+      error: null,
+    });
+
+    await unmarkFitWornToday('user-1', 'fit-1');
+
+    expect(select).toHaveBeenCalledWith('photo_path, photo_thumb_path');
+    expect(deleteWearPhotoFiles).toHaveBeenCalledWith(['user-1/wear-1/p.webp', 'user-1/wear-1/p_thumb.webp']);
+  });
+
+  it('deletes no files for a wear without a photo', async () => {
+    mockDeleteChain({ data: [{ photo_path: null, photo_thumb_path: null }], error: null });
+
+    await unmarkFitWornToday('user-1', 'fit-1');
+
+    expect(deleteWearPhotoFiles).not.toHaveBeenCalled();
+  });
+
+  it('keeps the photo files when the delete fails', async () => {
+    mockDeleteChain({ error: new Error('boom') });
+
+    await expect(unmarkFitWornToday('user-1', 'fit-1')).rejects.toThrow('boom');
+    expect(deleteWearPhotoFiles).not.toHaveBeenCalled();
   });
 
   it('classifies a no-connection failure', async () => {

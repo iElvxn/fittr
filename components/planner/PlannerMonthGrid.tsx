@@ -3,6 +3,8 @@ import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
 import { CheckIcon } from '@/components/ui/icons/CheckIcon';
+import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
+import type { WearPhoto } from '@/lib/fits/wearRef';
 import type { FitRow } from '@/lib/fits/listFits';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import type { WeekDay } from '@/lib/planner/week';
@@ -17,13 +19,18 @@ const DATE_LINE_HEIGHT = 20;
 const TODAY_BORDER_WIDTH = 1.5;
 const BADGE_SIZE = 16;
 
-/** What a month day shows: its planned Fit, else a live Fit worn that day. */
-export type MonthDayFit = { fit: FitRow; worn: boolean };
+/**
+ * What a month day shows: its planned Fit, else a live Fit worn that day.
+ * `photo` is that wear's photo (Story 5.4), shown in place of the collage.
+ */
+export type MonthDayFit = { fit: FitRow; worn: boolean; photo: WearPhoto | null };
 
 type Props = {
   weeks: (WeekDay | null)[][];
   dayFits: Map<string, MonthDayFit>;
   thumbnailUrls: ThumbnailUrlMap | undefined;
+  /** Signed URLs for the wear photos' thumbnails, keyed by path. */
+  photoUrls: ThumbnailUrlMap | undefined;
   onOpenDay: (date: string) => void;
 };
 
@@ -45,16 +52,21 @@ function MonthCell({
   day,
   dayFit,
   coverUrl,
+  photoUrl,
   onPress,
 }: {
   day: WeekDay;
   dayFit: MonthDayFit | undefined;
   coverUrl: string | null;
+  photoUrl: string | null;
   onPress: () => void;
 }) {
   const fontScale = PixelRatio.getFontScale();
   const fit = dayFit?.fit ?? null;
-  const status = fit ? `${fit.name}, ${dayFit?.worn ? 'worn' : 'planned'}` : 'nothing planned';
+  const photo = dayFit?.worn ? dayFit.photo : null;
+  const status = fit
+    ? `${fit.name}, ${photo ? 'worn, with your photo' : dayFit?.worn ? 'worn' : 'planned'}`
+    : 'nothing planned';
 
   return (
     <Pressable
@@ -87,7 +99,31 @@ function MonthCell({
           {String(day.dayOfMonth)}
         </Text>
       </View>
-      {fit ? (
+      {fit && photo ? (
+        // A worn day with a photo shows the photo, still checked as worn.
+        <View
+          testID={`planner-month-photo-tile-${day.date}`}
+          style={[
+            { width: '100%', aspectRatio: MONTH_TILE_ASPECT_RATIO },
+            day.isToday ? { borderWidth: TODAY_BORDER_WIDTH } : null,
+          ]}
+          className={[
+            'overflow-hidden rounded-md bg-surface-tile dark:bg-surface-tileDark',
+            day.isToday ? 'border-ink-primary dark:border-ink-primaryDark' : '',
+          ].join(' ')}
+        >
+          <WearPhotoImage
+            testID={`planner-month-photo-${day.date}`}
+            path={photo.thumbPath}
+            url={photoUrl}
+            thumbhash={photo.thumbhash}
+            recyclingKey={day.date}
+          />
+          <View className="absolute right-1 top-1">
+            <WornBadge testID={`planner-month-worn-${day.date}`} />
+          </View>
+        </View>
+      ) : fit ? (
         <View
           testID={`planner-month-tile-${day.date}`}
           style={[
@@ -137,10 +173,11 @@ function MonthCell({
  * Story 5.3's month: Monday-first weeks of day buttons. A day with a Fit
  * shows its mini 3:4 tile (filled like the week view's), badged with an ink
  * check when that Fit was worn that day; an empty day keeps the same slot as
- * a dashed outline.
+ * a dashed outline. A worn day with a wear photo (Story 5.4) shows the
+ * photo's thumbnail instead of the collage, still badged.
  * Worn vs planned is the badge -- fill, not color.
  */
-export function PlannerMonthGrid({ weeks, dayFits, thumbnailUrls, onOpenDay }: Props) {
+export function PlannerMonthGrid({ weeks, dayFits, thumbnailUrls, photoUrls, onOpenDay }: Props) {
   return (
     <View>
       <View testID="planner-month" style={{ rowGap: MONTH_ROW_GAP }}>
@@ -156,12 +193,14 @@ export function PlannerMonthGrid({ weeks, dayFits, thumbnailUrls, onOpenDay }: P
               }
               const dayFit = dayFits.get(day.date);
               const coverPath = dayFit?.fit.cover_path;
+              const thumbPath = dayFit?.photo?.thumbPath;
               return (
                 <MonthCell
                   key={day.date}
                   day={day}
                   dayFit={dayFit}
                   coverUrl={coverPath ? (thumbnailUrls?.[coverPath] ?? null) : null}
+                  photoUrl={thumbPath ? (photoUrls?.[thumbPath] ?? null) : null}
                   onPress={() => onOpenDay(day.date)}
                 />
               );

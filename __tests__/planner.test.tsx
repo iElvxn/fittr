@@ -1,6 +1,6 @@
 import { act, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StyleSheet } from 'react-native';
+import { ActionSheetIOS, StyleSheet } from 'react-native';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
@@ -14,6 +14,16 @@ jest.mock('@/lib/planner/plannedFits', () => ({
 }));
 jest.mock('@/lib/planner/viewPreference', () => ({ loadPlannerView: jest.fn(), savePlannerView: jest.fn() }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
+jest.mock('@/lib/fits/wearPhoto', () => ({
+  chooseWearPhotoSource: jest.fn(),
+  pickWearPhoto: jest.fn(),
+  saveWearPhoto: jest.fn(),
+  removeWearPhoto: jest.fn(),
+  deleteWearPhotoFiles: jest.fn(),
+  useWearPhotoUrls: jest.fn(),
+}));
+// Keeps the real `markFitWorn` (whose invalidation the photo writes reuse) from loading the native Supabase client.
+jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('@/lib/analytics/posthog', () => ({ trackFitPlanned: jest.fn() }));
 // Pins "today" to Wed Sep 24 2025 (the mockup's week) without faking timers; `toLocalDate` stays
 // real so the week helpers still do their own date math.
@@ -35,6 +45,14 @@ import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { planFit, unplanDay, useMonthWears, usePlannedFits, usePlannedMonth, useWeekWears } from '@/lib/planner/plannedFits';
 import { loadPlannerView, savePlannerView } from '@/lib/planner/viewPreference';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
+import {
+  chooseWearPhotoSource,
+  pickWearPhoto,
+  removeWearPhoto,
+  saveWearPhoto,
+  useWearPhotoUrls,
+  type WearPhoto,
+} from '@/lib/fits/wearPhoto';
 import { trackFitPlanned } from '@/lib/analytics/posthog';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
@@ -71,19 +89,35 @@ function mockPlans(plans: { planned_on: string; fit_id: string }[], overrides: R
   (usePlannedFits as jest.Mock).mockReturnValue(query({ data: plans, ...overrides }));
 }
 
-function mockWears(keys: string[], overrides: Record<string, unknown> = {}) {
-  (useWeekWears as jest.Mock).mockReturnValue(query({ data: new Set(keys), ...overrides }));
+/** Wears as `fit|date` keys, each with id `wear-{key}` and the given photo, if any. */
+function wears(keys: string[], photos: Record<string, WearPhoto> = {}) {
+  return { keys: new Set(keys), byKey: new Map(keys.map((key) => [key, { id: `wear-${key}`, photo: photos[key] ?? null }])) };
+}
+
+function mockWears(keys: string[], overrides: Record<string, unknown> = {}, photos: Record<string, WearPhoto> = {}) {
+  (useWeekWears as jest.Mock).mockReturnValue(query({ data: wears(keys, photos), ...overrides }));
 }
 
 function mockMonthPlans(plans: { planned_on: string; fit_id: string }[], overrides: Record<string, unknown> = {}) {
   (usePlannedMonth as jest.Mock).mockReturnValue(query({ data: plans, ...overrides }));
 }
 
-function mockMonthWears(keys: string[], overrides: Record<string, unknown> = {}) {
-  (useMonthWears as jest.Mock).mockReturnValue(query({ data: new Set(keys), ...overrides }));
+function mockMonthWears(keys: string[], overrides: Record<string, unknown> = {}, photos: Record<string, WearPhoto> = {}) {
+  (useMonthWears as jest.Mock).mockReturnValue(query({ data: wears(keys, photos), ...overrides }));
 }
 
 let queryClient: QueryClient;
+/** expo-image's native view receives `source`/`placeholder` as arrays; the first entry is what the component passed. */
+function imageProp(element: { props: Record<string, unknown> }, name: 'source' | 'placeholder') {
+  const value = element.props[name];
+  return (Array.isArray(value) ? value[0] : value) as Record<string, string> | undefined;
+}
+
+/** How expo-image hands a `{ thumbhash }` placeholder to its native view. */
+function thumbhashUri(hash: string) {
+  return `thumbhash:/${encodeURIComponent(hash)}`;
+}
+
 
 async function renderPlanner() {
   const result = await render(
@@ -107,6 +141,11 @@ describe('Planner tab', () => {
     (useThumbnailUrls as jest.Mock).mockReturnValue({ data: {} });
     (planFit as jest.Mock).mockResolvedValue(undefined);
     (unplanDay as jest.Mock).mockResolvedValue(undefined);
+    (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: {} });
+    (chooseWearPhotoSource as jest.Mock).mockResolvedValue('library');
+    (pickWearPhoto as jest.Mock).mockResolvedValue({ uri: 'file://picked.jpg' });
+    (saveWearPhoto as jest.Mock).mockResolvedValue(undefined);
+    (removeWearPhoto as jest.Mock).mockResolvedValue(undefined);
     mockFits();
     mockPlans([]);
     mockWears([]);
@@ -509,6 +548,238 @@ describe('Planner tab', () => {
     });
   });
 
+  describe('wear photos', () => {
+    const MON_KEY = `fit-a|${MON}`;
+    const MON_WEAR = `wear-${MON_KEY}`;
+    const PHOTO: WearPhoto = {
+      path: `user-1/${MON_WEAR}/p.webp`,
+      thumbPath: `user-1/${MON_WEAR}/p_thumb.webp`,
+      thumbhash: 'hash-mon',
+    };
+
+    function wornMonday(photo?: WearPhoto) {
+      mockPlans([{ planned_on: MON, fit_id: 'fit-a' }]);
+      mockWears([MON_KEY], {}, photo ? { [MON_KEY]: photo } : {});
+    }
+
+    async function openMonday() {
+      const rendered = await renderPlanner();
+      await rendered.user.press(row('Monday, Sep 22: Sunday Market'));
+      return rendered;
+    }
+
+    function mockConfirm(buttonIndex: number) {
+      return jest
+        .spyOn(ActionSheetIOS, 'showActionSheetWithOptions')
+        .mockImplementation((_options, callback) => callback(buttonIndex));
+    }
+
+    afterEach(() => {
+      (ActionSheetIOS.showActionSheetWithOptions as unknown as Partial<jest.SpyInstance>).mockRestore?.();
+    });
+
+    describe('day sheet', () => {
+      it('captions a worn day with its Fit and offers a dashed photo slot beside the collage', async () => {
+        wornMonday();
+
+        await openMonday();
+
+        expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+        const slot = screen.getByRole('button', { name: 'Add a photo of what you wore' });
+        expect(within(slot).getByText('Add a photo')).toBeTruthy();
+        expect(within(slot).getByText('How it actually looked on you')).toBeTruthy();
+        expect(slot.props.className).toContain('border-dashed');
+        expect(screen.getByLabelText('Sunday Market collage')).toBeTruthy();
+        // Picking a Fit stays below the photo.
+        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Replace photo' })).toBeNull();
+      });
+
+      it('adds a photo to that wear from the camera or library, then refreshes the wear reads', async () => {
+        wornMonday();
+        const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Add a photo of what you wore' }));
+
+        await waitFor(() =>
+          expect(saveWearPhoto).toHaveBeenCalledWith('user-1', { id: MON_WEAR, photo: null }, 'file://picked.jpg'),
+        );
+        await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitWearsRange', 'user-1'] }));
+        // The sheet stays open on the day.
+        expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+      });
+
+      it('shows the picked photo under a "Saving" veil and ignores every control until it lands', async () => {
+        wornMonday();
+        let resolve: () => void = () => {};
+        (saveWearPhoto as jest.Mock).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Add a photo of what you wore' }));
+        await waitFor(() => expect(screen.getByText('Saving')).toBeTruthy());
+        expect(imageProp(screen.getByTestId('wear-photo-full'), 'source')).toMatchObject({ uri: 'file://picked.jpg' });
+
+        await user.press(screen.getByRole('button', { name: 'Office Day' }));
+        await user.press(screen.getByRole('button', { name: 'Close' }));
+
+        expect(planFit).not.toHaveBeenCalled();
+        expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+        await act(async () => resolve());
+        await waitFor(() => expect(screen.queryByText('Saving')).toBeNull());
+      });
+
+      it("shows the wear's full photo with Replace and Remove", async () => {
+        wornMonday(PHOTO);
+        (useWearPhotoUrls as jest.Mock).mockImplementation((paths: string[]) => ({
+          data: Object.fromEntries(paths.map((path) => [path, `https://signed/${path}`])),
+        }));
+
+        await openMonday();
+
+        const photo = screen.getByTestId('wear-photo-full');
+        expect(imageProp(photo, 'source')).toEqual({ uri: `https://signed/${PHOTO.path}`, cacheKey: PHOTO.path });
+        expect(imageProp(photo, 'placeholder')).toEqual({ uri: thumbhashUri('hash-mon') });
+        expect(screen.getByLabelText('Your photo from Monday, Sep 22')).toBeTruthy();
+        expect(useWearPhotoUrls).toHaveBeenCalledWith([PHOTO.path]);
+        expect(screen.getByRole('button', { name: 'Replace photo' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Remove photo' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
+      });
+
+      it('replaces the photo, handing the save the old one to clean up', async () => {
+        wornMonday(PHOTO);
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Replace photo' }));
+
+        await waitFor(() =>
+          expect(saveWearPhoto).toHaveBeenCalledWith('user-1', { id: MON_WEAR, photo: PHOTO }, 'file://picked.jpg'),
+        );
+      });
+
+      it('asks before removing the photo, and removes it on confirm', async () => {
+        wornMonday(PHOTO);
+        const confirm = mockConfirm(0);
+        const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Remove photo' }));
+
+        expect(confirm).toHaveBeenCalledWith(
+          { options: ['Remove photo', 'Cancel'], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
+          expect.any(Function),
+        );
+        await waitFor(() => expect(removeWearPhoto).toHaveBeenCalledWith({ id: MON_WEAR, photo: PHOTO }));
+        await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitWearsRange', 'user-1'] }));
+      });
+
+      it('keeps the photo when the removal is cancelled', async () => {
+        wornMonday(PHOTO);
+        mockConfirm(1);
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Remove photo' }));
+
+        expect(removeWearPhoto).not.toHaveBeenCalled();
+      });
+
+      it('changes nothing when the picker is cancelled', async () => {
+        wornMonday();
+        (pickWearPhoto as jest.Mock).mockResolvedValue({ cancelled: true });
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Add a photo of what you wore' }));
+
+        await waitFor(() => expect(pickWearPhoto).toHaveBeenCalledWith('library'));
+        expect(saveWearPhoto).not.toHaveBeenCalled();
+        expect(screen.queryByText('Saving')).toBeNull();
+      });
+
+      it('keeps the photo and shows the no-connection notice, unreported, when the save fails offline', async () => {
+        wornMonday(PHOTO);
+        (saveWearPhoto as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Replace photo' }));
+
+        expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Replace photo' })).toBeTruthy();
+        expect(screen.queryByText('Saving')).toBeNull();
+        expect(Sentry.captureException).not.toHaveBeenCalled();
+      });
+
+      it('shows the unknown-error notice and reports when the row update fails', async () => {
+        wornMonday();
+        (saveWearPhoto as jest.Mock).mockRejectedValue(new Error('update failed'));
+        const { user } = await openMonday();
+
+        await user.press(screen.getByRole('button', { name: 'Add a photo of what you wore' }));
+
+        expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Add a photo of what you wore' })).toBeTruthy();
+        expect(Sentry.captureException).toHaveBeenCalled();
+      });
+
+      it('has no photo section on a planned day not worn', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Sunday Market'));
+
+        expect(screen.queryByText(/^Worn · /)).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
+        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      });
+
+      it('has no photo section on a past day never marked worn', async () => {
+        mockPlans([{ planned_on: MON, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Monday, Sep 22: Sunday Market'));
+
+        expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
+      });
+
+      it("has no photo section when a different Fit than the day's plan was worn", async () => {
+        mockPlans([{ planned_on: TUE, fit_id: 'fit-a' }]);
+        mockWears([`fit-b|${TUE}`]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Tuesday, Sep 23: Sunday Market'));
+
+        expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
+      });
+    });
+
+    describe('week rows', () => {
+      it("shows a worn day's photo thumbnail instead of the collage, still captioned Worn", async () => {
+        wornMonday(PHOTO);
+        (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: { [PHOTO.thumbPath]: 'https://signed/thumb' } });
+
+        await renderPlanner();
+
+        const photo = screen.getByTestId(`planner-photo-${MON}`);
+        expect(imageProp(photo, 'source')).toEqual({ uri: 'https://signed/thumb', cacheKey: PHOTO.thumbPath });
+        expect(imageProp(photo, 'placeholder')).toEqual({ uri: thumbhashUri('hash-mon') });
+        expect(photo.props.cachePolicy).toBe('memory-disk');
+        expect(within(row('Monday, Sep 22: Sunday Market')).getByText('Worn')).toBeTruthy();
+        // Tiles only ever load thumbnails.
+        expect(useWearPhotoUrls).toHaveBeenCalledWith([PHOTO.thumbPath]);
+        expect(useWearPhotoUrls).not.toHaveBeenCalledWith(expect.arrayContaining([PHOTO.path]));
+      });
+
+      it('keeps the collage on a worn day without a photo', async () => {
+        wornMonday();
+
+        await renderPlanner();
+
+        expect(screen.queryByTestId(`planner-photo-${MON}`)).toBeNull();
+        expect(screen.getByTestId(`planner-tile-${MON}`)).toBeTruthy();
+      });
+    });
+  });
+
   describe('month view', () => {
     // Sat Sep 26 2026, the month on the approved P4Month board.
     const SEP_10 = '2026-09-10';
@@ -754,6 +1025,91 @@ describe('Planner tab', () => {
         expect(screen.queryByTestId(`planner-month-empty-${SEP_11}`)).toBeNull();
         expect(screen.getByTestId(`planner-month-empty-${SEP_10}`).props.className).toContain('border-dashed');
         expect(screen.getByTestId(`planner-month-empty-${SEP_10}`).props.style).toMatchObject({ aspectRatio: 3 / 4 });
+      });
+
+      describe('wear photos', () => {
+        function photoFor(key: string): WearPhoto {
+          return { path: `user-1/wear-${key}/p.webp`, thumbPath: `user-1/wear-${key}/p_thumb.webp`, thumbhash: `hash-${key}` };
+        }
+
+        it('shows the photo instead of the collage on a worn day with one, keeping the worn check', async () => {
+          const key = `fit-a|${SEP_11}`;
+          const photo = photoFor(key);
+          mockMonthPlans([{ planned_on: SEP_11, fit_id: 'fit-a' }]);
+          mockMonthWears([key], {}, { [key]: photo });
+          (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: { [photo.thumbPath]: 'https://signed/thumb-11' } });
+
+          await openMonth();
+
+          expect(day('Friday, Sep 11: Sunday Market, worn, with your photo')).toBeTruthy();
+          const image = screen.getByTestId(`planner-month-photo-${SEP_11}`);
+          expect(imageProp(image, 'source')).toEqual({ uri: 'https://signed/thumb-11', cacheKey: photo.thumbPath });
+          expect(imageProp(image, 'placeholder')).toEqual({ uri: thumbhashUri(`hash-${key}`) });
+          expect(image.props.cachePolicy).toBe('memory-disk');
+          expect(image.props.recyclingKey).toBe(SEP_11);
+          expect(screen.getByTestId(`planner-month-worn-${SEP_11}`)).toBeTruthy();
+          expect(screen.queryByTestId(`planner-month-tile-${SEP_11}`)).toBeNull();
+        });
+
+        it('keeps the collage on a worn day without a photo', async () => {
+          mockMonthWears([`fit-b|${SEP_16}`]);
+
+          await openMonth();
+
+          expect(screen.getByTestId(`planner-month-tile-${SEP_16}`)).toBeTruthy();
+          expect(screen.queryByTestId(`planner-month-photo-${SEP_16}`)).toBeNull();
+        });
+
+        it("signs only the visible month's thumbnails, never a full photo", async () => {
+          const keys = [`fit-a|${SEP_11}`, `fit-b|${SEP_16}`];
+          mockMonthWears(keys, {}, Object.fromEntries(keys.map((key) => [key, photoFor(key)])));
+
+          await openMonth();
+
+          const requested = (useWearPhotoUrls as jest.Mock).mock.calls.at(-1)[0] as string[];
+          expect([...requested].sort()).toEqual(keys.map((key) => photoFor(key).thumbPath).sort());
+        });
+
+        it('keys 30 photo tiles by storage path, so a second view is served from the disk cache', async () => {
+          const dates = Array.from({ length: 30 }, (_, i) => `2026-09-${String(i + 1).padStart(2, '0')}`);
+          const keys = dates.map((date) => `fit-a|${date}`);
+          const photos = Object.fromEntries(keys.map((key) => [key, photoFor(key)]));
+          mockMonthWears(keys, {}, photos);
+          let signing = 1;
+          // Signed URLs change between views; the cache key must not.
+          (useWearPhotoUrls as jest.Mock).mockImplementation((paths: string[]) => ({
+            data: Object.fromEntries(paths.map((path) => [path, `https://signed/${signing}/${path}`])),
+          }));
+          const { user } = await openMonth();
+
+          const cacheKeys = () => dates.map((date) => imageProp(screen.getByTestId(`planner-month-photo-${date}`), 'source')?.cacheKey);
+          const firstView = cacheKeys();
+          expect(firstView).toEqual(keys.map((key) => photos[key].thumbPath));
+
+          signing = 2;
+          await user.press(screen.getByRole('button', { name: 'Next month' }));
+          await user.press(screen.getByRole('button', { name: 'Previous month' }));
+
+          expect(imageProp(screen.getByTestId(`planner-month-photo-${dates[0]}`), 'source')?.uri).toContain('/2/');
+          expect(cacheKeys()).toEqual(firstView);
+          for (const date of dates) {
+            expect(screen.getByTestId(`planner-month-photo-${date}`).props.cachePolicy).toBe('memory-disk');
+          }
+        });
+
+        it("opens a worn day's sheet from the month with its photo section", async () => {
+          const key = `fit-b|${SEP_16}`;
+          mockMonthWears([key]);
+          const { user } = await openMonth();
+
+          await user.press(day('Wednesday, Sep 16: Office Day, worn'));
+          await user.press(screen.getByRole('button', { name: 'Add a photo of what you wore' }));
+
+          expect(screen.getByText('Worn · Office Day')).toBeTruthy();
+          await waitFor(() =>
+            expect(saveWearPhoto).toHaveBeenCalledWith('user-1', { id: `wear-${key}`, photo: null }, 'file://picked.jpg'),
+          );
+        });
       });
 
       it("inks today's empty slot", async () => {

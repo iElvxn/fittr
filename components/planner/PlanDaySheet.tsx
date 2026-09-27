@@ -6,6 +6,8 @@ import { Text } from '@/components/ui/Text';
 import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { CloseIcon } from '@/components/ui/icons/CloseIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
+import { WearPhotoSection } from '@/components/planner/WearPhotoSection';
+import type { WearRef } from '@/lib/fits/wearRef';
 import type { FitRow } from '@/lib/fits/listFits';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import type { WeekDay } from '@/lib/planner/week';
@@ -35,6 +37,12 @@ type Props = {
   onPick: (fitId: string) => void;
   onRemove: () => void;
   onClose: () => void;
+  /** Story 5.4: the Fit worn that day and its wear, which gives the sheet its photo section. Null on a day not worn. */
+  worn?: { fit: FitRow; wear: WearRef } | null;
+  /** A picked photo still saving for that wear. */
+  photoSavingUri?: string | null;
+  onAddPhoto?: (wear: WearRef) => void;
+  onRemovePhoto?: (wear: WearRef) => void;
 };
 
 /**
@@ -43,6 +51,10 @@ type Props = {
  * `CanvasBackgroundSheet` (scrim, handle, `rounded-t-lg`). The current pick
  * wears an ink check badge. The sheet stays open through a failed write so
  * the error shows where the user tapped.
+ *
+ * Story 5.4: on a worn day the caption reads "Worn · {Fit}" and the wear's
+ * photo section sits above the grid, which moves under its own "Choose a
+ * Fit" caption. A photo write locks the sheet like a plan write does.
  */
 export function PlanDaySheet({
   day,
@@ -54,6 +66,10 @@ export function PlanDaySheet({
   onPick,
   onRemove,
   onClose,
+  worn = null,
+  photoSavingUri = null,
+  onAddPhoto,
+  onRemovePhoto,
 }: Props) {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
@@ -89,7 +105,7 @@ export function PlanDaySheet({
           <View className="flex-row items-start justify-between gap-3 px-gutter pb-4">
             <View className="shrink gap-1">
               <Text variant="caption" className="text-ink-secondary dark:text-ink-secondaryDark">
-                Choose a Fit
+                {worn ? `Worn · ${worn.fit.name}` : 'Choose a Fit'}
               </Text>
               <Text accessibilityRole="header" variant="title" className="text-ink-primary dark:text-ink-primaryDark">
                 {day.long}
@@ -113,65 +129,82 @@ export function PlanDaySheet({
             </View>
           ) : null}
 
-          <ScrollView
-            contentContainerClassName="flex-row flex-wrap px-gutter"
-            contentContainerStyle={{ columnGap: COLUMN_GAP, rowGap: ROW_GAP }}
-            style={{ flexGrow: 0 }}
-          >
-            {fits.map((fit) => {
-              const selected = fit.id === selectedFitId;
-              const coverUrl = fit.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
-              return (
-                <Pressable
-                  key={fit.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={fit.name}
-                  accessibilityState={{ selected, disabled: busy }}
-                  onPress={() => onPick(fit.id)}
-                  disabled={busy}
-                  style={{ width: tileWidth }}
-                  className="active:opacity-80"
-                >
-                  <View
-                    style={[
-                      { width: tileWidth, height: tileHeight },
-                      fit.canvas_background_color ? { backgroundColor: fit.canvas_background_color } : null,
-                    ]}
-                    className={
-                      fit.canvas_background_color
-                        ? 'overflow-hidden rounded-lg'
-                        : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
-                    }
+          {/* One scroll for the photo and the grid, so both fit on a small screen. */}
+          <ScrollView contentContainerClassName="px-gutter" style={{ flexGrow: 0 }}>
+            {worn ? (
+              <View className="pb-4">
+                <WearPhotoSection
+                  dayLabel={day.long}
+                  fit={worn.fit}
+                  wear={worn.wear}
+                  coverUrl={worn.fit.cover_path ? (thumbnailUrls?.[worn.fit.cover_path] ?? null) : null}
+                  savingUri={photoSavingUri}
+                  busy={busy}
+                  onAddPhoto={() => onAddPhoto?.(worn.wear)}
+                  onRemovePhoto={() => onRemovePhoto?.(worn.wear)}
+                />
+                <View className="mt-4 h-px bg-border-hairline dark:bg-border-hairlineDark" />
+                <Text variant="caption" className="pt-4 text-ink-secondary dark:text-ink-secondaryDark">
+                  Choose a Fit
+                </Text>
+              </View>
+            ) : null}
+            <View className="flex-row flex-wrap" style={{ columnGap: COLUMN_GAP, rowGap: ROW_GAP }}>
+              {fits.map((fit) => {
+                const selected = fit.id === selectedFitId;
+                const coverUrl = fit.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
+                return (
+                  <Pressable
+                    key={fit.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={fit.name}
+                    accessibilityState={{ selected, disabled: busy }}
+                    onPress={() => onPick(fit.id)}
+                    disabled={busy}
+                    style={{ width: tileWidth }}
+                    className="active:opacity-80"
                   >
-                    {coverUrl ? (
-                      <Image
-                        accessibilityLabel=""
-                        source={{ uri: coverUrl }}
-                        style={{ width: '100%', height: '100%' }}
-                        contentFit="contain"
-                      />
-                    ) : null}
-                    {selected ? (
-                      <View
-                        testID={`plan-sheet-check-${fit.id}`}
-                        style={{ width: CHECK_BADGE_SIZE, height: CHECK_BADGE_SIZE }}
-                        className="absolute right-1.5 top-1.5 items-center justify-center rounded-full bg-ink-primary dark:bg-ink-primaryDark"
-                      >
-                        <CheckIcon size={13} color={palette.surfaceBase} />
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text
-                    variant="title"
-                    numberOfLines={1}
-                    style={{ fontSize: NAME_FONT_SIZE * fontScale, lineHeight: NAME_LINE_HEIGHT * fontScale }}
-                    className="mt-1.5 px-0.5 text-ink-primary dark:text-ink-primaryDark"
-                  >
-                    {fit.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
+                    <View
+                      style={[
+                        { width: tileWidth, height: tileHeight },
+                        fit.canvas_background_color ? { backgroundColor: fit.canvas_background_color } : null,
+                      ]}
+                      className={
+                        fit.canvas_background_color
+                          ? 'overflow-hidden rounded-lg'
+                          : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
+                      }
+                    >
+                      {coverUrl ? (
+                        <Image
+                          accessibilityLabel=""
+                          source={{ uri: coverUrl }}
+                          style={{ width: '100%', height: '100%' }}
+                          contentFit="contain"
+                        />
+                      ) : null}
+                      {selected ? (
+                        <View
+                          testID={`plan-sheet-check-${fit.id}`}
+                          style={{ width: CHECK_BADGE_SIZE, height: CHECK_BADGE_SIZE }}
+                          className="absolute right-1.5 top-1.5 items-center justify-center rounded-full bg-ink-primary dark:bg-ink-primaryDark"
+                        >
+                          <CheckIcon size={13} color={palette.surfaceBase} />
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text
+                      variant="title"
+                      numberOfLines={1}
+                      style={{ fontSize: NAME_FONT_SIZE * fontScale, lineHeight: NAME_LINE_HEIGHT * fontScale }}
+                      className="mt-1.5 px-0.5 text-ink-primary dark:text-ink-primaryDark"
+                    >
+                      {fit.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </ScrollView>
 
           {selectedFitId ? (

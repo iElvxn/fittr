@@ -18,10 +18,10 @@ function randomUUID(): string {
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
 const describeIfConfigured =
-  supabaseUrl && supabasePublishableKey && supabaseServiceRoleKey ? describe : describe.skip;
+  supabaseUrl && supabasePublishableKey && supabaseSecretKey ? describe : describe.skip;
 
 /**
  * Automated cross-user RLS check for `profiles` (per the spec: "an
@@ -41,10 +41,11 @@ const describeIfConfigured =
  * sends a real confirmation email through Supabase's rate-limited default
  * email service — two signups per test run quickly exhausts that quota. The
  * Admin API creates a pre-confirmed user directly, with no email sent and
- * no rate-limit interaction, using the `service_role` key (bypasses RLS —
+ * no rate-limit interaction, using the project's secret key (`sb_secret_...`,
+ * the successor to the legacy `service_role` key). It bypasses RLS, so it's
  * used ONLY here to set up fixtures, never for the actual RLS assertion
  * below, which goes through a normal signed-in client exactly like the app
- * does).
+ * does.
  *
  * No manual `profiles` insert here: the `handle_new_user` trigger on
  * `auth.users` (0001_profiles.sql) creates the row automatically as part of
@@ -54,7 +55,7 @@ describeIfConfigured('profiles RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's profiles row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -114,7 +115,7 @@ describeIfConfigured('wardrobe storage RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot read or overwrite the first user's avatar object", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -186,7 +187,7 @@ describeIfConfigured('wardrobe_items RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's wardrobe_items row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -262,7 +263,7 @@ describeIfConfigured('wardrobe_items RLS: cross-user isolation', () => {
    * test can't exercise.
    */
   it("a second user cannot INSERT or UPDATE a row under the first user's user_id", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -358,7 +359,7 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's fits row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -407,7 +408,7 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot INSERT or UPDATE a row under the first user's user_id, but the owner can update their own", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -481,7 +482,7 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot SELECT, INSERT into, UPDATE, or DELETE the first user's fit_items rows", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -597,14 +598,14 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
  * Story 4.1/4.2: cross-user isolation for `fit_wears` (0008_fit_wears.sql,
  * 0009_fit_wears_undo.sql). SELECT/INSERT shipped read-only in Story 4.1;
  * Story 4.2 added a scoped DELETE policy so "Wear today" can be undone
- * same-day -- still no UPDATE policy, since nothing ever edits a wear row
- * in place.
+ * same-day. Story 5.4's photo-column UPDATE right is covered in its own
+ * block below.
  */
 describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
 
   it("a second user cannot SELECT the first user's fit_wears row", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -660,7 +661,7 @@ describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot INSERT a fit_wears row under the first user's user_id, but the owner can", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -722,7 +723,7 @@ describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
   });
 
   it("a second user cannot DELETE the first user's fit_wears row, but the owner can", async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -787,6 +788,196 @@ describeIfConfigured('fit_wears RLS: cross-user isolation', () => {
 });
 
 /**
+ * Story 5.4: wear photos (0013_wear_photos.sql). `fit_wears` gains an UPDATE
+ * policy, but the column grant limits it to the three photo columns, so even
+ * the owner can't rewrite `worn_on`. The private `wear-photos` bucket has
+ * select/insert/delete policies scoped to the caller's `{uid}/` folder.
+ */
+describeIfConfigured('wear photos RLS: fit_wears photo columns and wear-photos storage', () => {
+  jest.setTimeout(30000);
+
+  // Created in `beforeAll`, not here: `describe.skip` still runs this body,
+  // and `createClient` throws without a URL.
+  let admin: SupabaseClient;
+  let client1: SupabaseClient;
+  let client2: SupabaseClient;
+  const password = 'Test-password-123!';
+  const fitId = randomUUID();
+  const wearId = randomUUID();
+  let user1Id: string | undefined;
+  let user2Id: string | undefined;
+  const webp = new Uint8Array([1, 2, 3, 4]);
+
+  beforeAll(async () => {
+    admin = createClient(supabaseUrl!, supabaseSecretKey!);
+    client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+    client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+
+    const stamp = Date.now();
+    const email1 = `rls-wear-photos-1-${stamp}@mailinator.com`;
+    const email2 = `rls-wear-photos-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    user1Id = created1.data.user?.id;
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    user2Id = created2.data.user?.id;
+
+    expect((await client1.auth.signInWithPassword({ email: email1, password })).error).toBeNull();
+    expect((await client2.auth.signInWithPassword({ email: email2, password })).error).toBeNull();
+
+    const fitInsert = await client1.from('fits').insert({
+      id: fitId,
+      user_id: user1Id,
+      name: 'Weekend brunch',
+      cover_path: `${user1Id}/fits/${fitId}/cover.png`,
+    });
+    expect(fitInsert.error).toBeNull();
+
+    const wearInsert = await client1
+      .from('fit_wears')
+      .insert({ id: wearId, user_id: user1Id, fit_id: fitId, worn_on: '2026-09-21' });
+    expect(wearInsert.error).toBeNull();
+  });
+
+  afterEach(async () => {
+    await admin
+      .from('fit_wears')
+      .update({ photo_path: null, photo_thumb_path: null, photo_thumbhash: null })
+      .eq('id', wearId);
+  });
+
+  afterAll(async () => {
+    if (user1Id) {
+      const { data } = await admin.storage.from('wear-photos').list(`${user1Id}/${wearId}`);
+      if (data?.length) {
+        await admin.storage.from('wear-photos').remove(data.map((f) => `${user1Id}/${wearId}/${f.name}`));
+      }
+    }
+    await admin.from('fit_wears').delete().eq('id', wearId);
+    await admin.from('fits').delete().eq('id', fitId);
+    if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+    if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+  });
+
+  function photoColumns(ownerId: string | undefined) {
+    const name = randomUUID();
+    return {
+      photo_path: `${ownerId}/${wearId}/${name}.webp`,
+      photo_thumb_path: `${ownerId}/${wearId}/${name}_thumb.webp`,
+      photo_thumbhash: 'AAAA',
+    };
+  }
+
+  it("the owner can set a wear's photo columns", async () => {
+    const columns = photoColumns(user1Id);
+    const { error } = await client1.from('fit_wears').update(columns).eq('id', wearId);
+    expect(error).toBeNull();
+
+    const { data } = await admin
+      .from('fit_wears')
+      .select('photo_path, photo_thumb_path, photo_thumbhash')
+      .eq('id', wearId)
+      .single();
+    expect(data).toEqual(columns);
+  });
+
+  it("a second user cannot UPDATE the first user's photo columns", async () => {
+    // RLS hides the row from the update rather than erroring: a no-op.
+    const hijack = await client2.from('fit_wears').update(photoColumns(user2Id)).eq('id', wearId);
+    expect(hijack.error).toBeNull();
+
+    const { data } = await admin.from('fit_wears').select('photo_path').eq('id', wearId).single();
+    expect(data?.photo_path).toBeNull();
+  });
+
+  it("the owner cannot point a wear at a path outside their own folder", async () => {
+    const { error } = await client1.from('fit_wears').update(photoColumns(user2Id)).eq('id', wearId);
+    expect(error).not.toBeNull();
+  });
+
+  it("the owner cannot point a wear at another wear's folder", async () => {
+    const otherWear = randomUUID();
+    const { error } = await client1
+      .from('fit_wears')
+      .update({
+        photo_path: `${user1Id}/${otherWear}/p.webp`,
+        photo_thumb_path: `${user1Id}/${otherWear}/p_thumb.webp`,
+      })
+      .eq('id', wearId);
+    expect(error).not.toBeNull();
+  });
+
+  it('the owner cannot set one photo path without the other', async () => {
+    const { photo_path } = photoColumns(user1Id);
+    const { error } = await client1.from('fit_wears').update({ photo_path }).eq('id', wearId);
+    expect(error).not.toBeNull();
+  });
+
+  it('the owner cannot store an oversized thumbhash', async () => {
+    const { error } = await client1
+      .from('fit_wears')
+      .update({ ...photoColumns(user1Id), photo_thumbhash: 'A'.repeat(101) })
+      .eq('id', wearId);
+    expect(error).not.toBeNull();
+  });
+
+  it("even the owner cannot UPDATE a wear's worn_on", async () => {
+    const { error } = await client1.from('fit_wears').update({ worn_on: '2026-09-20' }).eq('id', wearId);
+    expect(error).not.toBeNull();
+
+    const { data } = await admin.from('fit_wears').select('worn_on').eq('id', wearId).single();
+    expect(data?.worn_on).toBe('2026-09-21');
+  });
+
+  it("a second user cannot read, insert into, or delete from the first user's wear-photos folder, but the owner can", async () => {
+    const objectPath = `${user1Id}/${wearId}/${randomUUID()}.webp`;
+
+    const ownUpload = await client1.storage
+      .from('wear-photos')
+      .upload(objectPath, webp, { contentType: 'image/webp' });
+    expect(ownUpload.error).toBeNull();
+
+    const ownRead = await client1.storage.from('wear-photos').createSignedUrl(objectPath, 60);
+    expect(ownRead.error).toBeNull();
+
+    const otherRead = await client2.storage.from('wear-photos').createSignedUrl(objectPath, 60);
+    expect(otherRead.error).not.toBeNull();
+
+    const otherInsert = await client2.storage
+      .from('wear-photos')
+      .upload(`${user1Id}/${wearId}/${randomUUID()}.webp`, webp, { contentType: 'image/webp' });
+    expect(otherInsert.error).not.toBeNull();
+
+    // Storage's remove reports RLS-hidden objects as an empty result, not
+    // an error, so check the object is still there.
+    await client2.storage.from('wear-photos').remove([objectPath]);
+    const afterOtherDelete = await admin.storage.from('wear-photos').list(`${user1Id}/${wearId}`);
+    expect(afterOtherDelete.data?.map((f) => `${user1Id}/${wearId}/${f.name}`)).toContain(objectPath);
+
+    const ownDelete = await client1.storage.from('wear-photos').remove([objectPath]);
+    expect(ownDelete.error).toBeNull();
+    const afterOwnDelete = await admin.storage.from('wear-photos').list(`${user1Id}/${wearId}`);
+    expect(afterOwnDelete.data?.map((f) => `${user1Id}/${wearId}/${f.name}`)).not.toContain(objectPath);
+  });
+
+  it('the bucket takes only WebP, and nothing over 1 MB, even from the owner', async () => {
+    const png = await client1.storage
+      .from('wear-photos')
+      .upload(`${user1Id}/${wearId}/${randomUUID()}.png`, webp, { contentType: 'image/png' });
+    expect(png.error).not.toBeNull();
+
+    const oversized = await client1.storage
+      .from('wear-photos')
+      .upload(`${user1Id}/${wearId}/${randomUUID()}.webp`, new Uint8Array(1024 * 1024 + 1), {
+        contentType: 'image/webp',
+      });
+    expect(oversized.error).not.toBeNull();
+  });
+});
+
+/**
  * Story 4.2: `fits_set_updated_at` (0010_fits_favorite_no_reorder.sql) must
  * not bump `updated_at` for an `is_favorite`-only change, since My Fits
  * sorts by `updated_at desc` (`lib/fits/listFits.ts`) -- otherwise
@@ -798,7 +989,7 @@ describeIfConfigured('fits trigger: favorite-only update does not bump updated_a
   jest.setTimeout(30000);
 
   it('leaves updated_at unchanged when only is_favorite changes, but bumps it for a name change', async () => {
-    const admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 
     const stamp = Date.now();
     const password = 'Test-password-123!';
@@ -875,7 +1066,7 @@ describeIfConfigured('planned_fits RLS: cross-user isolation', () => {
   let user2Id: string | undefined;
 
   beforeAll(async () => {
-    admin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
+    admin = createClient(supabaseUrl!, supabaseSecretKey!);
     client1 = createClient(supabaseUrl!, supabasePublishableKey!);
     client2 = createClient(supabaseUrl!, supabasePublishableKey!);
 

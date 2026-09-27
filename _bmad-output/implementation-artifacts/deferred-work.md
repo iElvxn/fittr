@@ -186,3 +186,23 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2-today-on-home-and-wear-streak.md`
   summary: The Supabase CLI's `supabase/.temp/` directory is untracked and not in `.gitignore`, so a broad `git add` would commit it.
   evidence: It showed as `?? supabase/.temp/` in git status before Story 5.2 started; flagged by the 5.2 blind review.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
+  summary: Resize wear photos on the server with Supabase image transformations once the project is on Pro, instead of relying only on the on-device re-encode.
+  evidence: Story 5.4's frozen Never list defers server-side resizing. Photos are processed on the device today (1080px and 240px WebP), which holds only for clients that go through `lib/fits/wearPhoto.ts`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
+  summary: Add a scheduled Edge Function that finds and deletes orphaned `wear-photos` files (files no `fit_wears` row points at).
+  evidence: Deferred by Story 5.4's frozen Never list. Cleanup today is best-effort in the client: a failed old-file delete after replace, remove, undo or Fit delete is reported to Sentry and the file stays in the bucket.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
+  summary: Move wear photos to R2 with Cloudflare Images if downloads become the main storage cost.
+  evidence: Deferred by Story 5.4's frozen Never list. `lib/fits/wearPhoto.ts` is the only module that talks to the bucket (the `ImageStore` seam, NFR8), so a move only changes that file.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
+  summary: Turn on the Supabase spend cap and usage alerts before launch, and count wear photos in Epic 6's storage-budget check.
+  evidence: Story 5.4's cost controls 9 and 10. Both are launch and Epic 6 tasks, not code in this story. Epic 5 context also notes account deletion (Story 6.2) must remove `wear-photos` files.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
+  summary: Wrap `auth.uid()` in `(select auth.uid())` in the `wardrobe` bucket's storage policies (`0002_avatar_storage.sql`), so it's evaluated once per statement rather than per row.
+  evidence: Found while writing 0013's `wear-photos` policies, which use the wrapped form per the supabase-postgres-best-practices skill (security-rls-performance). The older `wardrobe` policies predate that and call it unwrapped.

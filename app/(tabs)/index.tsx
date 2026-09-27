@@ -30,6 +30,10 @@ import { usePlannedFits } from '@/lib/planner/plannedFits';
 import { usePlanDayWrites } from '@/lib/planner/usePlanDayWrites';
 import { weekDays, weekStartOf } from '@/lib/planner/week';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
+import { useWearPhotoUrls } from '@/lib/fits/wearPhoto';
+import { useWearPhotoActions } from '@/lib/fits/useWearPhotoActions';
+import { confirmUndoWearWithPhoto } from '@/lib/fits/wearConfirmations';
+import type { WearRef } from '@/lib/fits/wearRef';
 import { trackFitWorn } from '@/lib/analytics/posthog';
 import { Sentry } from '@/lib/observability/sentry';
 
@@ -140,6 +144,18 @@ export default function Home() {
     planByDate,
   });
   const sheetDay = days.find((day) => day.date === sheetDate) ?? null;
+  // Home's sheet is only ever today's: its worn Fit is the plan if worn,
+  // else the first live Fit worn today, as in the Planner.
+  let sheetWorn: { fit: FitRow; wear: WearRef } | null = null;
+  if (sheetDate === today && todayWornQuery.data) {
+    for (const fit of sheetFit ? [sheetFit] : fits) {
+      const wear = todayWornQuery.data.get(fit.id);
+      if (wear) {
+        sheetWorn = { fit, wear };
+        break;
+      }
+    }
+  }
 
   // Same optimistic toggle as Fit detail's Wear today: flip at once, clear
   // the override once the refetches land, restore it on failure. Keyed by
@@ -153,12 +169,41 @@ export default function Home() {
   const override = todayFit && wornOverride?.fitId === todayFit.id ? wornOverride.worn : null;
   const isWornToday = override ?? serverWornToday;
 
+  // Story 5.4: today's wear as the server has it (not the optimistic flip),
+  // since only a saved wear can take a photo.
+  const todayWear = todayFit && serverWornToday ? (todayWornQuery.data?.get(todayFit.id) ?? null) : null;
+  const todayPhoto = isWornToday ? (todayWear?.photo ?? null) : null;
+  const { data: todayPhotoUrls } = useWearPhotoUrls(todayPhoto ? [todayPhoto.thumbPath] : []);
+  const photoActions = useWearPhotoActions(userId);
+
+  function openSheet() {
+    photoActions.clearError();
+    openDay(today);
+  }
+
+  function closeDaySheet() {
+    if (photoActions.busy) {
+      return;
+    }
+    photoActions.clearError();
+    closeSheet();
+  }
+
   async function toggleWornToday() {
-    if (!todayFit || !userId || wearBusyRef.current) {
+    if (!todayFit || !userId || wearBusyRef.current || photoActions.busy) {
       return;
     }
     const fitId = todayFit.id;
     const next = !isWornToday;
+    // Undoing a wear deletes its photo too, so that one undo asks first.
+    if (!next && todayPhoto) {
+      wearBusyRef.current = true;
+      const confirmed = await confirmUndoWearWithPhoto();
+      wearBusyRef.current = false;
+      if (!confirmed) {
+        return;
+      }
+    }
     wearBusyRef.current = true;
     setWearBusy(true);
     setWearError(null);
@@ -208,7 +253,7 @@ export default function Home() {
       dates.add(today);
     } else if (override === false && todayFit) {
       // Today stays in the streak if another Fit was also worn today.
-      const otherWornToday = [...(todayWornQuery.data ?? [])].some((id) => id !== todayFit.id);
+      const otherWornToday = [...(todayWornQuery.data?.keys() ?? [])].some((id) => id !== todayFit.id);
       if (!otherWornToday) {
         dates.delete(today);
       }
@@ -299,16 +344,26 @@ export default function Home() {
             coverUrl={todayFit.cover_path ? (thumbnailUrls?.[todayFit.cover_path] ?? null) : null}
             meta={meta}
             isWornToday={isWornToday}
-            busy={wearBusy}
-            errorMessage={wearError}
+            busy={wearBusy || photoActions.busy}
+            errorMessage={wearError ?? (sheetDate ? null : photoActions.error)}
             onOpen={() => router.push(`/fit/${todayFit.id}`)}
             onToggleWorn={() => void toggleWornToday()}
-            onChange={() => openDay(today)}
+            onChange={() => openSheet()}
+            photo={todayPhoto ? { ...todayPhoto, url: todayPhotoUrls?.[todayPhoto.thumbPath] ?? null } : null}
+            canAddPhoto={isWornToday && Boolean(todayWear) && !todayPhoto}
+            photoBusy={photoActions.busy || wearBusy}
+            photoSaving={Boolean(photoActions.saving)}
+            onAddPhoto={() => {
+              if (todayWear && !wearBusyRef.current) {
+                photoActions.addPhoto(todayWear);
+              }
+            }}
+            onOpenPhoto={() => openSheet()}
           />
         ) : (
           <NothingPlannedCard
             hasFits={fits.length > 0}
-            onPlan={() => openDay(today)}
+            onPlan={() => openSheet()}
             onBuild={() => router.push('/new-fit')}
           />
         )}
@@ -333,11 +388,17 @@ export default function Home() {
         fits={fits}
         selectedFitId={sheetFit?.id ?? null}
         thumbnailUrls={thumbnailUrls}
-        busy={busy}
-        errorMessage={writeError}
+        busy={busy || photoActions.busy || wearBusy}
+        errorMessage={writeError ?? photoActions.error}
         onPick={pickFit}
         onRemove={removeFit}
-        onClose={closeSheet}
+        onClose={closeDaySheet}
+        worn={sheetWorn}
+        photoSavingUri={
+          sheetWorn && photoActions.saving?.wearId === sheetWorn.wear.id ? photoActions.saving.uri : null
+        }
+        onAddPhoto={photoActions.addPhoto}
+        onRemovePhoto={photoActions.removePhoto}
       />
     </>,
   );

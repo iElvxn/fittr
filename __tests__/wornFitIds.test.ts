@@ -95,25 +95,44 @@ describe('getTodayWornFitIds', () => {
     jest.useRealTimers();
   });
 
-  it("returns the set of fit ids with a wear row dated today (local)", async () => {
+  it("maps each fit id worn today (local) to its wear and photo", async () => {
     const { select, eq1, eq2 } = mockTwoEqSelectChain({
-      data: [{ fit_id: 'fit-1' }, { fit_id: 'fit-2' }],
+      data: [
+        { id: 'wear-1', fit_id: 'fit-1', photo_path: null, photo_thumb_path: null, photo_thumbhash: null },
+        {
+          id: 'wear-2',
+          fit_id: 'fit-2',
+          photo_path: 'user-1/wear-2/p.webp',
+          photo_thumb_path: 'user-1/wear-2/p_thumb.webp',
+          photo_thumbhash: 'hash',
+        },
+      ],
       error: null,
     });
 
-    const ids = await getTodayWornFitIds('user-1');
+    const wears = await getTodayWornFitIds('user-1');
 
     expect(supabase.from).toHaveBeenCalledWith('fit_wears');
-    expect(select).toHaveBeenCalledWith('fit_id');
+    expect(select).toHaveBeenCalledWith('id, fit_id, photo_path, photo_thumb_path, photo_thumbhash');
     expect(eq1).toHaveBeenCalledWith('user_id', 'user-1');
     expect(eq2).toHaveBeenCalledWith('worn_on', '2026-09-21');
-    expect(ids).toEqual(new Set(['fit-1', 'fit-2']));
+    expect(wears).toEqual(
+      new Map([
+        ['fit-1', { id: 'wear-1', photo: null }],
+        [
+          'fit-2',
+          { id: 'wear-2', photo: { path: 'user-1/wear-2/p.webp', thumbPath: 'user-1/wear-2/p_thumb.webp', thumbhash: 'hash' } },
+        ],
+      ]),
+    );
+    // Still answers "was this Fit worn today?" by id.
+    expect(wears.has('fit-1')).toBe(true);
   });
 
-  it('returns an empty set when nothing was worn today', async () => {
+  it('returns an empty map when nothing was worn today', async () => {
     mockTwoEqSelectChain({ data: [], error: null });
 
-    await expect(getTodayWornFitIds('user-1')).resolves.toEqual(new Set());
+    await expect(getTodayWornFitIds('user-1')).resolves.toEqual(new Map());
   });
 
   it('classifies a no-connection failure', async () => {
@@ -131,7 +150,7 @@ describe('getTodayWornFitIds', () => {
 
 describe('useTodayWornFitIds', () => {
   it("caches under ['todayWornFitIds', userId], the key every wear write invalidates", async () => {
-    mockTwoEqSelectChain({ data: [{ fit_id: 'fit-1' }], error: null });
+    mockTwoEqSelectChain({ data: [{ id: 'wear-1', fit_id: 'fit-1', photo_path: null }], error: null });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client: queryClient }, children);
@@ -139,6 +158,6 @@ describe('useTodayWornFitIds', () => {
     const { result } = await renderHook(() => useTodayWornFitIds('user-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryData(['todayWornFitIds', 'user-1'])).toEqual(new Set(['fit-1']));
+    expect(queryClient.getQueryData(['todayWornFitIds', 'user-1'])).toEqual(new Map([['fit-1', { id: 'wear-1', photo: null }]]));
   });
 });

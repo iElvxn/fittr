@@ -570,6 +570,26 @@ So that I remember how it actually looked, not just the collage.
 
 *Implementation note: a nullable photo path column on `fit_wears` plus a private per-user Storage folder, RLS-scoped like the wardrobe bucket (NFR5). Unlike wardrobe items (NFR4), the photo itself is the thing kept, so it counts against the storage budget (NFR6): compress on-device before upload. Account deletion (Story 6.2) must also remove these files. Needs a mockup on the design canvas before its spec.*
 
+### Story 5.5: See a Fit's Wear Photos on Fit Detail
+
+*Added 2026-09-27 while planning Story 5.4; not in the original PRD.*
+
+As a user,
+I want to see every photo of a Fit I've worn on that Fit's detail screen,
+So that I can look back at how it looked each time.
+
+**Acceptance Criteria:**
+
+**Given** a Fit with wears that have photos
+**When** I open its Fit detail
+**Then** I see a "Worn" strip of those photos, newest first, each with its date, and tapping one opens that day in the Planner
+
+**Given** the Fit is marked worn today and today's wear has no photo
+**When** I tap "Add a photo" on Fit detail
+**Then** the photo is added to today's wear, the same as from Home or the Planner
+
+*Implementation note: reuses Story 5.4's thumbnails, disk cache and signed URLs (no new storage); one small query for the Fit's most recent wears with photos. Needs a mockup on the design canvas before its spec.*
+
 ## Epic 6: Launch Readiness & Account Lifecycle
 
 Users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.

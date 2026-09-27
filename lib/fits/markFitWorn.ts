@@ -4,6 +4,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
 import { todayLocalDate } from './localDate';
+import { deleteWearPhotoFiles } from './wearPhoto';
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 
@@ -40,20 +41,31 @@ export async function markFitWornToday(userId: string, fitId: string): Promise<v
  * user can undo a mis-tap but can't edit past wear history through the app,
  * keeping Story 4.4's streak trustworthy. Uses the `fit_wears_delete_own`
  * policy (`0009_fit_wears_undo.sql`).
+ *
+ * Story 5.4: the delete returns the row, so the wear's photo files go with
+ * it without a separate read. Callers confirm first when there's a photo.
  */
 export async function unmarkFitWornToday(userId: string, fitId: string): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('fit_wears')
     .delete()
     .eq('user_id', userId)
     .eq('fit_id', fitId)
-    .eq('worn_on', todayLocalDate());
+    .eq('worn_on', todayLocalDate())
+    .select('photo_path, photo_thumb_path');
 
   if (error) {
     if (isNoConnectionError(error)) {
       throw new FitError('no_connection', NO_CONNECTION_MESSAGE);
     }
     throw error;
+  }
+
+  const paths = ((data ?? []) as { photo_path: string | null; photo_thumb_path: string | null }[]).flatMap((row) =>
+    row.photo_path && row.photo_thumb_path ? [row.photo_path, row.photo_thumb_path] : [],
+  );
+  if (paths.length > 0) {
+    await deleteWearPhotoFiles(paths);
   }
 }
 

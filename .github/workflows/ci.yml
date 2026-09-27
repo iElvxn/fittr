@@ -30,7 +30,9 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-          # Bypasses RLS -- only ever read by supabase/tests/rls.test.ts to
-          # create pre-confirmed test users via the Admin API. Never expose
-          # this to the app itself or prefix it EXPO_PUBLIC_.
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Supabase secret key (sb_secret_..., the successor to the legacy
+          # service_role key). Bypasses RLS -- only ever read by
+          # supabase/tests/rls.test.ts to create pre-confirmed test users via
+          # the Admin API. Never expose this to the app itself or prefix it
+          # EXPO_PUBLIC_.
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

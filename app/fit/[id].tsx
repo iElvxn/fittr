@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,7 +21,8 @@ import { FitItemsList } from '@/components/fits/FitItemsList';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
-import { deleteFit } from '@/lib/fits/deleteFit';
+import { countFitWearPhotos, deleteFit } from '@/lib/fits/deleteFit';
+import { confirmUndoWearWithPhoto } from '@/lib/fits/wearConfirmations';
 import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { invalidateWearQueries, markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
@@ -114,6 +115,9 @@ export default function FitDetail() {
   const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
 
   const [deleting, setDeleting] = useState(false);
+  const [countingPhotos, setCountingPhotos] = useState(false);
+  // State alone can't stop a second tap landing before the re-render that disables Delete.
+  const countingRef = useRef(false);
   const [sharing, setSharing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -179,6 +183,10 @@ export default function FitDetail() {
     }
     setErrorMessage(null);
     const next = !isWornToday;
+    // Story 5.4: undoing a wear deletes its photo too, so that one undo asks first.
+    if (!next && todayWornFitIds?.get(fit.id)?.photo && !(await confirmUndoWearWithPhoto())) {
+      return;
+    }
     setWornTodayOverride(next);
     setWearBusy(true);
     try {
@@ -265,9 +273,43 @@ export default function FitDetail() {
     }
   }
 
-  function handleDeletePress() {
+  /**
+   * Story 5.4: deleting a Fit deletes its wear photos, so the confirmation
+   * says how many first. The count needs the network like the delete does,
+   * so a failed count shows the error instead of a confirmation that might
+   * leave the photos out.
+   */
+  async function handleDeletePress() {
+    if (!fit || countingRef.current) {
+      return;
+    }
+    setErrorMessage(null);
+    // Locked while the count loads, so a double tap can't stack two confirmations.
+    countingRef.current = true;
+    setCountingPhotos(true);
+    let photoCount: number;
+    try {
+      photoCount = await countFitWearPhotos(fit.id);
+    } catch (error) {
+      if (error instanceof FitError && error.kind === 'no_connection') {
+        setErrorMessage(NO_CONNECTION_MESSAGE);
+      } else {
+        reportUnknownError(error);
+      }
+      return;
+    } finally {
+      countingRef.current = false;
+      setCountingPhotos(false);
+    }
     ActionSheetIOS.showActionSheetWithOptions(
-      { options: ['Delete', 'Cancel'], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
+      {
+        ...(photoCount > 0
+          ? { message: `Its ${photoCount} wear ${photoCount === 1 ? 'photo' : 'photos'} will be deleted too.` }
+          : {}),
+        options: ['Delete', 'Cancel'],
+        destructiveButtonIndex: 0,
+        cancelButtonIndex: 1,
+      },
       (buttonIndex) => {
         if (buttonIndex === 0) {
           void handleDelete();
@@ -454,8 +496,8 @@ export default function FitDetail() {
           <DetailAction
             label="Delete Fit"
             caption="Delete"
-            onPress={handleDeletePress}
-            disabled={deleting || favoriteBusy || wearBusy || sharing}
+            onPress={() => void handleDeletePress()}
+            disabled={deleting || countingPhotos || favoriteBusy || wearBusy || sharing}
           >
             {deleting ? <ActivityIndicator size="small" /> : <TrashIcon size={ACTION_ICON_SIZE} color={inkPrimary} />}
           </DetailAction>
