@@ -206,3 +206,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
   summary: Wrap `auth.uid()` in `(select auth.uid())` in the `wardrobe` bucket's storage policies (`0002_avatar_storage.sql`), so it's evaluated once per statement rather than per row.
   evidence: Found while writing 0013's `wear-photos` policies, which use the wrapped form per the supabase-postgres-best-practices skill (security-rls-performance). The older `wardrobe` policies predate that and call it unwrapped.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
+  summary: `supabase/.temp/` (Supabase CLI state) is not in `.gitignore` and shows up untracked.
+  evidence: `.gitignore` has no `supabase` entry; the directory predates Story 5.5.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
+  summary: Fit detail left open across midnight keeps yesterday's `todayWornFitIds`, so the worn toggle (and now the Worn strip's Add tile) acts on yesterday's wear.
+  evidence: the `['todayWornFitIds', userId]` key has no date and Fit detail has no day-rollover refresh like Home's AppState listener; unverified whether a focus refetch covers it in practice — settle by leaving Fit detail open past midnight on a device.

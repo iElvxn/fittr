@@ -39,9 +39,12 @@ jest.mock('@/lib/fits/localDate', () => ({
   ...jest.requireActual('@/lib/fits/localDate'),
   todayLocalDate: () => mockToday,
 }));
+// Story 5.5: the `date` param Fit detail's "Worn" strip opens a day with.
+let mockParams: { date?: string } = {};
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn() },
+  router: { push: jest.fn(), setParams: jest.fn() },
   useFocusEffect: jest.fn(),
+  useLocalSearchParams: () => mockParams,
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
 
@@ -155,6 +158,7 @@ describe('Planner tab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockToday = '2025-09-24';
+    mockParams = {};
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     (useSession as jest.Mock).mockReturnValue({ session: { user: { id: 'user-1' } }, loading: false });
     (useThumbnailUrls as jest.Mock).mockReturnValue({ data: {} });
@@ -1145,7 +1149,7 @@ describe('Planner tab', () => {
 
         await act(async () => resolve());
         await waitFor(() => expect(trackFitWorn).toHaveBeenCalledWith('planner'));
-        for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates']) {
+        for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates', 'fitWearPhotos']) {
           expect(invalidate).toHaveBeenCalledWith({ queryKey: [key, 'user-1'] });
         }
       });
@@ -1772,6 +1776,114 @@ describe('Planner tab', () => {
         expect(await screen.findByText('Nothing to plan yet.')).toBeTruthy();
         expect(screen.queryByTestId('planner-month')).toBeNull();
       });
+    });
+  });
+
+  describe("opening a day from Fit detail's Worn strip (Story 5.5)", () => {
+    it("shows the week holding the date, opens that day's sheet, and clears the param", async () => {
+      mockParams = { date: '2025-09-11' };
+
+      await renderPlanner();
+
+      expect(await screen.findByText('Thursday, Sep 11')).toBeTruthy();
+      expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      expect(screen.getByText('Sep 8 – 14')).toBeTruthy();
+      expect(usePlannedFits).toHaveBeenLastCalledWith('user-1', '2025-09-08');
+      expect(router.setParams).toHaveBeenCalledWith({ date: undefined });
+    });
+
+    it('opens in the month view when that was the last one chosen, on the month holding the date', async () => {
+      mockToday = '2026-09-26';
+      (loadPlannerView as jest.Mock).mockResolvedValue('month');
+      mockParams = { date: '2026-08-16' };
+
+      await renderPlanner();
+
+      expect(await screen.findByText('Sunday, Aug 16')).toBeTruthy();
+      expect(screen.getByText('August 2026')).toBeTruthy();
+      expect(usePlannedMonth).toHaveBeenLastCalledWith('user-1', '2026-08-01', true);
+    });
+
+    it('opens a date that arrives while the tab is already mounted', async () => {
+      const { rerender } = await renderPlanner();
+      expect(screen.queryByText('Choose a Fit')).toBeNull();
+
+      mockParams = { date: '2025-09-19' };
+      await rerender(
+        <QueryClientProvider client={queryClient}>
+          <Planner />
+        </QueryClientProvider>,
+      );
+
+      expect(await screen.findByText('Friday, Sep 19')).toBeTruthy();
+      expect(router.setParams).toHaveBeenCalledWith({ date: undefined });
+    });
+
+    it('opens the same day again when it comes back after being cleared', async () => {
+      mockParams = { date: '2025-09-11' };
+      const { rerender, user } = await renderPlanner();
+      // A fresh element each time, so React re-renders rather than bailing out on the same one.
+      const tree = () => (
+        <QueryClientProvider client={queryClient}>
+          <Planner />
+        </QueryClientProvider>
+      );
+      expect(await screen.findByText('Thursday, Sep 11')).toBeTruthy();
+      await user.press(screen.getByRole('button', { name: 'Close' }));
+      mockParams = {};
+      await rerender(tree());
+      expect(screen.queryByText('Choose a Fit')).toBeNull();
+
+      mockParams = { date: '2025-09-11' };
+      await rerender(tree());
+
+      expect(await screen.findByText('Thursday, Sep 11')).toBeTruthy();
+    });
+
+    it("waits for a day-sheet write to finish before switching days", async () => {
+      let resolvePlan: () => void = () => {};
+      (planFit as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolvePlan = resolve)));
+      const { rerender, user } = await renderPlanner();
+      const tree = () => (
+        <QueryClientProvider client={queryClient}>
+          <Planner />
+        </QueryClientProvider>
+      );
+      await user.press(row('Thursday, Sep 25: nothing planned'));
+      await user.press(screen.getByRole('button', { name: 'Sunday Market' }));
+      await waitFor(() => expect(planFit).toHaveBeenCalled());
+
+      mockParams = { date: '2025-09-11' };
+      await rerender(tree());
+
+      expect(screen.getByText('Thursday, Sep 25')).toBeTruthy();
+      expect(screen.queryByText('Thursday, Sep 11')).toBeNull();
+      expect(router.setParams).not.toHaveBeenCalled();
+
+      await act(async () => resolvePlan());
+
+      expect(await screen.findByText('Thursday, Sep 11')).toBeTruthy();
+      expect(screen.queryByText('Thursday, Sep 25')).toBeNull();
+      expect(router.setParams).toHaveBeenCalledWith({ date: undefined });
+    });
+
+    it('ignores an invalid date, clearing it without opening anything', async () => {
+      mockParams = { date: '2025-02-30' };
+
+      await renderPlanner();
+
+      await waitFor(() => expect(router.setParams).toHaveBeenCalledWith({ date: undefined }));
+      expect(screen.queryByText('Choose a Fit')).toBeNull();
+      expect(screen.getByText('Sep 22 – 28')).toBeTruthy();
+    });
+
+    it('waits for the remembered view before acting on the date', async () => {
+      (loadPlannerView as jest.Mock).mockReturnValue(new Promise(() => {}));
+      mockParams = { date: '2025-09-11' };
+
+      await renderPlanner();
+
+      expect(router.setParams).not.toHaveBeenCalled();
     });
   });
 });

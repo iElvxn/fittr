@@ -153,3 +153,27 @@ export function monthGrid(monthStart: string, today: string): (WeekDay | null)[]
 export function weekStartForMonth(monthStart: string, today: string): string {
   return monthStartOf(today) === monthStart ? weekStartOf(today) : weekStartOf(monthStart);
 }
+
+/** Whether `value` is a real `YYYY-MM-DD` calendar date (so "2025-02-30" is not). */
+export function isLocalDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  return toLocalDate(parseLocalDate(value)) === value;
+}
+
+/** ", 2025" when `date` falls in a different year than `today`, else nothing. */
+function yearSuffix(date: string, today: string): string {
+  return date.slice(0, 4) === today.slice(0, 4) ? '' : `, ${date.slice(0, 4)}`;
+}
+
+/** "Sep 19", or "Aug 16, 2025" outside today's year -- Fit detail's wear-photo captions. */
+export function shortDateLabel(date: string, today: string): string {
+  const parsed = parseLocalDate(date);
+  return `${MONTHS[parsed.getMonth()]} ${parsed.getDate()}${yearSuffix(date, today)}`;
+}
+
+/** "Saturday, Sep 19", or "Saturday, Aug 16, 2025" outside today's year. */
+export function longDateLabel(date: string, today: string): string {
+  return `${dayOf(date, today).long}${yearSuffix(date, today)}`;
+}

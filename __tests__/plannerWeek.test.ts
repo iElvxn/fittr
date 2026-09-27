@@ -3,12 +3,15 @@ import {
   addDays,
   dayOf,
   daysBetween,
+  isLocalDate,
+  longDateLabel,
   monthEndOf,
   monthGrid,
   monthLabel,
   monthStartOf,
   shiftMonth,
   shiftWeek,
+  shortDateLabel,
   weekDays,
   weekRangeLabel,
   weekStartForMonth,
@@ -202,5 +205,31 @@ describe('weekStartForMonth', () => {
     // Oct 1 2026 is a Thursday.
     expect(weekStartForMonth('2026-10-01', '2026-09-26')).toBe('2026-09-28');
     expect(weekStartForMonth('2026-08-01', '2026-09-26')).toBe('2026-07-27');
+  });
+});
+
+describe('isLocalDate', () => {
+  it('accepts a real YYYY-MM-DD date', () => {
+    expect(isLocalDate('2025-09-24')).toBe(true);
+    expect(isLocalDate('2024-02-29')).toBe(true);
+  });
+
+  it('rejects other shapes and impossible dates', () => {
+    expect(isLocalDate('2025-9-24')).toBe(false);
+    expect(isLocalDate('tomorrow')).toBe(false);
+    expect(isLocalDate('2025-02-30')).toBe(false);
+    expect(isLocalDate('2025-13-01')).toBe(false);
+  });
+});
+
+describe('shortDateLabel / longDateLabel', () => {
+  it("leaves the year off within today's year", () => {
+    expect(shortDateLabel('2026-09-19', '2026-09-27')).toBe('Sep 19');
+    expect(longDateLabel('2026-09-19', '2026-09-27')).toBe('Saturday, Sep 19');
+  });
+
+  it('adds the year outside it', () => {
+    expect(shortDateLabel('2025-08-16', '2026-09-27')).toBe('Aug 16, 2025');
+    expect(longDateLabel('2025-08-16', '2026-09-27')).toBe('Saturday, Aug 16, 2025');
   });
 });

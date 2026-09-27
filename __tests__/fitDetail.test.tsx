@@ -1,9 +1,10 @@
 import { ActionSheetIOS } from 'react-native';
-import { render, screen, userEvent, waitFor } from '@testing-library/react-native';
+import type { ReactElement } from 'react';
+import { act, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn(), navigate: jest.fn() },
   useLocalSearchParams: jest.fn(),
 }));
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
@@ -23,7 +24,21 @@ jest.mock('@/lib/fits/markFitWorn', () => ({
   unmarkFitWornToday: jest.fn(),
 }));
 // The real `markFitWorn` imports the photo module, whose native image modules can't load here.
-jest.mock('@/lib/fits/wearPhoto', () => ({ deleteWearPhotoFiles: jest.fn() }));
+// Story 5.5: the Worn strip's Add tile and thumbnails use the rest of it.
+jest.mock('@/lib/fits/wearPhoto', () => ({
+  chooseWearPhotoSource: jest.fn(),
+  pickWearPhoto: jest.fn(),
+  saveWearPhoto: jest.fn(),
+  removeWearPhoto: jest.fn(),
+  deleteWearPhotoFiles: jest.fn(),
+  useWearPhotoUrls: jest.fn(),
+}));
+jest.mock('@/lib/fits/fitWearPhotos', () => ({ useFitWearPhotos: jest.fn() }));
+// Pins "today" to Sun Sep 27 2026 without faking timers, as `home.test.tsx` does.
+jest.mock('@/lib/fits/localDate', () => ({
+  ...jest.requireActual('@/lib/fits/localDate'),
+  todayLocalDate: () => '2026-09-27',
+}));
 jest.mock('@/lib/analytics/posthog', () => ({ trackFitWorn: jest.fn() }));
 jest.mock('@/lib/fits/wornFitIds', () => ({ useTodayWornFitIds: jest.fn() }));
 jest.mock('@/lib/fits/shareFit', () => ({ shareFitCover: jest.fn() }));
@@ -39,6 +54,8 @@ import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
+import { useFitWearPhotos, type FitWearPhoto } from '@/lib/fits/fitWearPhotos';
+import { chooseWearPhotoSource, pickWearPhoto, saveWearPhoto, useWearPhotoUrls } from '@/lib/fits/wearPhoto';
 import { shareFitCover } from '@/lib/fits/shareFit';
 import { Sentry } from '@/lib/observability/sentry';
 import { trackFitWorn } from '@/lib/analytics/posthog';
@@ -110,6 +127,11 @@ describe('Fit detail', () => {
     ]);
     (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: new Map() });
     (countFitWearPhotos as jest.Mock).mockResolvedValue(0);
+    (useFitWearPhotos as jest.Mock).mockReturnValue({ data: [], isLoading: false, isError: false, error: null });
+    (useWearPhotoUrls as jest.Mock).mockReturnValue({ data: {} });
+    (chooseWearPhotoSource as jest.Mock).mockResolvedValue('library');
+    (pickWearPhoto as jest.Mock).mockResolvedValue({ uri: 'file://picked.jpg' });
+    (saveWearPhoto as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('shows the cover image, name, and Edit/Delete controls', async () => {
@@ -712,7 +734,7 @@ describe('Fit detail', () => {
       await user.press(screen.getByRole('button', { name: 'Wear today' }));
 
       await waitFor(() => expect(trackFitWorn).toHaveBeenCalledWith('detail'));
-      for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates']) {
+      for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates', 'fitWearPhotos']) {
         await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: [key, 'user-1'] }));
       }
     });
@@ -975,6 +997,387 @@ describe('Fit detail', () => {
       await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
 
       await waitFor(() => expect(screen.getByRole('button', { name: 'Share Fit' }).props.accessibilityState?.disabled).toBe(true));
+    });
+  });
+
+  describe('Worn photos (Story 5.5)', () => {
+    const TODAY = '2026-09-27';
+
+    function wearPhoto(id: string, wornOn: string): FitWearPhoto {
+      return {
+        id,
+        wornOn,
+        photo: { path: `user-1/${id}/p.webp`, thumbPath: `user-1/${id}/p_thumb.webp`, thumbhash: `hash-${id}` },
+      };
+    }
+
+    const TODAY_PHOTO = wearPhoto('wear-today', TODAY);
+    const SEP_19 = wearPhoto('wear-19', '2026-09-19');
+    const SEP_11 = wearPhoto('wear-11', '2026-09-11');
+    const ADD_LABEL = 'Add a photo of what you wore today';
+
+    function mockPhotos(photos: FitWearPhoto[], overrides: Record<string, unknown> = {}) {
+      (useFitWearPhotos as jest.Mock).mockReturnValue({ data: photos, isLoading: false, isError: false, error: null, ...overrides });
+    }
+
+    /** Today's wear of fit-1, `wear-today`, with or without its photo. */
+    function mockWornToday(withPhoto: boolean) {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({
+        data: new Map([['fit-1', { id: 'wear-today', photo: withPhoto ? TODAY_PHOTO.photo : null }]]),
+      });
+    }
+
+    /** Each photo tile's date caption, in strip order. */
+    function captions() {
+      return screen.getAllByTestId('fit-wear-photo').map((tile) => within(tile).getByText(/.+/).props.children);
+    }
+
+    async function renderSettled() {
+      const result = await renderFitDetail();
+      // Let `getFitItems` settle so its state update lands inside the test's act scope.
+      await screen.findByTestId('fit-items-list');
+      return result;
+    }
+
+    function rerenderFitDetail(rerender: (element: ReactElement) => unknown) {
+      return rerender(
+        <QueryClientProvider client={queryClient}>
+          <FitDetail />
+        </QueryClientProvider>,
+      );
+    }
+
+    it('reads the photos of this Fit, for this user', async () => {
+      await renderSettled();
+
+      expect(useFitWearPhotos).toHaveBeenCalledWith('user-1', 'fit-1');
+    });
+
+    it('shows a "Worn" strip of every photo, newest first, each dated', async () => {
+      mockWornToday(true);
+      mockPhotos([TODAY_PHOTO, SEP_19, SEP_11]);
+      (useWearPhotoUrls as jest.Mock).mockReturnValue({
+        data: { [SEP_19.photo.thumbPath]: 'https://signed.example/19.webp' },
+      });
+
+      await renderSettled();
+
+      expect(screen.getByText('Worn')).toBeTruthy();
+      expect(captions()).toEqual(['Today', 'Sep 19', 'Sep 11']);
+      expect(screen.queryByRole('button', { name: ADD_LABEL })).toBeNull();
+      // Thumbnails only, all signed in one batch.
+      expect(useWearPhotoUrls).toHaveBeenCalledWith([
+        TODAY_PHOTO.photo.thumbPath,
+        SEP_19.photo.thumbPath,
+        SEP_11.photo.thumbPath,
+      ]);
+      const source = screen.getAllByTestId('fit-wear-photo-image')[1].props.source;
+      expect(Array.isArray(source) ? source[0] : source).toMatchObject({
+        uri: 'https://signed.example/19.webp',
+        cacheKey: SEP_19.photo.thumbPath,
+      });
+    });
+
+    it('puts "Today" in primary ink and past dates in secondary ink', async () => {
+      mockWornToday(true);
+      mockPhotos([TODAY_PHOTO, SEP_19]);
+
+      await renderSettled();
+
+      expect(screen.getByText('Today').props.className).toContain('text-ink-primary');
+      expect(screen.getByText('Sep 19').props.className).toContain('text-ink-secondary');
+    });
+
+    it('adds the year to a photo from another year', async () => {
+      mockPhotos([wearPhoto('wear-old', '2025-08-16')]);
+
+      await renderSettled();
+
+      expect(screen.getByText('Aug 16, 2025')).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: 'Your photo from Saturday, Aug 16, 2025. Open that day in the Planner' }),
+      ).toBeTruthy();
+    });
+
+    it('keeps the tiles 108×144 with 12px corners and no shadow', async () => {
+      mockPhotos([SEP_19]);
+
+      await renderSettled();
+
+      const frame = screen.getByTestId('fit-wear-photo-image').parent!;
+      expect(frame.props.style).toMatchObject({ width: 108, height: 144 });
+      expect(frame.props.className).toContain('rounded-md');
+      expect(frame.props.style?.shadowOpacity).toBeUndefined();
+    });
+
+    it('opens that day in the Planner when a photo is tapped', async () => {
+      mockPhotos([SEP_19, SEP_11]);
+      await renderSettled();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Your photo from Saturday, Sep 19. Open that day in the Planner' }));
+
+      expect(router.navigate).toHaveBeenCalledWith({ pathname: '/planner', params: { date: '2026-09-19' } });
+    });
+
+    it("leads with a dashed Add tile, dated Today, when today's wear has no photo", async () => {
+      mockWornToday(false);
+      mockPhotos([SEP_19]);
+
+      await renderSettled();
+
+      expect(screen.getByRole('button', { name: ADD_LABEL })).toBeTruthy();
+      expect(screen.getByTestId('fit-wear-photo-add').props.className).toContain('border-dashed');
+      expect(screen.getByText('Today')).toBeTruthy();
+      expect(captions()).toEqual(['Sep 19']);
+    });
+
+    it('shows just the Add tile on the first wear', async () => {
+      mockWornToday(false);
+      mockPhotos([]);
+
+      await renderSettled();
+
+      expect(screen.getByText('Worn')).toBeTruthy();
+      expect(screen.getByRole('button', { name: ADD_LABEL })).toBeTruthy();
+      expect(screen.queryAllByTestId('fit-wear-photo')).toHaveLength(0);
+    });
+
+    it('hides the section with no photos and no wear today', async () => {
+      mockPhotos([]);
+
+      await renderSettled();
+
+      expect(screen.queryByText('Worn')).toBeNull();
+      expect(screen.queryByTestId('fit-wear-photos-strip')).toBeNull();
+    });
+
+    it('never offers Add without a wear today', async () => {
+      mockPhotos([SEP_19]);
+
+      await renderSettled();
+
+      expect(screen.queryByRole('button', { name: ADD_LABEL })).toBeNull();
+    });
+
+    it('shows 4 skeleton tiles while the photos load', async () => {
+      mockPhotos([], { data: undefined, isLoading: true });
+
+      await renderSettled();
+
+      expect(screen.getByText('Worn')).toBeTruthy();
+      expect(screen.getAllByTestId('fit-wear-photo-skeleton', { includeHiddenElements: true })).toHaveLength(4);
+    });
+
+    describe('when the photos read fails', () => {
+      it('hides the photos, reports the error and shows no notice', async () => {
+        const error = new Error('boom');
+        mockPhotos([], { data: undefined, isError: true, error });
+
+        await renderSettled();
+
+        expect(screen.queryByText('Worn')).toBeNull();
+        expect(Sentry.captureException).toHaveBeenCalledWith(error);
+        expect(screen.queryByText(UNKNOWN_ERROR_MESSAGE)).toBeNull();
+      });
+
+      it('does not report a no-connection failure', async () => {
+        mockPhotos([], { data: undefined, isError: true, error: new FitError('no_connection', NO_CONNECTION_MESSAGE) });
+
+        await renderSettled();
+
+        expect(Sentry.captureException).not.toHaveBeenCalled();
+        expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
+      });
+
+      it("still offers Add when today's wear has no photo", async () => {
+        mockWornToday(false);
+        mockPhotos([SEP_19], { isError: true, error: new Error('boom') });
+
+        await renderSettled();
+
+        expect(screen.getByRole('button', { name: ADD_LABEL })).toBeTruthy();
+        expect(screen.queryAllByTestId('fit-wear-photo')).toHaveLength(0);
+      });
+    });
+
+    describe('adding a photo', () => {
+      it("saves to today's wear, shows it saving, then leads the strip with it", async () => {
+        mockWornToday(false);
+        mockPhotos([SEP_19]);
+        let resolveSave: () => void = () => {};
+        (saveWearPhoto as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveSave = resolve)));
+        const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: ADD_LABEL }));
+
+        await waitFor(() =>
+          expect(saveWearPhoto).toHaveBeenCalledWith('user-1', { id: 'wear-today', photo: null }, 'file://picked.jpg'),
+        );
+        expect(pickWearPhoto).toHaveBeenCalledWith('library');
+        const saving = screen.getByLabelText('Saving your photo');
+        expect(within(saving).getByText('Saving')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: ADD_LABEL })).toBeNull();
+
+        // The refetch that follows sees the saved photo.
+        mockWornToday(true);
+        mockPhotos([TODAY_PHOTO, SEP_19]);
+        await act(async () => resolveSave());
+
+        await waitFor(() => expect(screen.queryByLabelText('Saving your photo')).toBeNull());
+        expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitWearPhotos', 'user-1'] });
+        expect(captions()).toEqual(['Today', 'Sep 19']);
+        expect(screen.queryByRole('button', { name: ADD_LABEL })).toBeNull();
+      });
+
+      it('shows the no-connection notice and brings the Add tile back when the save fails offline', async () => {
+        mockWornToday(false);
+        (saveWearPhoto as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: ADD_LABEL }));
+
+        expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+        expect(screen.getByRole('button', { name: ADD_LABEL })).toBeTruthy();
+        expect(Sentry.captureException).not.toHaveBeenCalled();
+      });
+
+      it('reports and shows the unknown-error notice when the save fails otherwise', async () => {
+        mockWornToday(false);
+        const error = new Error('upload failed');
+        (saveWearPhoto as jest.Mock).mockRejectedValue(error);
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: ADD_LABEL }));
+
+        expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+        expect(Sentry.captureException).toHaveBeenCalledWith(error);
+      });
+
+      it('blocks the wear toggle and Delete while the save is in flight', async () => {
+        mockWornToday(false);
+        let resolveSave: () => void = () => {};
+        (saveWearPhoto as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveSave = resolve)));
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: ADD_LABEL }));
+        await waitFor(() => expect(saveWearPhoto).toHaveBeenCalled());
+
+        const toggle = screen.getByRole('button', { name: "Remove today's wear entry" });
+        const deleteButton = screen.getByRole('button', { name: 'Delete Fit' });
+        expect(toggle.props.accessibilityState).toMatchObject({ disabled: true });
+        expect(deleteButton.props.accessibilityState).toMatchObject({ disabled: true });
+        await user.press(toggle);
+        await user.press(deleteButton);
+        expect(unmarkFitWornToday).not.toHaveBeenCalled();
+        expect(countFitWearPhotos).not.toHaveBeenCalled();
+
+        await act(async () => resolveSave());
+      });
+
+      it('ignores the Add tile while a Delete is in flight', async () => {
+        mockWornToday(false);
+        let resolveCount: (count: number) => void = () => {};
+        (countFitWearPhotos as jest.Mock).mockReturnValue(new Promise<number>((resolve) => (resolveCount = resolve)));
+        jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+        await waitFor(() => expect(countFitWearPhotos).toHaveBeenCalled());
+
+        const add = screen.getByRole('button', { name: ADD_LABEL });
+        expect(add.props.accessibilityState).toMatchObject({ disabled: true });
+        await user.press(add);
+        expect(chooseWearPhotoSource).not.toHaveBeenCalled();
+
+        await act(async () => resolveCount(0));
+      });
+
+      it('clears a failed save notice when another action starts', async () => {
+        mockWornToday(false);
+        (saveWearPhoto as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+        (toggleFitFavorite as jest.Mock).mockResolvedValue(undefined);
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: ADD_LABEL }));
+        expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+
+        await user.press(screen.getByRole('button', { name: 'Add to favorites' }));
+
+        await waitFor(() => expect(toggleFitFavorite).toHaveBeenCalled());
+        expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
+      });
+
+      it('ignores the Add tile while a wear toggle is in flight', async () => {
+        mockPhotos([]);
+        let resolveMark: () => void = () => {};
+        (markFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveMark = resolve)));
+        const { rerender } = await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: 'Wear today' }));
+        // A refetch lands mid-write with today's (photo-less) wear.
+        mockWornToday(false);
+        await rerenderFitDetail(rerender);
+
+        const add = screen.getByRole('button', { name: ADD_LABEL });
+        expect(add.props.accessibilityState).toMatchObject({ disabled: true });
+        await user.press(add);
+        expect(chooseWearPhotoSource).not.toHaveBeenCalled();
+
+        await act(async () => resolveMark());
+      });
+    });
+
+    describe("today's photo follows the worn toggle", () => {
+      it("drops today's tile at once when today's wear is undone", async () => {
+        mockWornToday(true);
+        mockPhotos([TODAY_PHOTO, SEP_19]);
+        mockActionSheetChoice(0);
+        let resolveUnmark: () => void = () => {};
+        (unmarkFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveUnmark = resolve)));
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+        await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalled());
+        expect(captions()).toEqual(['Sep 19']);
+
+        await act(async () => resolveUnmark());
+      });
+
+      it('brings the tile back when the undo fails', async () => {
+        mockWornToday(true);
+        mockPhotos([TODAY_PHOTO, SEP_19]);
+        mockActionSheetChoice(0);
+        (unmarkFitWornToday as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+        await renderSettled();
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+        expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+        expect(captions()).toEqual(['Today', 'Sep 19']);
+      });
+    });
+
+    it('updates when the photos change elsewhere, e.g. one removed in the Planner', async () => {
+      mockPhotos([SEP_19, SEP_11]);
+      const { rerender } = await renderSettled();
+      expect(captions()).toEqual(['Sep 19', 'Sep 11']);
+
+      mockPhotos([SEP_11]);
+      await rerenderFitDetail(rerender);
+
+      expect(captions()).toEqual(['Sep 11']);
     });
   });
 });

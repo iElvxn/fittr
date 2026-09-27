@@ -588,7 +588,7 @@ So that I can look back at how it looked each time.
 **When** I tap "Add a photo" on Fit detail
 **Then** the photo is added to today's wear, the same as from Home or the Planner
 
-*Implementation note: reuses Story 5.4's thumbnails, disk cache and signed URLs (no new storage); one small query for the Fit's most recent wears with photos. Needs a mockup on the design canvas before its spec.*
+*Implementation note: reuses Story 5.4's thumbnails, disk cache and signed URLs (no new storage); one small query for the Fit's most recent wears with photos. Mockup approved: the Phase 7 (P7*) row on the design canvas — a horizontal strip of 3:4 photos under a plain "Worn" label, and a dashed "Add a photo" tile first when today's wear has no photo.*
 
 ### Story 5.6: See and Act on a Day's Fit from the Planner
 

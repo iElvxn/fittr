@@ -148,6 +148,7 @@ describe('invalidateWearQueries', () => {
       ['todayWornFitIds', 'user-1'],
       ['fitWearsRange', 'user-1', '2026-09-21'],
       ['wearDates', 'user-1'],
+      ['fitWearPhotos', 'user-1', 'fit-1'],
       ['wearDates', 'user-2'],
       ['plannedFits', 'user-1', '2026-09-21'],
     ];
@@ -158,7 +159,7 @@ describe('invalidateWearQueries', () => {
     await invalidateWearQueries(queryClient, 'user-1');
 
     const invalidated = (key: string[]) => queryClient.getQueryState(key)?.isInvalidated;
-    expect(keys.slice(0, 4).every(invalidated)).toBe(true);
+    expect(keys.slice(0, 5).every(invalidated)).toBe(true);
     expect(invalidated(['wearDates', 'user-2'])).toBe(false);
     expect(invalidated(['plannedFits', 'user-1', '2026-09-21'])).toBe(false);
   });
