@@ -494,7 +494,7 @@ So that I know what I'm wearing ahead of time.
 
 **Given** the Planner tab
 **When** I view the week strip
-**Then** each day cell shows the planned Fit's cover image, or is empty if none is assigned
+**Then** each day cell shows the planned Fit's cover image, or reads "Nothing planned" if none is assigned (once Story 5.4 shipped, a worn day with a photo shows that photo instead)
 
 **Given** an empty or filled day
 **When** I tap it
@@ -678,7 +678,7 @@ So that I control my own data.
 **Then** I see a confirmation with an explanation of what will be removed
 
 **Given** I confirm deletion
-**Then** every row I own across `profiles`/`wardrobe_items`/`fits`/`fit_items`/`fit_wears`/`planned_fits` is hard-deleted, every storage object under my user prefix is removed, and finally the Supabase auth user is deleted
+**Then** every row I own across `profiles`/`wardrobe_items`/`fits`/`fit_items`/`fit_wears`/`planned_fits` is hard-deleted, every storage object under my user prefix is removed from both the `wardrobe` bucket (avatar, item cutouts, Fit covers) and the `wear-photos` bucket (Story 5.4), and finally the Supabase auth user is deleted
 
 **Given** deletion completes
 **Then** I'm signed out and returned to Welcome; an `account_deleted` event is recorded before deletion finishes
@@ -717,7 +717,13 @@ So that launch criteria are met before real users arrive.
 
 **Given** projected image and row volume for the launch cohort
 **When** checked against Supabase's free tier
-**Then** usage is confirmed to stay within limits (or a mitigation is documented)
+**Then** usage is confirmed to stay within limits (or a mitigation is documented), counting wear photos (Story 5.4 keeps them, compressed on-device, unlike item photos)
+
+**Given** a user with a long wear history
+**When** Home, the Planner and the streak load
+**Then** no read fetches the whole wear history unbounded (the streak and Worn filter reads stay under PostgREST's row limit), so screens stay fast and nothing is silently truncated
+
+*Updated 2026-09-27 by the Epic 5 retrospective (wear photos and unbounded wear reads).*
 
 **Given** the codebase
 **When** audited

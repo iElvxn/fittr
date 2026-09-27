@@ -212,3 +212,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
   summary: Fit detail left open across midnight keeps yesterday's `todayWornFitIds`, so the worn toggle (and now the Worn strip's Add tile) acts on yesterday's wear.
   evidence: the `['todayWornFitIds', userId]` key has no date and Fit detail has no day-rollover refresh like Home's AppState listener; unverified whether a focus refetch covers it in practice — settle by leaving Fit detail open past midnight on a device.
+
+- source_spec: `_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md`
+  summary: Run the date-heavy suites (planner, week, streak) under a second, positive-offset time zone (e.g. `TZ=Asia/Tokyo`) in CI.
+  evidence: `jest.config.js` pins `America/Los_Angeles` (`f4e0c0a`), so off-by-one-day bugs east of UTC or in midnight-DST zones ship untested. The user chose not to track it as a sprint action item (Epic 5 retro, finding 16).

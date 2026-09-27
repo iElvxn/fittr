@@ -62,7 +62,7 @@ context:
 - `components/planner/DayFitHeader.tsx` (new):
   - The 3:4 collage (same fill as the grid tiles), serif name and status caption.
   - `View Fit` as an outlined `rounded-sm` control.
-  - On today, Mark worn (primary, `CheckIcon`) or Worn today (outlined, accessibility label "Worn today. Tap to undo"), as in `TodayFitCard`.
+  - On today, Mark worn (outlined) or Worn today (solid ink with a filled `CheckIcon`, accessibility label "Worn today. Tap to undo"), as in `TodayFitCard`.
 - `lib/fits/useWornTodayToggle.ts` (new) -- lift Home's optimistic toggle out of `app/(tabs)/index.tsx` (`wornOverride`, `wearBusyRef`, `toggleWornToday`, the confirm via `confirmUndoWearWithPhoto`) and take the analytics source as a parameter. Home keeps its derived count and streak on top of the hook's `override`.
 - `lib/analytics/posthog.ts` -- `trackFitWorn` accepts `'planner'`.
 - `app/(tabs)/planner.tsx` -- read `useFitWearCounts` and `useTodayWornFitIds`, build the status, wire the hook, and have View Fit close the sheet and then `router.push('/fit/{id}')`. The status reads:
@@ -93,6 +93,10 @@ context:
 
 **Manual checks:**
 - On a device: mark worn from the Planner, then check Home, the streak and the month tile. Undo with and without a photo. Open View Fit and go back.
+
+## Spec Change Log
+
+- **2026-09-27, Epic 5 retrospective (after merge).** Commit `6811ac9` reversed the worn button's styling after device feedback that the worn state was hard to read: "Mark worn" is now outlined, and "Worn today" is solid ink with a filled check (`components/fits/WornTodayButton.tsx`). The Code Map line below is updated to match.
 
 ## Review Triage Log
 
