@@ -3,7 +3,6 @@ import { AppState, Pressable, ScrollView, View, useColorScheme } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -23,7 +22,6 @@ import { useAvatarUrl } from '@/lib/profile/avatarUrl';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { todayLocalDate } from '@/lib/fits/localDate';
 import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
-import { invalidateWearQueries, markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useFitWearCounts, useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { useWearDates, wearStreak } from '@/lib/fits/wearStreak';
 import { usePlannedFits } from '@/lib/planner/plannedFits';
@@ -32,9 +30,9 @@ import { weekDays, weekStartOf } from '@/lib/planner/week';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { useWearPhotoUrls } from '@/lib/fits/wearPhoto';
 import { useWearPhotoActions } from '@/lib/fits/useWearPhotoActions';
-import { confirmUndoWearWithPhoto } from '@/lib/fits/wearConfirmations';
+import { useWornTodayToggle } from '@/lib/fits/useWornTodayToggle';
+import { todayPlannedStatus } from '@/lib/fits/wearStatus';
 import type { WearRef } from '@/lib/fits/wearRef';
-import { trackFitWorn } from '@/lib/analytics/posthog';
 import { Sentry } from '@/lib/observability/sentry';
 
 const PROFILE_TOUCH_TARGET = 48;
@@ -55,7 +53,6 @@ export default function Home() {
   const tabBarClearance = useTabBarClearance();
   const scheme = useColorScheme();
   const inkPrimary = scheme === 'dark' ? colors.dark.inkPrimary : colors.light.inkPrimary;
-  const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user.id;
   const { data: profile } = useProfile(userId);
@@ -144,105 +141,77 @@ export default function Home() {
     planByDate,
   });
   const sheetDay = days.find((day) => day.date === sheetDate) ?? null;
-  // Home's sheet is only ever today's: its worn Fit is the plan if worn,
-  // else the first live Fit worn today, as in the Planner.
-  let sheetWorn: { fit: FitRow; wear: WearRef } | null = null;
-  if (sheetDate === today && todayWornQuery.data) {
-    for (const fit of sheetFit ? [sheetFit] : fits) {
-      const wear = todayWornQuery.data.get(fit.id);
-      if (wear) {
-        sheetWorn = { fit, wear };
-        break;
-      }
-    }
-  }
-
-  // Same optimistic toggle as Fit detail's Wear today: flip at once, clear
-  // the override once the refetches land, restore it on failure. Keyed by
-  // Fit so a changed plan can't inherit another Fit's override.
-  const [wornOverride, setWornOverride] = useState<{ fitId: string; worn: boolean } | null>(null);
-  const [wearBusy, setWearBusy] = useState(false);
-  const wearBusyRef = useRef(false);
-  const [wearError, setWearError] = useState<string | null>(null);
-
-  const serverWornToday = todayFit ? (todayWornQuery.data?.has(todayFit.id) ?? false) : false;
-  const override = todayFit && wornOverride?.fitId === todayFit.id ? wornOverride.worn : null;
-  const isWornToday = override ?? serverWornToday;
-
+  // The Fit today's toggle acts on, shared by the card and the sheet (Story
+  // 5.6): the planned one, else the first live Fit worn today, as in the
+  // Planner. Home's sheet is only ever today's, so it leads with this Fit too.
+  const toggleFit = todayFit ?? fits.find((fit) => todayWornQuery.data?.has(fit.id)) ?? null;
   // Story 5.4: today's wear as the server has it (not the optimistic flip),
   // since only a saved wear can take a photo.
-  const todayWear = todayFit && serverWornToday ? (todayWornQuery.data?.get(todayFit.id) ?? null) : null;
-  const todayPhoto = isWornToday ? (todayWear?.photo ?? null) : null;
-  const { data: todayPhotoUrls } = useWearPhotoUrls(todayPhoto ? [todayPhoto.thumbPath] : []);
+  const todayWear = toggleFit ? (todayWornQuery.data?.get(toggleFit.id) ?? null) : null;
   const photoActions = useWearPhotoActions(userId);
+  const {
+    isWornToday,
+    serverWornToday,
+    override,
+    busy: wearBusy,
+    error: wearError,
+    toggle: toggleWornToday,
+    isBusy: isWearBusy,
+    clearError: clearWearError,
+  } = useWornTodayToggle({
+    userId,
+    fitId: toggleFit?.id ?? null,
+    wear: todayWear,
+    source: 'home',
+    blocked: photoActions.busy || busy,
+  });
+
+  const todayPhoto = todayFit && isWornToday ? (todayWear?.photo ?? null) : null;
+  const { data: todayPhotoUrls } = useWearPhotoUrls(todayPhoto ? [todayPhoto.thumbPath] : []);
+
+  // The sheet's worn Fit and its photo section follow the toggle, so an undo
+  // takes the section away at once, as it does the card's photo row.
+  const sheetWorn: { fit: FitRow; wear: WearRef } | null =
+    sheetDate === today && toggleFit && todayWear && isWornToday && (!sheetFit || sheetFit.id === toggleFit.id)
+      ? { fit: toggleFit, wear: todayWear }
+      : null;
 
   function openSheet() {
     photoActions.clearError();
+    clearWearError();
     openDay(today);
   }
 
   function closeDaySheet() {
-    if (photoActions.busy) {
+    if (photoActions.busy || isWearBusy()) {
       return;
     }
     photoActions.clearError();
+    clearWearError();
     closeSheet();
   }
 
-  async function toggleWornToday() {
-    if (!todayFit || !userId || wearBusyRef.current || photoActions.busy) {
+  function viewFit(fitId: string) {
+    if (busy || photoActions.busy || isWearBusy()) {
       return;
     }
-    const fitId = todayFit.id;
-    const next = !isWornToday;
-    // Undoing a wear deletes its photo too, so that one undo asks first.
-    if (!next && todayPhoto) {
-      wearBusyRef.current = true;
-      const confirmed = await confirmUndoWearWithPhoto();
-      wearBusyRef.current = false;
-      if (!confirmed) {
-        return;
-      }
-    }
-    wearBusyRef.current = true;
-    setWearBusy(true);
-    setWearError(null);
-    setWornOverride({ fitId, worn: next });
-    try {
-      if (next) {
-        await markFitWornToday(userId, fitId);
-        trackFitWorn('home');
-      } else {
-        await unmarkFitWornToday(userId, fitId);
-      }
-      await invalidateWearQueries(queryClient, userId);
-      setWornOverride(null);
-    } catch (error) {
-      setWornOverride({ fitId, worn: !next });
-      const offline = isOffline(error);
-      if (!offline) {
-        Sentry.captureException(error);
-      }
-      setWearError(offline ? NO_CONNECTION_MESSAGE : UNKNOWN_ERROR_MESSAGE);
-    } finally {
-      wearBusyRef.current = false;
-      setWearBusy(false);
-    }
+    closeDaySheet();
+    router.push(`/fit/${fitId}`);
   }
 
   // The count and streak follow the optimistic toggle, so both move the
   // moment Mark worn is tapped rather than after the refetch.
-  const serverCount = todayFit ? countsQuery.data?.get(todayFit.id) : undefined;
-  const wearCount =
-    countsQuery.data && todayFit
-      ? (serverCount ?? 0) + (isWornToday && !serverWornToday ? 1 : 0) - (!isWornToday && serverWornToday ? 1 : 0)
+  const meta = todayFit ? todayPlannedStatus(countsQuery.data, todayFit.id, serverWornToday, isWornToday) : '';
+  const sheetHeader =
+    sheetDate === today && toggleFit
+      ? {
+          fit: toggleFit,
+          // A Fit worn with nothing planned just reads "Worn".
+          status: todayFit ? meta : isWornToday ? 'Worn' : '',
+          onViewFit: () => viewFit(toggleFit.id),
+          wornToggle: { isWornToday, onToggle: () => void toggleWornToday() },
+        }
       : null;
-  let meta = 'Planned for today';
-  if (isWornToday) {
-    meta = wearCount ? `Worn ${wearCount}× · including today` : 'Worn today';
-  } else if (wearCount) {
-    meta = `Planned for today · Worn ${wearCount}×`;
-  }
 
   const wearDates = useMemo(() => {
     if (!wearDatesQuery.data) {
@@ -251,15 +220,15 @@ export default function Home() {
     const dates = new Set(wearDatesQuery.data);
     if (override === true) {
       dates.add(today);
-    } else if (override === false && todayFit) {
+    } else if (override === false && toggleFit) {
       // Today stays in the streak if another Fit was also worn today.
-      const otherWornToday = [...(todayWornQuery.data?.keys() ?? [])].some((id) => id !== todayFit.id);
+      const otherWornToday = [...(todayWornQuery.data?.keys() ?? [])].some((id) => id !== toggleFit.id);
       if (!otherWornToday) {
         dates.delete(today);
       }
     }
     return dates;
-  }, [wearDatesQuery.data, override, today, todayFit, todayWornQuery.data]);
+  }, [wearDatesQuery.data, override, today, toggleFit, todayWornQuery.data]);
   const streak = wearDates ? wearStreak(wearDates, today) : 0;
 
   const header = (
@@ -354,7 +323,7 @@ export default function Home() {
             photoBusy={photoActions.busy || wearBusy}
             photoSaving={Boolean(photoActions.saving)}
             onAddPhoto={() => {
-              if (todayWear && !wearBusyRef.current) {
+              if (todayWear && !isWearBusy()) {
                 photoActions.addPhoto(todayWear);
               }
             }}
@@ -389,7 +358,7 @@ export default function Home() {
         selectedFitId={sheetFit?.id ?? null}
         thumbnailUrls={thumbnailUrls}
         busy={busy || photoActions.busy || wearBusy}
-        errorMessage={writeError ?? photoActions.error}
+        errorMessage={writeError ?? wearError ?? photoActions.error}
         onPick={pickFit}
         onRemove={removeFit}
         onClose={closeDaySheet}
@@ -399,6 +368,7 @@ export default function Home() {
         }
         onAddPhoto={photoActions.addPhoto}
         onRemovePhoto={photoActions.removePhoto}
+        header={sheetHeader}
       />
     </>,
   );

@@ -24,7 +24,14 @@ jest.mock('@/lib/fits/wearPhoto', () => ({
 }));
 // Keeps the real `markFitWorn` (whose invalidation the photo writes reuse) from loading the native Supabase client.
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
-jest.mock('@/lib/analytics/posthog', () => ({ trackFitPlanned: jest.fn() }));
+// Story 5.6: the day sheet's Mark worn. The shared invalidation stays real so the test sees every key it touches.
+jest.mock('@/lib/fits/markFitWorn', () => ({
+  ...jest.requireActual('@/lib/fits/markFitWorn'),
+  markFitWornToday: jest.fn(),
+  unmarkFitWornToday: jest.fn(),
+}));
+jest.mock('@/lib/fits/wornFitIds', () => ({ useFitWearCounts: jest.fn(), useTodayWornFitIds: jest.fn() }));
+jest.mock('@/lib/analytics/posthog', () => ({ trackFitPlanned: jest.fn(), trackFitWorn: jest.fn() }));
 // Pins "today" to Wed Sep 24 2025 (the mockup's week) without faking timers; `toLocalDate` stays
 // real so the week helpers still do their own date math.
 let mockToday = '2025-09-24';
@@ -53,7 +60,9 @@ import {
   useWearPhotoUrls,
   type WearPhoto,
 } from '@/lib/fits/wearPhoto';
-import { trackFitPlanned } from '@/lib/analytics/posthog';
+import { trackFitPlanned, trackFitWorn } from '@/lib/analytics/posthog';
+import { markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
+import { useFitWearCounts, useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 
@@ -96,6 +105,16 @@ function wears(keys: string[], photos: Record<string, WearPhoto> = {}) {
 
 function mockWears(keys: string[], overrides: Record<string, unknown> = {}, photos: Record<string, WearPhoto> = {}) {
   (useWeekWears as jest.Mock).mockReturnValue(query({ data: wears(keys, photos), ...overrides }));
+}
+
+function mockWearCounts(counts: [string, number][], overrides: Record<string, unknown> = {}) {
+  (useFitWearCounts as jest.Mock).mockReturnValue(query({ data: new Map(counts), ...overrides }));
+}
+
+/** Today's wears by Fit id, with the same ids as `wears()` gives them for today's date. */
+function mockTodayWorn(ids: string[], overrides: Record<string, unknown> = {}, photos: Record<string, WearPhoto> = {}) {
+  const today = new Map(ids.map((id) => [id, { id: `wear-${id}|${mockToday}`, photo: photos[id] ?? null }]));
+  (useTodayWornFitIds as jest.Mock).mockReturnValue(query({ data: today, ...overrides }));
 }
 
 function mockMonthPlans(plans: { planned_on: string; fit_id: string }[], overrides: Record<string, unknown> = {}) {
@@ -153,6 +172,10 @@ describe('Planner tab', () => {
     mockMonthWears([]);
     (loadPlannerView as jest.Mock).mockResolvedValue('week');
     (savePlannerView as jest.Mock).mockResolvedValue(undefined);
+    (markFitWornToday as jest.Mock).mockResolvedValue(undefined);
+    (unmarkFitWornToday as jest.Mock).mockResolvedValue(undefined);
+    mockWearCounts([]);
+    mockTodayWorn([]);
   });
 
   describe('header and week', () => {
@@ -382,13 +405,17 @@ describe('Planner tab', () => {
       expect(router.push).toHaveBeenCalledWith('/new-fit');
     });
 
-    it('refetches the Fits, plans and wears when the tab regains focus', async () => {
+    it("refetches the Fits, plans, wears, wear counts and today's wears when the tab regains focus", async () => {
       const refetchFits = jest.fn();
       const refetchPlans = jest.fn();
       const refetchWears = jest.fn();
+      const refetchCounts = jest.fn();
+      const refetchTodayWorn = jest.fn();
       mockFits({ refetch: refetchFits });
       mockPlans([], { refetch: refetchPlans });
       mockWears([], { refetch: refetchWears });
+      mockWearCounts([], { refetch: refetchCounts });
+      mockTodayWorn([], { refetch: refetchTodayWorn });
 
       await renderPlanner();
       const onFocus = (useFocusEffect as jest.Mock).mock.calls.at(-1)[0];
@@ -397,6 +424,38 @@ describe('Planner tab', () => {
       expect(refetchFits).toHaveBeenCalled();
       expect(refetchPlans).toHaveBeenCalled();
       expect(refetchWears).toHaveBeenCalled();
+      expect(refetchCounts).toHaveBeenCalled();
+      expect(refetchTodayWorn).toHaveBeenCalled();
+    });
+
+    it('fails open and reports when the wear counts read fails', async () => {
+      mockPlans([{ planned_on: THU, fit_id: 'fit-a' }]);
+      mockWearCounts([], { data: undefined, isError: true, error: new Error('boom') });
+
+      await renderPlanner();
+
+      expect(row('Thursday, Sep 25: Sunday Market')).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    });
+
+    it("fails open and reports when today's wears read fails", async () => {
+      mockTodayWorn([], { data: undefined, isError: true, error: new Error('boom') });
+
+      await renderPlanner();
+
+      expect(row('Wednesday, Sep 24: nothing planned')).toBeTruthy();
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not report a wear counts or today's wears read that failed offline", async () => {
+      const offline = new FitError('no_connection', NO_CONNECTION_MESSAGE);
+      mockWearCounts([], { data: undefined, isError: true, error: offline });
+      mockTodayWorn([], { data: undefined, isError: true, error: offline });
+
+      await renderPlanner();
+
+      expect(row('Wednesday, Sep 24: nothing planned')).toBeTruthy();
+      expect(Sentry.captureException).not.toHaveBeenCalled();
     });
   });
 
@@ -446,7 +505,7 @@ describe('Planner tab', () => {
       expect(screen.getByTestId('plan-sheet-check-fit-a')).toBeTruthy();
       await user.press(screen.getByRole('button', { name: 'Office Day' }));
 
-      await waitFor(() => expect(screen.queryByText('Choose a Fit')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('Change Fit')).toBeNull());
       expect(planFit).toHaveBeenCalledWith('user-1', THU, 'fit-b');
       expect(trackFitPlanned).toHaveBeenCalledWith(1);
     });
@@ -458,7 +517,7 @@ describe('Planner tab', () => {
       await user.press(row('Thursday, Sep 25: Sunday Market'));
       await user.press(screen.getByRole('button', { name: 'Sunday Market' }));
 
-      expect(screen.queryByText('Choose a Fit')).toBeNull();
+      expect(screen.queryByText('Change Fit')).toBeNull();
       expect(planFit).not.toHaveBeenCalled();
       expect(trackFitPlanned).not.toHaveBeenCalled();
     });
@@ -491,7 +550,7 @@ describe('Planner tab', () => {
       await user.press(row('Thursday, Sep 25: Sunday Market'));
       await user.press(screen.getByRole('button', { name: 'Remove from Thursday' }));
 
-      await waitFor(() => expect(screen.queryByText('Choose a Fit')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('Change Fit')).toBeNull());
       expect(unplanDay).toHaveBeenCalledWith(THU);
       expect(planFit).not.toHaveBeenCalled();
       expect(trackFitPlanned).not.toHaveBeenCalled();
@@ -522,7 +581,7 @@ describe('Planner tab', () => {
       await user.press(screen.getByRole('button', { name: 'Remove from Thursday' }));
 
       expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
-      expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      expect(screen.getByText('Change Fit')).toBeTruthy();
       expect(Sentry.captureException).toHaveBeenCalled();
     });
 
@@ -541,10 +600,10 @@ describe('Planner tab', () => {
 
       expect(planFit).toHaveBeenCalledTimes(1);
       expect(unplanDay).not.toHaveBeenCalled();
-      expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      expect(screen.getByText('Change Fit')).toBeTruthy();
 
       await act(async () => resolve());
-      await waitFor(() => expect(screen.queryByText('Choose a Fit')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('Change Fit')).toBeNull());
     });
   });
 
@@ -584,14 +643,15 @@ describe('Planner tab', () => {
 
         await openMonday();
 
-        expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+        expect(within(screen.getByTestId('day-fit-header')).getByText('Worn')).toBeTruthy();
+        expect(screen.getByText('Monday, Sep 22')).toBeTruthy();
         const slot = screen.getByRole('button', { name: 'Add a photo of what you wore' });
         expect(within(slot).getByText('Add a photo')).toBeTruthy();
         expect(within(slot).getByText('How it actually looked on you')).toBeTruthy();
         expect(slot.props.className).toContain('border-dashed');
         expect(screen.getByLabelText('Sunday Market collage')).toBeTruthy();
         // Picking a Fit stays below the photo.
-        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+        expect(screen.getByText('Change Fit')).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Replace photo' })).toBeNull();
       });
 
@@ -607,7 +667,7 @@ describe('Planner tab', () => {
         );
         await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitWearsRange', 'user-1'] }));
         // The sheet stays open on the day.
-        expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+        expect(within(screen.getByTestId('day-fit-header')).getByText('Worn')).toBeTruthy();
       });
 
       it('shows the picked photo under a "Saving" veil and ignores every control until it lands', async () => {
@@ -624,7 +684,7 @@ describe('Planner tab', () => {
         await user.press(screen.getByRole('button', { name: 'Close' }));
 
         expect(planFit).not.toHaveBeenCalled();
-        expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+        expect(within(screen.getByTestId('day-fit-header')).getByText('Worn')).toBeTruthy();
         await act(async () => resolve());
         await waitFor(() => expect(screen.queryByText('Saving')).toBeNull());
       });
@@ -727,9 +787,8 @@ describe('Planner tab', () => {
 
         await user.press(row('Thursday, Sep 25: Sunday Market'));
 
-        expect(screen.queryByText(/^Worn · /)).toBeNull();
         expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
-        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+        expect(screen.getByText('Change Fit')).toBeTruthy();
       });
 
       it('has no photo section on a past day never marked worn', async () => {
@@ -776,6 +835,461 @@ describe('Planner tab', () => {
 
         expect(screen.queryByTestId(`planner-photo-${MON}`)).toBeNull();
         expect(screen.getByTestId(`planner-tile-${MON}`)).toBeTruthy();
+      });
+    });
+  });
+
+  describe("day sheet's Fit header (Story 5.6)", () => {
+    const WED_KEY = `fit-a|${WED}`;
+    const WED_WEAR = `wear-${WED_KEY}`;
+    const WED_PHOTO: WearPhoto = {
+      path: `user-1/${WED_WEAR}/p.webp`,
+      thumbPath: `user-1/${WED_WEAR}/p_thumb.webp`,
+      thumbhash: 'hash-wed',
+    };
+
+    function header() {
+      return screen.getByTestId('day-fit-header');
+    }
+
+    function headerButton(name: string) {
+      return within(header()).getByRole('button', { name });
+    }
+
+    /** Fit A planned today; worn today too when `worn`, with the photo if given. Week wears and today's wears agree. */
+    function plannedToday({ worn = false, photo }: { worn?: boolean; photo?: WearPhoto } = {}) {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      mockWears(worn ? [WED_KEY] : [], {}, photo ? { [WED_KEY]: photo } : {});
+      mockTodayWorn(worn ? ['fit-a'] : [], {}, photo ? { 'fit-a': photo } : {});
+    }
+
+    async function openToday() {
+      const rendered = await renderPlanner();
+      await rendered.user.press(row('Wednesday, Sep 24: Sunday Market'));
+      return rendered;
+    }
+
+    function mockConfirm(buttonIndex: number) {
+      return jest
+        .spyOn(ActionSheetIOS, 'showActionSheetWithOptions')
+        .mockImplementation((_options, callback) => callback(buttonIndex));
+    }
+
+    afterEach(() => {
+      (ActionSheetIOS.showActionSheetWithOptions as unknown as Partial<jest.SpyInstance>).mockRestore?.();
+    });
+
+    describe('planned day', () => {
+      it('leads with the Fit: collage, name, status and View Fit, with the grid under "Change Fit"', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-b' }]);
+        mockWearCounts([['fit-b', 2]]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Office Day'));
+
+        expect(screen.getByText('Thursday, Sep 25')).toBeTruthy();
+        expect(within(header()).getByText('Office Day')).toBeTruthy();
+        expect(within(header()).getByText('Planned · Worn 2×')).toBeTruthy();
+        expect(headerButton('View Fit')).toBeTruthy();
+        // The collage fills like the grid tiles: the Fit's canvas color, or the raised surface.
+        expect(StyleSheet.flatten(within(header()).getByTestId('day-fit-header-collage').props.style)).toMatchObject({
+          backgroundColor: '#DCE8DC',
+        });
+        expect(screen.getByText('Change Fit')).toBeTruthy();
+        expect(screen.queryByText('Choose a Fit')).toBeNull();
+        expect(screen.getByTestId('plan-sheet-check-fit-b')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Remove from Thursday' })).toBeTruthy();
+      });
+
+      it('fills the collage with the raised surface for a Fit with no canvas color', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Sunday Market'));
+
+        expect(within(header()).getByTestId('day-fit-header-collage').props.className).toContain('bg-surface-raised');
+      });
+
+      it('reads just "Planned" for a Fit never worn', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Sunday Market'));
+
+        expect(within(header()).getByText('Planned')).toBeTruthy();
+      });
+
+      it('still plans another Fit from the grid in one tap', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Sunday Market'));
+        await user.press(screen.getByRole('button', { name: 'Office Day' }));
+
+        await waitFor(() => expect(screen.queryByTestId('day-fit-header')).toBeNull());
+        expect(planFit).toHaveBeenCalledWith('user-1', THU, 'fit-b');
+      });
+
+      it('shows the header on a planned day in the month view too', async () => {
+        mockToday = '2026-09-26';
+        mockMonthPlans([{ planned_on: '2026-09-29', fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+        await user.press(screen.getByRole('button', { name: 'Month' }));
+
+        await user.press(screen.getByRole('button', { name: 'Tuesday, Sep 29: Sunday Market, planned' }));
+
+        expect(within(header()).getByText('Sunday Market')).toBeTruthy();
+        expect(headerButton('View Fit')).toBeTruthy();
+        expect(within(header()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+      });
+    });
+
+    describe('not today', () => {
+      it('offers no Mark worn on a future day', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Sunday Market'));
+
+        expect(within(header()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+        expect(within(header()).queryByRole('button', { name: 'Worn today. Tap to undo' })).toBeNull();
+      });
+
+      it('offers no Mark worn on a past day never worn', async () => {
+        mockPlans([{ planned_on: MON, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Monday, Sep 22: Sunday Market'));
+
+        expect(within(header()).getByText('Planned')).toBeTruthy();
+        expect(within(header()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+      });
+
+      it('offers no undo on a past worn day, reading plain "Worn" with no count', async () => {
+        mockPlans([{ planned_on: MON, fit_id: 'fit-a' }]);
+        mockWears([`fit-a|${MON}`]);
+        mockWearCounts([['fit-a', 3]]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Monday, Sep 22: Sunday Market'));
+
+        expect(within(header()).getByText('Worn')).toBeTruthy();
+        expect(within(header()).queryByText(/Worn 3×/)).toBeNull();
+        expect(within(header()).queryByRole('button', { name: 'Worn today. Tap to undo' })).toBeNull();
+        expect(within(header()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+      });
+    });
+
+    describe('worn day', () => {
+      it('drops the collage when the photo section shows, keeping name, status and View Fit', async () => {
+        mockPlans([{ planned_on: MON, fit_id: 'fit-a' }]);
+        mockWears([`fit-a|${MON}`]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Monday, Sep 22: Sunday Market'));
+
+        expect(screen.getByRole('button', { name: 'Add a photo of what you wore' })).toBeTruthy();
+        expect(within(header()).queryByTestId('day-fit-header-collage')).toBeNull();
+        expect(within(header()).getByText('Sunday Market')).toBeTruthy();
+        expect(within(header()).getByText('Worn')).toBeTruthy();
+        expect(headerButton('View Fit')).toBeTruthy();
+        // The approved photo-plus-collage pair stays as it is.
+        expect(screen.getByLabelText('Sunday Market collage')).toBeTruthy();
+      });
+
+      it('leads with the worn Fit on a day worn with nothing planned: "Worn", nothing checked, no Remove', async () => {
+        mockWears([`fit-b|${TUE}`]);
+        mockWearCounts([['fit-b', 2]]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Tuesday, Sep 23: nothing planned'));
+
+        expect(screen.getByText('Tuesday, Sep 23')).toBeTruthy();
+        expect(within(header()).queryByText(/Worn 2×/)).toBeNull();
+
+        expect(within(header()).getByText('Office Day')).toBeTruthy();
+        expect(within(header()).getByText('Worn')).toBeTruthy();
+        expect(headerButton('View Fit')).toBeTruthy();
+        expect(within(header()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+        expect(screen.queryByTestId(/^plan-sheet-check-/)).toBeNull();
+        expect(screen.queryByText('Remove from Tuesday')).toBeNull();
+        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+        expect(screen.queryByText('Change Fit')).toBeNull();
+      });
+
+      it('offers Worn today on today when worn with nothing planned, reading plain "Worn", and undoes that wear', async () => {
+        mockWears([`fit-b|${WED}`]);
+        mockTodayWorn(['fit-b']);
+        mockWearCounts([['fit-b', 4]]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Wednesday, Sep 24: nothing planned'));
+
+        expect(within(header()).getByText('Office Day')).toBeTruthy();
+        expect(within(header()).getByText('Worn')).toBeTruthy();
+        expect(within(header()).queryByText(/including today/)).toBeNull();
+        expect(within(header()).queryByText(/Worn 4×/)).toBeNull();
+        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+        await user.press(headerButton('Worn today. Tap to undo'));
+
+        await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-b'));
+      });
+
+      it("captions today's worn planned day with just the day, the grid under Change Fit", async () => {
+        plannedToday({ worn: true });
+        await openToday();
+
+        expect(screen.getByText('Wednesday, Sep 24')).toBeTruthy();
+        expect(screen.queryByText('Choose a Fit')).toBeNull();
+        expect(screen.getByText('Change Fit')).toBeTruthy();
+      });
+    });
+
+    describe('empty day', () => {
+      it('opens straight on the grid with no header', async () => {
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: nothing planned'));
+
+        expect(screen.queryByTestId('day-fit-header')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'View Fit' })).toBeNull();
+        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      });
+
+      it('has no header for a plan whose Fit was deleted', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-deleted' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: nothing planned'));
+
+        expect(screen.queryByTestId('day-fit-header')).toBeNull();
+      });
+    });
+
+    describe('View Fit', () => {
+      it('closes the sheet and opens Fit detail', async () => {
+        mockPlans([{ planned_on: THU, fit_id: 'fit-b' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Office Day'));
+        await user.press(headerButton('View Fit'));
+
+        expect(screen.queryByTestId('day-fit-header')).toBeNull();
+        expect(screen.queryByText('Change Fit')).toBeNull();
+        expect(router.push).toHaveBeenCalledWith('/fit/fit-b');
+      });
+
+      it('is ignored while a write is in flight', async () => {
+        let resolve: () => void = () => {};
+        (planFit as jest.Mock).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+        mockPlans([{ planned_on: THU, fit_id: 'fit-a' }]);
+        const { user } = await renderPlanner();
+
+        await user.press(row('Thursday, Sep 25: Sunday Market'));
+        await user.press(screen.getByRole('button', { name: 'Office Day' }));
+        await user.press(headerButton('View Fit'));
+
+        expect(router.push).not.toHaveBeenCalled();
+        expect(screen.getByTestId('day-fit-header')).toBeTruthy();
+        await act(async () => resolve());
+      });
+    });
+
+    describe('Mark worn today', () => {
+      it("keeps a worn day's photo section and offers no Mark worn while today's wears load", async () => {
+        plannedToday({ worn: true });
+        mockTodayWorn([], { data: undefined, isLoading: true });
+
+        await openToday();
+
+        expect(screen.getByRole('button', { name: 'Add a photo of what you wore' })).toBeTruthy();
+        expect(within(header()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+        expect(within(header()).queryByRole('button', { name: 'Worn today. Tap to undo' })).toBeNull();
+      });
+
+      it("reads Home's status for today's planned Fit", async () => {
+        plannedToday();
+        mockWearCounts([['fit-a', 3]]);
+
+        await openToday();
+
+        expect(within(header()).getByText('Planned for today · Worn 3×')).toBeTruthy();
+        expect(headerButton('Mark worn')).toBeTruthy();
+      });
+
+      it("reads Home's worn status once today's Fit is worn", async () => {
+        plannedToday({ worn: true });
+        mockWearCounts([['fit-a', 4]]);
+
+        await openToday();
+
+        expect(within(header()).getByText('Worn 4× · including today')).toBeTruthy();
+        expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+      });
+
+      it('flips at once, writes, tracks source planner and invalidates every wear read', async () => {
+        let resolve: () => void = () => {};
+        (markFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+        plannedToday();
+        mockWearCounts([['fit-a', 3]]);
+        const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+        const { user } = await openToday();
+
+        await user.press(headerButton('Mark worn'));
+
+        expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+        expect(within(header()).getByText('Worn 4× · including today')).toBeTruthy();
+        expect(markFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a');
+        // The sheet stays open on the day.
+        expect(screen.getByText('Wednesday, Sep 24')).toBeTruthy();
+
+        await act(async () => resolve());
+        await waitFor(() => expect(trackFitWorn).toHaveBeenCalledWith('planner'));
+        for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates']) {
+          expect(invalidate).toHaveBeenCalledWith({ queryKey: [key, 'user-1'] });
+        }
+      });
+
+      it('shows the photo slot, and drops the collage, once the wear lands', async () => {
+        plannedToday();
+        (markFitWornToday as jest.Mock).mockImplementation(async () => {
+          // The refetch after the write now finds today's wear.
+          plannedToday({ worn: true });
+        });
+        const { user } = await openToday();
+        expect(within(header()).getByTestId('day-fit-header-collage')).toBeTruthy();
+
+        await user.press(headerButton('Mark worn'));
+
+        expect(await screen.findByRole('button', { name: 'Add a photo of what you wore' })).toBeTruthy();
+        expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+        expect(within(header()).queryByTestId('day-fit-header-collage')).toBeNull();
+      });
+
+      it('undoes a wear without a photo in one tap', async () => {
+        const confirm = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions');
+        let resolve: () => void = () => {};
+        (unmarkFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+        plannedToday({ worn: true });
+        const { user } = await openToday();
+        expect(screen.getByRole('button', { name: 'Add a photo of what you wore' })).toBeTruthy();
+
+        await user.press(headerButton('Worn today. Tap to undo'));
+
+        expect(headerButton('Mark worn')).toBeTruthy();
+        // The photo section goes at once, before the unmark lands.
+        expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
+        expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a');
+        expect(confirm).not.toHaveBeenCalled();
+        await act(async () => resolve());
+        expect(trackFitWorn).not.toHaveBeenCalled();
+      });
+
+      it('asks before undoing a wear that has a photo, and undoes on confirm', async () => {
+        plannedToday({ worn: true, photo: WED_PHOTO });
+        const confirm = mockConfirm(0);
+        const { user } = await openToday();
+
+        await user.press(headerButton('Worn today. Tap to undo'));
+
+        expect(confirm).toHaveBeenCalledWith(
+          {
+            title: "Undo today's wear? Its photo will be deleted.",
+            options: ['Undo wear', 'Cancel'],
+            destructiveButtonIndex: 0,
+            cancelButtonIndex: 1,
+          },
+          expect.any(Function),
+        );
+        await waitFor(() => expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a'));
+      });
+
+      it('keeps the wear and its photo on Cancel', async () => {
+        plannedToday({ worn: true, photo: WED_PHOTO });
+        mockConfirm(1);
+        const { user } = await openToday();
+
+        await user.press(headerButton('Worn today. Tap to undo'));
+
+        expect(unmarkFitWornToday).not.toHaveBeenCalled();
+        expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Replace photo' })).toBeTruthy();
+      });
+
+      it('reverts and shows the no-connection notice in the sheet, unreported, when Mark worn fails offline', async () => {
+        (markFitWornToday as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+        plannedToday();
+        const { user } = await openToday();
+
+        await user.press(headerButton('Mark worn'));
+
+        expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+        expect(headerButton('Mark worn')).toBeTruthy();
+        expect(trackFitWorn).not.toHaveBeenCalled();
+        expect(Sentry.captureException).not.toHaveBeenCalled();
+      });
+
+      it('reverts and reports an unknown undo failure with the notice in the sheet', async () => {
+        (unmarkFitWornToday as jest.Mock).mockRejectedValue(new Error('boom'));
+        plannedToday({ worn: true });
+        const { user } = await openToday();
+
+        await user.press(headerButton('Worn today. Tap to undo'));
+
+        expect(await screen.findByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy();
+        expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+        expect(Sentry.captureException).toHaveBeenCalled();
+      });
+    });
+
+    describe('busy', () => {
+      it('ignores every control in the sheet while a wear write is in flight', async () => {
+        let resolve: () => void = () => {};
+        (markFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+        plannedToday();
+        const { user } = await openToday();
+
+        await user.press(headerButton('Mark worn'));
+        await user.press(headerButton('Worn today. Tap to undo'));
+        await user.press(headerButton('View Fit'));
+        await user.press(screen.getByRole('button', { name: 'Office Day' }));
+        await user.press(screen.getByRole('button', { name: 'Remove from Wednesday' }));
+        await user.press(screen.getByRole('button', { name: 'Close' }));
+
+        expect(markFitWornToday).toHaveBeenCalledTimes(1);
+        expect(unmarkFitWornToday).not.toHaveBeenCalled();
+        expect(router.push).not.toHaveBeenCalled();
+        expect(planFit).not.toHaveBeenCalled();
+        expect(unplanDay).not.toHaveBeenCalled();
+        expect(screen.getByTestId('day-fit-header')).toBeTruthy();
+        await act(async () => resolve());
+      });
+
+      it('ignores Mark worn while a plan write is in flight', async () => {
+        let resolve: () => void = () => {};
+        (planFit as jest.Mock).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+        plannedToday();
+        const { user } = await openToday();
+
+        await user.press(screen.getByRole('button', { name: 'Office Day' }));
+        await user.press(headerButton('Mark worn'));
+
+        expect(markFitWornToday).not.toHaveBeenCalled();
+        await act(async () => resolve());
+      });
+
+      it('ignores Worn today while a photo write is in flight', async () => {
+        let resolve: () => void = () => {};
+        (saveWearPhoto as jest.Mock).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+        plannedToday({ worn: true });
+        const { user } = await openToday();
+
+        await user.press(screen.getByRole('button', { name: 'Add a photo of what you wore' }));
+        await waitFor(() => expect(screen.getByText('Saving')).toBeTruthy());
+        await user.press(headerButton('Worn today. Tap to undo'));
+
+        expect(unmarkFitWornToday).not.toHaveBeenCalled();
+        await act(async () => resolve());
       });
     });
   });
@@ -1105,7 +1619,7 @@ describe('Planner tab', () => {
           await user.press(day('Wednesday, Sep 16: Office Day, worn'));
           await user.press(screen.getByRole('button', { name: 'Add a photo of what you wore' }));
 
-          expect(screen.getByText('Worn · Office Day')).toBeTruthy();
+          expect(within(screen.getByTestId('day-fit-header')).getByText('Office Day')).toBeTruthy();
           await waitFor(() =>
             expect(saveWearPhoto).toHaveBeenCalledWith('user-1', { id: `wear-${key}`, photo: null }, 'file://picked.jpg'),
           );
@@ -1140,12 +1654,12 @@ describe('Planner tab', () => {
 
         await user.press(day('Tuesday, Sep 29: Sunday Market, planned'));
 
-        expect(screen.getByText('Choose a Fit')).toBeTruthy();
+        expect(screen.getByText('Change Fit')).toBeTruthy();
         expect(screen.getByText('Tuesday, Sep 29')).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Sunday Market' }).props.accessibilityState).toMatchObject({ selected: true });
         await user.press(screen.getByRole('button', { name: 'Office Day' }));
 
-        await waitFor(() => expect(screen.queryByText('Choose a Fit')).toBeNull());
+        await waitFor(() => expect(screen.queryByText('Change Fit')).toBeNull());
         expect(planFit).toHaveBeenCalledWith('user-1', SEP_29, 'fit-b');
         expect(trackFitPlanned).toHaveBeenCalledWith(3);
         expect(invalidate).toHaveBeenCalledWith({ queryKey: ['plannedFits', 'user-1'] });

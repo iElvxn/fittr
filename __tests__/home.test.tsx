@@ -370,12 +370,12 @@ describe('Home tab', () => {
 
       await user.press(button("Change today's Fit"));
 
-      expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      expect(screen.getByText('Change Fit')).toBeTruthy();
       expect(screen.getAllByText('Wednesday, Sep 24').length).toBeGreaterThan(1);
       expect(button('Sunday Market').props.accessibilityState).toMatchObject({ selected: true });
       await user.press(button('Office Day'));
 
-      await waitFor(() => expect(screen.queryByText('Choose a Fit')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('Change Fit')).toBeNull());
       expect(planFit).toHaveBeenCalledWith('user-1', WED, 'fit-b');
       expect(trackFitPlanned).toHaveBeenCalledWith(0);
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ['plannedFits', 'user-1'] });
@@ -527,7 +527,7 @@ describe('Home tab', () => {
 
       await user.press(photoRow);
 
-      expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+      expect(within(screen.getByTestId('day-fit-header')).getByText('Sunday Market')).toBeTruthy();
       expect(button('Replace photo')).toBeTruthy();
       expect(button('Remove photo')).toBeTruthy();
     });
@@ -539,7 +539,7 @@ describe('Home tab', () => {
 
       await user.press(button("Plan today's Fit"));
 
-      expect(screen.getByText('Worn · Sunday Market')).toBeTruthy();
+      expect(within(screen.getByTestId('day-fit-header')).getByText('Worn')).toBeTruthy();
       expect(button('Add a photo of what you wore')).toBeTruthy();
     });
 
@@ -550,8 +550,7 @@ describe('Home tab', () => {
 
       await user.press(button("Change today's Fit"));
 
-      expect(screen.getByText('Choose a Fit')).toBeTruthy();
-      expect(screen.queryByText(/^Worn · /)).toBeNull();
+      expect(screen.getByText('Change Fit')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
     });
 
@@ -598,6 +597,149 @@ describe('Home tab', () => {
     });
   });
 
+  describe("today's sheet header (Story 5.6)", () => {
+    function header() {
+      return screen.getByTestId('day-fit-header');
+    }
+
+    function headerButton(name: string) {
+      return within(header()).getByRole('button', { name });
+    }
+
+    it("leads Change today's Fit with the same header as the Planner, Mark worn included", async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      mockWearCounts([['fit-a', 3]]);
+      const { user } = await renderHome();
+
+      await user.press(button("Change today's Fit"));
+
+      expect(within(header()).getByText('Sunday Market')).toBeTruthy();
+      expect(within(header()).getByText('Planned for today · Worn 3×')).toBeTruthy();
+      expect(within(header()).getByTestId('day-fit-header-collage')).toBeTruthy();
+      expect(headerButton('View Fit')).toBeTruthy();
+      expect(headerButton('Mark worn')).toBeTruthy();
+      expect(screen.getByText('Change Fit')).toBeTruthy();
+    });
+
+    it("shares one toggle with the card: marking worn in the sheet flips both, tracked as home", async () => {
+      const settle = pendingWrite(markFitWornToday);
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      mockWearCounts([['fit-a', 3]]);
+      const { user } = await renderHome();
+
+      await user.press(button("Change today's Fit"));
+      await user.press(headerButton('Mark worn'));
+
+      expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+      expect(within(header()).getByText('Worn 4× · including today')).toBeTruthy();
+      // The card behind the sheet shows the same state.
+      expect(screen.getAllByRole('button', { name: 'Worn today. Tap to undo' })).toHaveLength(2);
+      expect(screen.queryByRole('button', { name: 'Mark worn' })).toBeNull();
+      expect(markFitWornToday).toHaveBeenCalledTimes(1);
+      expect(markFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a');
+
+      await settle();
+      await waitFor(() => expect(trackFitWorn).toHaveBeenCalledWith('home'));
+    });
+
+    it("opens on the card's worn state and drops the collage beside the photo section", async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      mockWearCounts([['fit-a', 5]]);
+      mockTodayWorn(['fit-a']);
+      const { user } = await renderHome();
+
+      await user.press(button("Change today's Fit"));
+
+      expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+      expect(within(header()).getByText('Worn 5× · including today')).toBeTruthy();
+      expect(within(header()).queryByTestId('day-fit-header-collage')).toBeNull();
+      expect(button('Add a photo of what you wore')).toBeTruthy();
+    });
+
+    it('undoes from the sheet and the card follows', async () => {
+      const settle = pendingWrite(unmarkFitWornToday);
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      mockTodayWorn(['fit-a']);
+      const { user } = await renderHome();
+
+      await user.press(button("Change today's Fit"));
+      expect(button('Add a photo of what you wore')).toBeTruthy();
+      await user.press(headerButton('Worn today. Tap to undo'));
+
+      expect(screen.getAllByRole('button', { name: 'Mark worn' })).toHaveLength(2);
+      // The photo section goes at once, before the unmark lands.
+      expect(screen.queryByRole('button', { name: 'Add a photo of what you wore' })).toBeNull();
+      expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-a');
+      await settle();
+    });
+
+    it('shows a wear error in the sheet', async () => {
+      (markFitWornToday as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      const { user } = await renderHome();
+
+      await user.press(button("Change today's Fit"));
+      await user.press(headerButton('Mark worn'));
+
+      // Once on the card behind, once in the sheet.
+      expect(await screen.findAllByText(NO_CONNECTION_MESSAGE)).toHaveLength(2);
+      expect(headerButton('Mark worn')).toBeTruthy();
+    });
+
+    it('leads with the worn Fit when today was worn with nothing planned, reading plain "Worn"', async () => {
+      mockTodayWorn(['fit-a']);
+      mockWearCounts([['fit-a', 4]]);
+      const { user } = await renderHome();
+
+      await user.press(button("Plan today's Fit"));
+
+      expect(within(header()).getByText('Sunday Market')).toBeTruthy();
+      expect(within(header()).getByText('Worn')).toBeTruthy();
+      expect(within(header()).queryByText(/Worn 4×/)).toBeNull();
+      expect(headerButton('Worn today. Tap to undo')).toBeTruthy();
+      expect(screen.getByText('Choose a Fit')).toBeTruthy();
+      expect(screen.queryByTestId(/^plan-sheet-check-/)).toBeNull();
+      expect(screen.queryByText('Remove from Wednesday')).toBeNull();
+    });
+
+    it("keys the toggle to the Fit worn today when nothing is planned, so the sheet's undo acts on it", async () => {
+      const settle = pendingWrite(unmarkFitWornToday);
+      mockTodayWorn(['fit-b']);
+      mockWearDates([TUE, WED]);
+      const { user } = await renderHome();
+
+      await user.press(button("Plan today's Fit"));
+      expect(within(header()).getByText('Office Day')).toBeTruthy();
+      await user.press(headerButton('Worn today. Tap to undo'));
+
+      expect(unmarkFitWornToday).toHaveBeenCalledWith('user-1', 'fit-b');
+      expect(headerButton('Mark worn')).toBeTruthy();
+      // The streak follows the same optimistic undo.
+      expect(screen.getByText('1 day')).toBeTruthy();
+      await settle();
+    });
+
+    it('opens on the grid alone when nothing is planned or worn', async () => {
+      const { user } = await renderHome();
+
+      await user.press(button("Plan today's Fit"));
+
+      expect(screen.queryByTestId('day-fit-header')).toBeNull();
+      expect(screen.getByText('Choose a Fit')).toBeTruthy();
+    });
+
+    it('View Fit closes the sheet and opens Fit detail', async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      const { user } = await renderHome();
+
+      await user.press(button("Change today's Fit"));
+      await user.press(headerButton('View Fit'));
+
+      expect(screen.queryByTestId('day-fit-header')).toBeNull();
+      expect(router.push).toHaveBeenCalledWith('/fit/fit-a');
+    });
+  });
+
   describe('removing today', () => {
     it("removes today's Fit from the day sheet", async () => {
       mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
@@ -606,7 +748,7 @@ describe('Home tab', () => {
       await user.press(button("Change today's Fit"));
       await user.press(button('Remove from Wednesday'));
 
-      await waitFor(() => expect(screen.queryByText('Choose a Fit')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('Change Fit')).toBeNull());
       expect(unplanDay).toHaveBeenCalledWith(WED);
       expect(trackFitPlanned).not.toHaveBeenCalled();
     });

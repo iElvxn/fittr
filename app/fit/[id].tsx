@@ -51,6 +51,7 @@ export default function FitDetail() {
   const scheme = useColorScheme();
   const inkPrimary = scheme === 'dark' ? colors.dark.inkPrimary : colors.light.inkPrimary;
   const inkDisabled = scheme === 'dark' ? colors.dark.inkDisabled : colors.light.inkDisabled;
+  const surfaceBase = scheme === 'dark' ? colors.dark.surfaceBase : colors.light.surfaceBase;
 
   // Same "already-cached list is the single source of truth" convention as
   // `app/item/[id].tsx` -- no separate single-Fit query.
@@ -482,7 +483,13 @@ export default function FitDetail() {
             disabled={deleting || wearBusy}
           >
             {isWornToday ? (
-              <CheckIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
+              // Solid when worn, like Favorite's filled heart, so the state reads at a glance.
+              <CheckIcon
+                size={ACTION_ICON_SIZE}
+                color={deleting || wearBusy ? inkDisabled : inkPrimary}
+                filled
+                checkColor={surfaceBase}
+              />
             ) : (
               <CalendarIcon size={ACTION_ICON_SIZE} color={deleting || wearBusy ? inkDisabled : inkPrimary} />
             )}
