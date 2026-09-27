@@ -37,7 +37,10 @@ export function trackFitPlanned(daysAhead: number) {
   posthog.capture('fit_planned', { days_ahead: daysAhead });
 }
 
-/** Fired on every successful wear write: Home's Mark worn, or Fit detail's Wear today. Never on undo. */
-export function trackFitWorn(source: 'home' | 'detail') {
+/** Where a wear was recorded: Home's card or sheet, Fit detail, or the Planner's day sheet (Story 5.6). */
+export type FitWornSource = 'home' | 'detail' | 'planner';
+
+/** Fired on every successful wear write: Home's Mark worn, Fit detail's Wear today, or the Planner's Mark worn. Never on undo. */
+export function trackFitWorn(source: FitWornSource) {
   posthog.capture('fit_worn', { source });
 }

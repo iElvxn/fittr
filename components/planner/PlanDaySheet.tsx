@@ -7,6 +7,7 @@ import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { CloseIcon } from '@/components/ui/icons/CloseIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { WearPhotoSection } from '@/components/planner/WearPhotoSection';
+import { DayFitHeader, type DayFitWornToggle } from '@/components/planner/DayFitHeader';
 import type { WearRef } from '@/lib/fits/wearRef';
 import type { FitRow } from '@/lib/fits/listFits';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
@@ -43,6 +44,17 @@ type Props = {
   photoSavingUri?: string | null;
   onAddPhoto?: (wear: WearRef) => void;
   onRemovePhoto?: (wear: WearRef) => void;
+  /**
+   * Story 5.6: the day's Fit to lead with -- the planned one, else the one
+   * worn that day -- with its status, View Fit and (today only) the worn
+   * toggle. Null on an empty day, which opens straight on the grid.
+   */
+  header?: {
+    fit: FitRow;
+    status: string;
+    onViewFit: () => void;
+    wornToggle?: DayFitWornToggle | null;
+  } | null;
 };
 
 /**
@@ -52,9 +64,13 @@ type Props = {
  * wears an ink check badge. The sheet stays open through a failed write so
  * the error shows where the user tapped.
  *
- * Story 5.4: on a worn day the caption reads "Worn · {Fit}" and the wear's
- * photo section sits above the grid, which moves under its own "Choose a
- * Fit" caption. A photo write locks the sheet like a plan write does.
+ * Story 5.4: on a worn day the wear's photo section sits above the grid. A
+ * photo write locks the sheet like a plan write does.
+ *
+ * Story 5.6: a day with a Fit leads with `DayFitHeader` above the photo
+ * section; the caption is then just the day, and the grid sits under
+ * "Change Fit" (or "Choose a Fit" when nothing is planned). The header drops
+ * its collage when the photo section shows. A wear toggle locks the sheet too.
  */
 export function PlanDaySheet({
   day,
@@ -70,6 +86,7 @@ export function PlanDaySheet({
   photoSavingUri = null,
   onAddPhoto,
   onRemovePhoto,
+  header = null,
 }: Props) {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
@@ -104,9 +121,11 @@ export function PlanDaySheet({
           </View>
           <View className="flex-row items-start justify-between gap-3 px-gutter pb-4">
             <View className="shrink gap-1">
-              <Text variant="caption" className="text-ink-secondary dark:text-ink-secondaryDark">
-                {worn ? `Worn · ${worn.fit.name}` : 'Choose a Fit'}
-              </Text>
+              {header ? null : (
+                <Text variant="caption" className="text-ink-secondary dark:text-ink-secondaryDark">
+                  Choose a Fit
+                </Text>
+              )}
               <Text accessibilityRole="header" variant="title" className="text-ink-primary dark:text-ink-primaryDark">
                 {day.long}
               </Text>
@@ -131,6 +150,19 @@ export function PlanDaySheet({
 
           {/* One scroll for the photo and the grid, so both fit on a small screen. */}
           <ScrollView contentContainerClassName="px-gutter" style={{ flexGrow: 0 }}>
+            {header ? (
+              <View className="pb-4">
+                <DayFitHeader
+                  fit={header.fit}
+                  coverUrl={header.fit.cover_path ? (thumbnailUrls?.[header.fit.cover_path] ?? null) : null}
+                  status={header.status}
+                  showCollage={!worn}
+                  busy={busy}
+                  onViewFit={header.onViewFit}
+                  wornToggle={header.wornToggle}
+                />
+              </View>
+            ) : null}
             {worn ? (
               <View className="pb-4">
                 <WearPhotoSection
@@ -143,9 +175,13 @@ export function PlanDaySheet({
                   onAddPhoto={() => onAddPhoto?.(worn.wear)}
                   onRemovePhoto={() => onRemovePhoto?.(worn.wear)}
                 />
-                <View className="mt-4 h-px bg-border-hairline dark:bg-border-hairlineDark" />
+              </View>
+            ) : null}
+            {header || worn ? (
+              <View className="pb-4">
+                <View className="h-px bg-border-hairline dark:bg-border-hairlineDark" />
                 <Text variant="caption" className="pt-4 text-ink-secondary dark:text-ink-secondaryDark">
-                  Choose a Fit
+                  {selectedFitId ? 'Change Fit' : 'Choose a Fit'}
                 </Text>
               </View>
             ) : null}

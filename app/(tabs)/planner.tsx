@@ -44,6 +44,9 @@ import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { useWearPhotoUrls } from '@/lib/fits/wearPhoto';
 import { wearKey, type WearRef } from '@/lib/fits/wearRef';
 import { useWearPhotoActions } from '@/lib/fits/useWearPhotoActions';
+import { useWornTodayToggle } from '@/lib/fits/useWornTodayToggle';
+import { useFitWearCounts, useTodayWornFitIds } from '@/lib/fits/wornFitIds';
+import { dayFitStatus, todayPlannedStatus } from '@/lib/fits/wearStatus';
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { colors } from '@/lib/theme/colors';
 import { Sentry } from '@/lib/observability/sentry';
@@ -164,6 +167,10 @@ export default function Planner() {
   // The month reads only run while the month is showing.
   const monthPlansQuery = usePlannedMonth(userId, monthStart, isMonth);
   const monthWearsQuery = useMonthWears(userId, monthStart, isMonth);
+  // Story 5.6: the day sheet's header -- wear counts for its status, and
+  // today's wears for the Mark worn toggle Home also uses. Both fail open.
+  const countsQuery = useFitWearCounts(userId);
+  const todayWornQuery = useTodayWornFitIds(userId);
 
   // Same reasoning as `fits.tsx`: tabs stay mounted, so a plan made on
   // another device (or a Fit worn from Fit detail) only shows up if every
@@ -179,6 +186,8 @@ export default function Planner() {
       fitsQuery.refetch();
       plansQuery.refetch();
       wearsQuery.refetch();
+      countsQuery.refetch();
+      todayWornQuery.refetch();
       if (isMonthRef.current) {
         monthPlansQuery.refetch();
         monthWearsQuery.refetch();
@@ -207,11 +216,24 @@ export default function Planner() {
   // Fails open, same as `fits.tsx`'s wear counts: a failed wears read just
   // means no "Worn" captions or badges, never a blocked view.
   const wearsError = activeWearsQuery.isError ? activeWearsQuery.error : null;
+  const countsError = countsQuery.isError ? countsQuery.error : null;
+  const todayWornError = todayWornQuery.isError ? todayWornQuery.error : null;
+  // One effect per read, so a lasting error isn't reported again when another read's changes.
   useEffect(() => {
     if (wearsError && !isOffline(wearsError)) {
       Sentry.captureException(wearsError);
     }
   }, [wearsError]);
+  useEffect(() => {
+    if (countsError && !isOffline(countsError)) {
+      Sentry.captureException(countsError);
+    }
+  }, [countsError]);
+  useEffect(() => {
+    if (todayWornError && !isOffline(todayWornError)) {
+      Sentry.captureException(todayWornError);
+    }
+  }, [todayWornError]);
 
   const fits = useMemo(() => fitsQuery.data ?? [], [fitsQuery.data]);
   const fitsById = useMemo(() => new Map(fits.map((fit) => [fit.id, fit])), [fits]);
@@ -272,24 +294,69 @@ export default function Planner() {
     planByDate,
   });
   const sheetDay = sheetDate ? dayOf(sheetDate, today) : null;
-  const sheetWorn = sheetDate
+  const sheetWornOnDay = sheetDate
     ? wornOnDay(sheetDate, planByDate.get(sheetDate), fits, isMonth ? monthWearsQuery.data : wearsQuery.data)
     : null;
+  // Story 5.6: the sheet leads with the planned Fit, else the one worn that day.
+  const sheetLead = sheetFit ?? sheetWornOnDay?.fit ?? null;
+  const sheetIsToday = sheetDate === today;
 
   const photoActions = useWearPhotoActions(userId);
-  const sheetBusy = busy || photoActions.busy;
+  // Mark worn exists only on today, for the Fit the sheet leads with.
+  const toggleFit = sheetIsToday ? sheetLead : null;
+  const toggleWear = toggleFit ? (todayWornQuery.data?.get(toggleFit.id) ?? null) : null;
+  const wornToday = useWornTodayToggle({
+    userId,
+    fitId: toggleFit?.id ?? null,
+    wear: toggleWear,
+    source: 'planner',
+    blocked: busy || photoActions.busy,
+  });
+  const sheetBusy = busy || photoActions.busy || wornToday.busy;
+  // The toggle waits for today's wears; until they land (or if they fail)
+  // the header offers no Mark worn rather than a wrong one.
+  const hasTodayWorn = Boolean(todayWornQuery.data);
+  // An undo takes the photo section away at once, as Home's card does.
+  const sheetWorn = toggleFit && wornToday.override === false ? null : sheetWornOnDay;
+
+  let sheetStatus = '';
+  if (sheetLead && sheetDate) {
+    if (!sheetFit) {
+      // Worn with nothing planned, today included: plain "Worn".
+      sheetStatus = toggleFit && wornToday.override === false ? '' : 'Worn';
+    } else if (sheetIsToday && hasTodayWorn) {
+      sheetStatus = todayPlannedStatus(
+        countsQuery.data,
+        sheetFit.id,
+        wornToday.serverWornToday,
+        wornToday.isWornToday,
+      );
+    } else {
+      sheetStatus = dayFitStatus(Boolean(sheetWornOnDay), countsQuery.data?.get(sheetFit.id));
+    }
+  }
 
   function openSheet(date: string) {
     photoActions.clearError();
+    wornToday.clearError();
     openDay(date);
   }
 
   function closeDaySheet() {
-    if (photoActions.busy) {
+    if (photoActions.busy || wornToday.isBusy()) {
       return;
     }
     photoActions.clearError();
+    wornToday.clearError();
     closeSheet();
+  }
+
+  function viewFit(fitId: string) {
+    if (busy || photoActions.busy || wornToday.isBusy()) {
+      return;
+    }
+    closeDaySheet();
+    router.push(`/fit/${fitId}`);
   }
 
   const header = (
@@ -451,7 +518,7 @@ export default function Planner() {
         selectedFitId={sheetFit?.id ?? null}
         thumbnailUrls={thumbnailUrls}
         busy={sheetBusy}
-        errorMessage={writeError ?? photoActions.error}
+        errorMessage={writeError ?? wornToday.error ?? photoActions.error}
         onPick={pickFit}
         onRemove={removeFit}
         onClose={closeDaySheet}
@@ -461,6 +528,19 @@ export default function Planner() {
         }
         onAddPhoto={photoActions.addPhoto}
         onRemovePhoto={photoActions.removePhoto}
+        header={
+          sheetLead
+            ? {
+                fit: sheetLead,
+                status: sheetStatus,
+                onViewFit: () => viewFit(sheetLead.id),
+                wornToggle:
+                  toggleFit && hasTodayWorn
+                    ? { isWornToday: wornToday.isWornToday, onToggle: () => void wornToday.toggle() }
+                    : null,
+              }
+            : null
+        }
       />
     </>,
   );
