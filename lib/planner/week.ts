@@ -1,7 +1,7 @@
 import { toLocalDate } from '@/lib/fits/localDate';
 
 /**
- * Pure week math for the Planner. Every date in and out is a device-local
+ * Pure week and month math for the Planner. Every date in and out is a device-local
  * `YYYY-MM-DD` string (see `toLocalDate`), and arithmetic goes through
  * `Date`'s own calendar fields (`setDate`) rather than adding milliseconds,
  * so a 23- or 25-hour daylight-saving day still counts as one day.
@@ -11,6 +11,20 @@ import { toLocalDate } from '@/lib/fits/localDate';
  */
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 // Indexed Monday-first (see `mondayIndex`).
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -72,19 +86,70 @@ export function weekRangeLabel(weekStart: string): string {
   return `${startLabel} – ${endLabel}`;
 }
 
+/** Any date as a `WeekDay` -- the month grid and its day sheet use it for dates outside a week list. */
+export function dayOf(date: string, today: string): WeekDay {
+  const parsed = parseLocalDate(date);
+  const weekday = WEEKDAYS[mondayIndex(parsed)];
+  // `YYYY-MM-DD` strings compare correctly as plain strings.
+  return {
+    date,
+    dow: weekday.slice(0, 3),
+    dayOfMonth: parsed.getDate(),
+    weekday,
+    long: `${weekday}, ${MONTHS[parsed.getMonth()]} ${parsed.getDate()}`,
+    isToday: date === today,
+    isPast: date < today,
+  };
+}
+
 export function weekDays(weekStart: string, today: string): WeekDay[] {
-  return WEEKDAYS.map((weekday, index) => {
-    const date = addDays(weekStart, index);
-    const parsed = parseLocalDate(date);
-    // `YYYY-MM-DD` strings compare correctly as plain strings.
-    return {
-      date,
-      dow: weekday.slice(0, 3),
-      dayOfMonth: parsed.getDate(),
-      weekday,
-      long: `${weekday}, ${MONTHS[parsed.getMonth()]} ${parsed.getDate()}`,
-      isToday: date === today,
-      isPast: date < today,
-    };
-  });
+  return WEEKDAYS.map((_, index) => dayOf(addDays(weekStart, index), today));
+}
+
+/** The first of the month `date` falls in. */
+export function monthStartOf(date: string): string {
+  return `${date.slice(0, 7)}-01`;
+}
+
+/** The last day of the month starting at `monthStart`. */
+export function monthEndOf(monthStart: string): string {
+  return addDays(shiftMonth(monthStart, 1), -1);
+}
+
+export function shiftMonth(monthStart: string, months: number): string {
+  const [year, month] = monthStart.split('-').map(Number);
+  // Day 1 always exists, so `setMonth`-style overflow can't skip a month.
+  return toLocalDate(new Date(year, month - 1 + months, 1));
+}
+
+/** "September 2026". */
+export function monthLabel(monthStart: string): string {
+  const parsed = parseLocalDate(monthStart);
+  return `${MONTH_NAMES[parsed.getMonth()]} ${parsed.getFullYear()}`;
+}
+
+/**
+ * The month as Monday-first weeks of seven, `null` for the days before the
+ * 1st and after the last -- 4 to 6 weeks depending on where the month falls.
+ */
+export function monthGrid(monthStart: string, today: string): (WeekDay | null)[][] {
+  const end = monthEndOf(monthStart);
+  const weeks: (WeekDay | null)[][] = [];
+  for (let weekStart = weekStartOf(monthStart); weekStart <= end; weekStart = shiftWeek(weekStart, 1)) {
+    weeks.push(
+      WEEKDAYS.map((_, index) => {
+        const date = addDays(weekStart, index);
+        return date < monthStart || date > end ? null : dayOf(date, today);
+      }),
+    );
+  }
+  return weeks;
+}
+
+/**
+ * The week to show when leaving the month view: today's, if the month holds
+ * today, otherwise the week containing the month's first day.
+ */
+export function weekStartForMonth(monthStart: string, today: string): string {
+  return monthStartOf(today) === monthStart ? weekStartOf(today) : weekStartOf(monthStart);
 }

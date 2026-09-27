@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState, Pressable, ScrollView, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -10,14 +10,35 @@ import { ChevronRightIcon } from '@/components/ui/icons/ChevronRightIcon';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { PlannerDayRow } from '@/components/planner/PlannerDayRow';
 import { PlannerSkeleton } from '@/components/planner/PlannerSkeleton';
+import { PlannerMonthGrid, MonthWeekdayHeader, type MonthDayFit } from '@/components/planner/PlannerMonthGrid';
+import { PlannerMonthSkeleton } from '@/components/planner/PlannerMonthSkeleton';
+import { PlannerViewChips } from '@/components/planner/PlannerViewChips';
 import { PlanDaySheet } from '@/components/planner/PlanDaySheet';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { todayLocalDate } from '@/lib/fits/localDate';
 import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
-import { usePlannedFits, useWeekWears } from '@/lib/planner/plannedFits';
+import {
+  type PlannedFitRow,
+  useMonthWears,
+  usePlannedFits,
+  usePlannedMonth,
+  useWeekWears,
+} from '@/lib/planner/plannedFits';
 import { usePlanDayWrites } from '@/lib/planner/usePlanDayWrites';
-import { shiftWeek, weekDays, weekRangeLabel, weekStartOf } from '@/lib/planner/week';
+import { loadPlannerView, savePlannerView, type PlannerView } from '@/lib/planner/viewPreference';
+import {
+  dayOf,
+  monthGrid,
+  monthLabel,
+  monthStartOf,
+  shiftMonth,
+  shiftWeek,
+  weekDays,
+  weekRangeLabel,
+  weekStartForMonth,
+  weekStartOf,
+} from '@/lib/planner/week';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { colors } from '@/lib/theme/colors';
@@ -25,6 +46,18 @@ import { Sentry } from '@/lib/observability/sentry';
 
 const ITALIC_SERIF = 'Newsreader_400Regular_Italic';
 const WEEK_BUTTON_SIZE = 44;
+
+/** Plans joined against the live Fits list, so a plan whose Fit was deleted reads as empty. */
+function joinPlans(plans: PlannedFitRow[] | undefined, fitsById: Map<string, FitRow>) {
+  const map = new Map<string, FitRow>();
+  for (const plan of plans ?? []) {
+    const fit = fitsById.get(plan.fit_id);
+    if (fit) {
+      map.set(plan.planned_on, fit);
+    }
+  }
+  return map;
+}
 
 export default function Planner() {
   const insets = useSafeAreaInsets();
@@ -39,16 +72,51 @@ export default function Planner() {
   // than fixed at mount.
   const [today, setToday] = useState(todayLocalDate);
   const [weekStart, setWeekStart] = useState(() => weekStartOf(today));
-  // When the day rolls over into a new week while the user was looking at
-  // the current one, follow it -- adjusted during render (React's "storing
-  // information from previous renders" pattern, same as `fits.tsx`'s ack).
-  // A week the user paged to on purpose stays put.
+  const [monthStart, setMonthStart] = useState(() => monthStartOf(today));
+  // When the day rolls over into a new week (or month) while the user was
+  // looking at the current one, follow it -- adjusted during render (React's
+  // "storing information from previous renders" pattern, same as
+  // `fits.tsx`'s ack). A week or month the user paged to on purpose stays put.
   const [seenToday, setSeenToday] = useState(today);
   if (today !== seenToday) {
     setSeenToday(today);
     if (weekStart === weekStartOf(seenToday)) {
       setWeekStart(weekStartOf(today));
     }
+    if (monthStart === monthStartOf(seenToday)) {
+      setMonthStart(monthStartOf(today));
+    }
+  }
+
+  // Story 5.3: the last-used view is remembered on the device. `null` until
+  // it's read, so the skeleton shows rather than Week flashing before Month.
+  const [view, setView] = useState<PlannerView | null>(null);
+  useEffect(() => {
+    let active = true;
+    void loadPlannerView().then((stored) => {
+      if (active) {
+        setView((current) => current ?? stored);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const isMonth = view === 'month';
+
+  // Switching keeps the user near what's on screen: the month of the visible
+  // week's Monday, or back to today's week (or the month's first week).
+  function switchView(next: PlannerView) {
+    if (next === view) {
+      return;
+    }
+    if (next === 'month') {
+      setMonthStart(monthStartOf(weekStart));
+    } else {
+      setWeekStart(weekStartForMonth(monthStart, today));
+    }
+    setView(next);
+    void savePlannerView(next);
   }
 
   useEffect(() => {
@@ -64,22 +132,37 @@ export default function Planner() {
   const fitsQuery = useFits(userId);
   const plansQuery = usePlannedFits(userId, weekStart);
   const wearsQuery = useWeekWears(userId, weekStart);
+  // The month reads only run while the month is showing.
+  const monthPlansQuery = usePlannedMonth(userId, monthStart, isMonth);
+  const monthWearsQuery = useMonthWears(userId, monthStart, isMonth);
 
   // Same reasoning as `fits.tsx`: tabs stay mounted, so a plan made on
   // another device (or a Fit worn from Fit detail) only shows up if every
-  // read refetches when the tab regains focus.
+  // read refetches when the tab regains focus. `refetch` ignores `enabled`,
+  // so the month is refetched only while it's the view on screen.
+  const isMonthRef = useRef(isMonth);
+  useEffect(() => {
+    isMonthRef.current = isMonth;
+  }, [isMonth]);
   useFocusEffect(
     useCallback(() => {
       setToday(todayLocalDate());
       fitsQuery.refetch();
       plansQuery.refetch();
       wearsQuery.refetch();
+      if (isMonthRef.current) {
+        monthPlansQuery.refetch();
+        monthWearsQuery.refetch();
+      }
       // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch is stable; re-running per focus, not per identity change.
     }, []),
   );
 
+  // Only the view on screen can block it or be reported.
+  const activePlansQuery = isMonth ? monthPlansQuery : plansQuery;
+  const activeWearsQuery = isMonth ? monthWearsQuery : wearsQuery;
   const fitsError = fitsQuery.isError ? fitsQuery.error : null;
-  const plansError = plansQuery.isError ? plansQuery.error : null;
+  const plansError = activePlansQuery.isError ? activePlansQuery.error : null;
   useEffect(() => {
     for (const error of [fitsError, plansError]) {
       if (error && !isOffline(error)) {
@@ -89,12 +172,12 @@ export default function Planner() {
   }, [fitsError, plansError]);
   // React Query keeps the last good data through a failed refetch (a flaky
   // focus refetch, or the one after a write) while still reporting an
-  // error -- only a read with nothing to show replaces the week.
-  const readError = fitsError && !fitsQuery.data ? fitsError : plansError && !plansQuery.data ? plansError : null;
+  // error -- only a read with nothing to show replaces the week or month.
+  const readError = fitsError && !fitsQuery.data ? fitsError : plansError && !activePlansQuery.data ? plansError : null;
 
   // Fails open, same as `fits.tsx`'s wear counts: a failed wears read just
-  // means no "Worn" captions, never a blocked week.
-  const wearsError = wearsQuery.isError ? wearsQuery.error : null;
+  // means no "Worn" captions or badges, never a blocked view.
+  const wearsError = activeWearsQuery.isError ? activeWearsQuery.error : null;
   useEffect(() => {
     if (wearsError && !isOffline(wearsError)) {
       Sentry.captureException(wearsError);
@@ -103,17 +186,27 @@ export default function Planner() {
 
   const fits = useMemo(() => fitsQuery.data ?? [], [fitsQuery.data]);
   const fitsById = useMemo(() => new Map(fits.map((fit) => [fit.id, fit])), [fits]);
-  // Joined against the live Fits list, so a plan whose Fit was deleted reads as empty.
-  const planByDate = useMemo(() => {
-    const map = new Map<string, FitRow>();
-    for (const plan of plansQuery.data ?? []) {
-      const fit = fitsById.get(plan.fit_id);
+  const weekPlanByDate = useMemo(() => joinPlans(plansQuery.data, fitsById), [plansQuery.data, fitsById]);
+  const monthPlanByDate = useMemo(() => joinPlans(monthPlansQuery.data, fitsById), [monthPlansQuery.data, fitsById]);
+  const planByDate = isMonth ? monthPlanByDate : weekPlanByDate;
+
+  const weeks = useMemo(() => monthGrid(monthStart, today), [monthStart, today]);
+  // Each month day shows its planned Fit, else a live Fit worn that day
+  // (first in the Fits list's order), badged when that Fit was worn then.
+  const monthDayFits = useMemo(() => {
+    const wears = monthWearsQuery.data ?? new Set<string>();
+    const map = new Map<string, MonthDayFit>();
+    for (const day of weeks.flat()) {
+      if (!day) {
+        continue;
+      }
+      const fit = monthPlanByDate.get(day.date) ?? fits.find((candidate) => wears.has(`${candidate.id}|${day.date}`));
       if (fit) {
-        map.set(plan.planned_on, fit);
+        map.set(day.date, { fit, worn: wears.has(`${fit.id}|${day.date}`) });
       }
     }
     return map;
-  }, [plansQuery.data, fitsById]);
+  }, [weeks, monthPlanByDate, monthWearsQuery.data, fits]);
 
   const coverPaths = useMemo(() => fits.flatMap((fit) => (fit.cover_path ? [fit.cover_path] : [])), [fits]);
   const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
@@ -123,13 +216,13 @@ export default function Planner() {
     today,
     planByDate,
   });
-  const sheetDay = days.find((day) => day.date === sheetDate) ?? null;
+  const sheetDay = sheetDate ? dayOf(sheetDate, today) : null;
 
   const header = (
     <View style={{ paddingTop: insets.top + 12 }} className="flex-row items-end justify-between gap-3 px-gutter">
       <View className="shrink gap-1.5">
         <Text variant="caption" className="text-ink-secondary dark:text-ink-secondaryDark">
-          {weekRangeLabel(weekStart)}
+          {isMonth ? monthLabel(monthStart) : weekRangeLabel(weekStart)}
         </Text>
         <Text accessibilityRole="header" variant="display" className="text-ink-primary dark:text-ink-primaryDark">
           Planner
@@ -138,8 +231,12 @@ export default function Planner() {
       <View className="flex-row gap-1">
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Previous week"
-          onPress={() => setWeekStart((current) => shiftWeek(current, -1))}
+          accessibilityLabel={isMonth ? 'Previous month' : 'Previous week'}
+          onPress={() =>
+            isMonth
+              ? setMonthStart((current) => shiftMonth(current, -1))
+              : setWeekStart((current) => shiftWeek(current, -1))
+          }
           style={{ width: WEEK_BUTTON_SIZE, height: WEEK_BUTTON_SIZE }}
           className="items-center justify-center rounded-sm border border-border-hairline active:opacity-60 dark:border-border-hairlineDark"
         >
@@ -147,8 +244,12 @@ export default function Planner() {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Next week"
-          onPress={() => setWeekStart((current) => shiftWeek(current, 1))}
+          accessibilityLabel={isMonth ? 'Next month' : 'Next week'}
+          onPress={() =>
+            isMonth
+              ? setMonthStart((current) => shiftMonth(current, 1))
+              : setWeekStart((current) => shiftWeek(current, 1))
+          }
           style={{ width: WEEK_BUTTON_SIZE, height: WEEK_BUTTON_SIZE }}
           className="items-center justify-center rounded-sm border border-border-hairline active:opacity-60 dark:border-border-hairlineDark"
         >
@@ -158,17 +259,31 @@ export default function Planner() {
     </View>
   );
 
+  // The switcher shows once the remembered view is known, except on the
+  // no-Fits screen, where there is nothing to switch between.
+  const showChips = view !== null && !(fitsQuery.data && fits.length === 0);
+
   function renderScreen(body: ReactNode) {
     return (
       <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
         {header}
+        {showChips ? <PlannerViewChips selected={view} onSelect={switchView} /> : null}
         {body}
       </View>
     );
   }
 
-  if (!userId || fitsQuery.isLoading || plansQuery.isLoading || wearsQuery.isLoading) {
-    return renderScreen(<PlannerSkeleton />);
+  if (!userId || view === null || fitsQuery.isLoading || activePlansQuery.isLoading || activeWearsQuery.isLoading) {
+    return renderScreen(
+      isMonth ? (
+        <View className="px-gutter pt-5">
+          <MonthWeekdayHeader />
+          <PlannerMonthSkeleton weeks={weeks.length} />
+        </View>
+      ) : (
+        <PlannerSkeleton />
+      ),
+    );
   }
 
   if (readError) {
@@ -182,7 +297,8 @@ export default function Planner() {
           variant="primary"
           onPress={() => {
             fitsQuery.refetch();
-            plansQuery.refetch();
+            activePlansQuery.refetch();
+            activeWearsQuery.refetch();
           }}
         />
       </View>,
@@ -209,33 +325,43 @@ export default function Planner() {
 
   return renderScreen(
     <>
-      <ScrollView
-        testID="planner-week"
-        contentContainerClassName="px-gutter pt-5"
-        contentContainerStyle={{ paddingBottom: tabBarClearance }}
-      >
-        {days.map((day) => {
-          const fit = planByDate.get(day.date) ?? null;
-          const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
-          const meta = !fit
-            ? ''
-            : wearsQuery.data?.has(`${fit.id}|${day.date}`)
-              ? 'Worn'
-              : day.isToday
-                ? 'Planned for today'
-                : 'Planned';
-          return (
-            <PlannerDayRow
-              key={day.date}
-              day={day}
-              fit={fit}
-              coverUrl={coverUrl}
-              meta={meta}
-              onPress={() => openDay(day.date)}
-            />
-          );
-        })}
-      </ScrollView>
+      {isMonth ? (
+        <ScrollView
+          contentContainerClassName="px-gutter pt-5"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+        >
+          <MonthWeekdayHeader />
+          <PlannerMonthGrid weeks={weeks} dayFits={monthDayFits} thumbnailUrls={thumbnailUrls} onOpenDay={openDay} />
+        </ScrollView>
+      ) : (
+        <ScrollView
+          testID="planner-week"
+          contentContainerClassName="px-gutter pt-5"
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+        >
+          {days.map((day) => {
+            const fit = planByDate.get(day.date) ?? null;
+            const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
+            const meta = !fit
+              ? ''
+              : wearsQuery.data?.has(`${fit.id}|${day.date}`)
+                ? 'Worn'
+                : day.isToday
+                  ? 'Planned for today'
+                  : 'Planned';
+            return (
+              <PlannerDayRow
+                key={day.date}
+                day={day}
+                fit={fit}
+                coverUrl={coverUrl}
+                meta={meta}
+                onPress={() => openDay(day.date)}
+              />
+            );
+          })}
+        </ScrollView>
+      )}
       <PlanDaySheet
         day={sheetDay}
         fits={fits}
