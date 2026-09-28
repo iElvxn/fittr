@@ -20,7 +20,7 @@ import { useSession } from '@/lib/auth/useSession';
 import { useProfile } from '@/lib/profile/useProfile';
 import { useAvatarUrl } from '@/lib/profile/avatarUrl';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
-import { todayLocalDate } from '@/lib/fits/localDate';
+import { useToday } from '@/lib/fits/useToday';
 import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { useFitWearCounts, useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { useWearDates, wearStreak } from '@/lib/fits/wearStreak';
@@ -59,9 +59,9 @@ export default function Home() {
   const { data: avatarUrl } = useAvatarUrl(profile?.avatar_path);
 
   // Same as the Planner: tabs stay mounted and a backgrounded app can resume
-  // on a later day, so "today" is re-read on focus and on returning to the
-  // foreground rather than fixed at mount.
-  const [today, setToday] = useState(todayLocalDate);
+  // on a later day, so "today" follows the real day (resume, midnight) and
+  // is re-read on focus too.
+  const { today, syncToday } = useToday();
   // Story 5.7: bumped each time Home comes back into view -- a tab focus, or
   // a return from the background -- so the big tile opens on today's photo
   // again. Not bumped by `refresh()` alone: an inactive -> active change
@@ -74,17 +74,15 @@ export default function Home() {
   const fitsQuery = useFits(userId);
   const plansQuery = usePlannedFits(userId, weekStart);
   const countsQuery = useFitWearCounts(userId);
-  const todayWornQuery = useTodayWornFitIds(userId);
+  const todayWornQuery = useTodayWornFitIds(userId, today);
   const wearDatesQuery = useWearDates(userId);
 
   // Tabs stay mounted, so a plan made in the Planner or a wear from Fit
-  // detail only shows up if every read refetches when the tab regains focus.
-  // Resuming from the background refetches too: today's worn set is cached
-  // under a key with no date, so after resuming on a later day it would
-  // otherwise still describe yesterday -- and a tap on its stale "Worn
-  // today" would undo a wear that doesn't exist.
+  // detail only shows up if every read refetches when the tab regains focus
+  // or the app resumes. A new day needs no refetch of its own: today's worn
+  // set is keyed by date, so it's a new query that loads.
   function refresh() {
-    setToday(todayLocalDate());
+    syncToday();
     fitsQuery.refetch();
     plansQuery.refetch();
     countsQuery.refetch();

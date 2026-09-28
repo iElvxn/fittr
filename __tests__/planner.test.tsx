@@ -1,6 +1,6 @@
 import { act, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ActionSheetIOS, StyleSheet } from 'react-native';
+import { ActionSheetIOS, AppState, StyleSheet } from 'react-native';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
@@ -321,6 +321,107 @@ describe('Planner tab', () => {
       await renderPlanner();
 
       expect(within(row('Tuesday, Sep 23: nothing planned')).getByText('Nothing planned')).toBeTruthy();
+    });
+  });
+
+  describe('day rollover', () => {
+    /** Every `change` listener registered so far, called as the app would. */
+    function appStateChange(state: string) {
+      const listeners = (AppState.addEventListener as jest.Mock).mock.calls
+        .filter(([event]) => event === 'change')
+        .map(([, listener]) => listener as (next: string) => void);
+      return act(async () => listeners.forEach((listener) => listener(state)));
+    }
+
+    function sheetHeader() {
+      return screen.getByTestId('day-fit-header');
+    }
+
+    /** Fit A planned Wed and Thu; worn Wed, with Thu's wears from `thursday`. */
+    function wornYesterdayOnResume(thursday: ReturnType<typeof query>) {
+      mockPlans([
+        { planned_on: WED, fit_id: 'fit-a' },
+        { planned_on: THU, fit_id: 'fit-a' },
+      ]);
+      mockWears([`fit-a|${WED}`]);
+      const wednesday = query({ data: new Map([['fit-a', { id: 'wear-wed', photo: null }]]) });
+      (useTodayWornFitIds as jest.Mock).mockImplementation((_userId: string, date: string) =>
+        date === WED ? wednesday : thursday,
+      );
+    }
+
+    it("reads today's wears under today's date", async () => {
+      await renderPlanner();
+
+      expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', WED);
+    });
+
+    it("offers Mark worn on the next day's sheet after resuming, read under that day", async () => {
+      wornYesterdayOnResume(query({ data: new Map() }));
+      const { user } = await renderPlanner();
+
+      mockToday = THU;
+      await appStateChange('active');
+
+      expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', THU);
+      await user.press(row('Thursday, Sep 25: Sunday Market'));
+      expect(within(sheetHeader()).getByRole('button', { name: 'Mark worn' })).toBeTruthy();
+      expect(within(sheetHeader()).queryByRole('button', { name: 'Worn today. Tap to undo' })).toBeNull();
+    });
+
+    it("offers no toggle on the new day's sheet while its wears load", async () => {
+      wornYesterdayOnResume(query({ isLoading: true }));
+      const { user } = await renderPlanner();
+
+      mockToday = THU;
+      await appStateChange('active');
+      await user.press(row('Thursday, Sep 25: Sunday Market'));
+
+      expect(within(sheetHeader()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+      expect(within(sheetHeader()).queryByRole('button', { name: 'Worn today. Tap to undo' })).toBeNull();
+    });
+
+    it('drops the toggle from an open sheet whose day stopped being today', async () => {
+      wornYesterdayOnResume(query({ data: new Map() }));
+      const { user } = await renderPlanner();
+      await user.press(row('Wednesday, Sep 24: Sunday Market'));
+      expect(within(sheetHeader()).getByRole('button', { name: 'Worn today. Tap to undo' })).toBeTruthy();
+
+      mockToday = THU;
+      await appStateChange('active');
+
+      expect(within(sheetHeader()).queryByRole('button', { name: 'Worn today. Tap to undo' })).toBeNull();
+      expect(within(sheetHeader()).queryByRole('button', { name: 'Mark worn' })).toBeNull();
+    });
+
+    it('keeps the same read, and refetches nothing, on a same-day resume', async () => {
+      const refetch = jest.fn();
+      mockTodayWorn([], { refetch });
+      await renderPlanner();
+
+      await appStateChange('active');
+
+      expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', WED);
+      expect(refetch).not.toHaveBeenCalled();
+    });
+
+    it('moves to the new day at midnight without leaving the app', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(2025, 8, 24, 23, 59, 0));
+      try {
+        await render(
+          <QueryClientProvider client={queryClient}>
+            <Planner />
+          </QueryClientProvider>,
+        );
+
+        mockToday = THU;
+        await act(async () => jest.advanceTimersByTime(60_000));
+
+        expect(within(row('Thursday, Sep 25: nothing planned')).getByText('Today')).toBeTruthy();
+        expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', THU);
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 

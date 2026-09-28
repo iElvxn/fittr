@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AppState, Pressable, ScrollView, useColorScheme, View } from 'react-native';
+import { Pressable, ScrollView, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
@@ -16,7 +16,7 @@ import { PlannerViewChips } from '@/components/planner/PlannerViewChips';
 import { PlanDaySheet } from '@/components/planner/PlanDaySheet';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
-import { todayLocalDate } from '@/lib/fits/localDate';
+import { useToday } from '@/lib/fits/useToday';
 import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import {
   type PlannedFitRow,
@@ -101,9 +101,8 @@ export default function Planner() {
   const userId = session?.user.id;
 
   // Tabs stay mounted, and a backgrounded app can resume on a later day, so
-  // "today" is re-read on focus and on returning to the foreground rather
-  // than fixed at mount.
-  const [today, setToday] = useState(todayLocalDate);
+  // "today" follows the real day (resume, midnight) and is re-read on focus.
+  const { today, syncToday } = useToday();
   const [weekStart, setWeekStart] = useState(() => weekStartOf(today));
   const [monthStart, setMonthStart] = useState(() => monthStartOf(today));
   // When the day rolls over into a new week (or month) while the user was
@@ -152,14 +151,6 @@ export default function Planner() {
     void savePlannerView(next);
   }
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        setToday(todayLocalDate());
-      }
-    });
-    return () => subscription.remove();
-  }, []);
   const days = useMemo(() => weekDays(weekStart, today), [weekStart, today]);
 
   const fitsQuery = useFits(userId);
@@ -171,7 +162,7 @@ export default function Planner() {
   // Story 5.6: the day sheet's header -- wear counts for its status, and
   // today's wears for the Mark worn toggle Home also uses. Both fail open.
   const countsQuery = useFitWearCounts(userId);
-  const todayWornQuery = useTodayWornFitIds(userId);
+  const todayWornQuery = useTodayWornFitIds(userId, today);
 
   // Same reasoning as `fits.tsx`: tabs stay mounted, so a plan made on
   // another device (or a Fit worn from Fit detail) only shows up if every
@@ -183,7 +174,7 @@ export default function Planner() {
   }, [isMonth]);
   useFocusEffect(
     useCallback(() => {
-      setToday(todayLocalDate());
+      syncToday();
       fitsQuery.refetch();
       plansQuery.refetch();
       wearsQuery.refetch();

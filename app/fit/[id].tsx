@@ -23,18 +23,16 @@ import { useSession } from '@/lib/auth/useSession';
 import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { countFitWearPhotos, deleteFit } from '@/lib/fits/deleteFit';
-import { confirmUndoWearWithPhoto } from '@/lib/fits/wearConfirmations';
 import { getFitItems } from '@/lib/fits/getFitItems';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
-import { invalidateWearQueries, markFitWornToday, unmarkFitWornToday } from '@/lib/fits/markFitWorn';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { useFitWearPhotos } from '@/lib/fits/fitWearPhotos';
 import { useWearPhotoActions } from '@/lib/fits/useWearPhotoActions';
-import { todayLocalDate } from '@/lib/fits/localDate';
+import { useWornTodayToggle } from '@/lib/fits/useWornTodayToggle';
+import { useToday } from '@/lib/fits/useToday';
 import { shareFitCover } from '@/lib/fits/shareFit';
 import { FitError, isNoConnectionError, isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
-import { trackFitWorn } from '@/lib/analytics/posthog';
 import { colors } from '@/lib/theme/colors';
 
 const ACK_DURATION_MS = 2500;
@@ -100,8 +98,13 @@ export default function FitDetail() {
 
   // Story 4.2: whether *today's* fit_wears row already exists for this Fit,
   // separate from `useFitWearCounts`'s "ever worn" (used by the My Fits Worn
-  // filter) -- powers the Wear-today button's already-logged state.
-  const { data: todayWornFitIds } = useTodayWornFitIds(userId);
+  // filter) -- powers the Wear-today button's already-logged state. Read
+  // under today's date, which follows the real day while this screen stays
+  // open, so a new day loads its own wears instead of showing yesterday's.
+  const { today } = useToday();
+  const { data: todayWornFitIds } = useTodayWornFitIds(userId, today);
+  // Today's wear as the server has it (not the optimistic flip), or null.
+  const todayWear = fit ? (todayWornFitIds?.get(fit.id) ?? null) : null;
 
   // Story 5.5: the "Worn" strip. A failed read just hides the photos (no
   // notice, since nothing the user did failed) and is reported like the
@@ -144,32 +147,40 @@ export default function FitDetail() {
   const [sharing, setSharing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Optimistic overrides: DESIGN.md requires an immediate visual flip with
-  // no confirmation step, but `fit`/`todayWornFitIds` only reflect the
-  // server once the corresponding query is invalidated and refetched.
+  // Wear today, through the same toggle as Home and the Planner's day sheet.
+  // The photo save and Delete (its photo count included) share its lock.
+  const wornToday = useWornTodayToggle({
+    userId,
+    fitId: fit?.id ?? null,
+    wear: todayWear,
+    source: 'detail',
+    blocked: photoActions.busy || deleting || countingPhotos,
+  });
+  const isWornToday = wornToday.isWornToday;
+
+  // Optimistic override: DESIGN.md requires an immediate visual flip with
+  // no confirmation step, but `fit` only reflects the server once the
+  // query is invalidated and refetched.
   // `null` means "no override -- trust the fetched value"; reset whenever
   // the viewed Fit changes so a stale override can't leak across Fits.
   // Resetting during render (React's documented "adjust state when a prop
   // changes" pattern), not in an effect, avoids an extra render pass.
   const [favoriteOverride, setFavoriteOverride] = useState<boolean | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
-  const [wornTodayOverride, setWornTodayOverride] = useState<boolean | null>(null);
-  const [wearBusy, setWearBusy] = useState(false);
   const [overrideResetForId, setOverrideResetForId] = useState(id);
 
   if (id !== overrideResetForId) {
     setOverrideResetForId(id);
     setFavoriteOverride(null);
-    setWornTodayOverride(null);
   }
 
   const isFavorite = favoriteOverride ?? fit?.is_favorite ?? false;
-  const isWornToday = wornTodayOverride ?? (fit ? (todayWornFitIds?.has(fit.id) ?? false) : false);
 
   /** Every action starts from a clean notice, whichever write set the last one. */
   function clearErrors() {
     setErrorMessage(null);
     photoActions.clearError();
+    wornToday.clearError();
   }
 
   function reportUnknownError(error: unknown) {
@@ -206,39 +217,13 @@ export default function FitDetail() {
     }
   }
 
-  async function handleToggleWornToday() {
-    if (!fit || !userId || wearBusy || photoActions.busy) {
+  function handleToggleWornToday() {
+    // Checked here too, so an ignored tap leaves the notice alone.
+    if (wornToday.isBusy() || photoActions.busy || deleting || countingRef.current) {
       return;
     }
     clearErrors();
-    const next = !isWornToday;
-    // Story 5.4: undoing a wear deletes its photo too, so that one undo asks first.
-    if (!next && todayWornFitIds?.get(fit.id)?.photo && !(await confirmUndoWearWithPhoto())) {
-      return;
-    }
-    setWornTodayOverride(next);
-    setWearBusy(true);
-    try {
-      if (next) {
-        await markFitWornToday(userId, fit.id);
-        trackFitWorn('detail');
-      } else {
-        await unmarkFitWornToday(userId, fit.id);
-      }
-      // Awaited, same reasoning as `handleToggleFavorite` -- clear the
-      // override only once every wear read has actually refetched.
-      await invalidateWearQueries(queryClient, userId);
-      setWornTodayOverride(null);
-    } catch (error) {
-      setWornTodayOverride(!next);
-      if (error instanceof FitError && error.kind === 'no_connection') {
-        setErrorMessage(NO_CONNECTION_MESSAGE);
-      } else {
-        reportUnknownError(error);
-      }
-    } finally {
-      setWearBusy(false);
-    }
+    void wornToday.toggle();
   }
 
   async function handleDelete() {
@@ -309,7 +294,7 @@ export default function FitDetail() {
    * leave the photos out.
    */
   async function handleDeletePress() {
-    if (!fit || countingRef.current || photoActions.busy) {
+    if (!fit || countingRef.current || photoActions.busy || wornToday.isBusy()) {
       return;
     }
     clearErrors();
@@ -349,11 +334,11 @@ export default function FitDetail() {
 
   /** Story 5.5: a photo of today's wear, when it has none yet (the Add tile applies only then). */
   function handleAddPhoto() {
-    const todayWear = fit ? todayWornFitIds?.get(fit.id) : undefined;
-    if (!todayWear || todayWear.photo || wearBusy || deleting || countingRef.current) {
+    if (!todayWear || todayWear.photo || wornToday.isBusy() || deleting || countingRef.current) {
       return;
     }
     setErrorMessage(null);
+    wornToday.clearError();
     photoActions.addPhoto(todayWear);
   }
 
@@ -438,16 +423,15 @@ export default function FitDetail() {
   // Story 5.5: the "Worn" strip. Today's photo follows the worn toggle, so an
   // undo drops it at once and a failed undo brings it back. Only today's
   // wear, saved and still without a photo, offers Add -- never a past one.
-  const today = todayLocalDate();
-  const todayWear = todayWornFitIds?.get(fit.id);
   const stripPhotos = isWearPhotosError
     ? []
     : (wearPhotos ?? []).filter((wear) => isWornToday || wear.wornOn !== today);
   const canAddPhoto = Boolean(isWornToday && todayWear && !todayWear.photo);
   const photoSavingUri = todayWear && photoActions.saving?.wearId === todayWear.id ? photoActions.saving.uri : null;
-  const photoBusy = photoActions.busy || wearBusy || deleting || countingPhotos;
+  const photoBusy = photoActions.busy || wornToday.busy || deleting || countingPhotos;
+  const wearDisabled = deleting || countingPhotos || wornToday.busy || photoActions.busy;
   const showWornSection = canAddPhoto || stripPhotos.length > 0 || isWearPhotosLoading;
-  const noticeMessage = errorMessage ?? photoActions.error;
+  const noticeMessage = errorMessage ?? photoActions.error ?? wornToday.error;
 
   const updatedLabel = `Updated ${UPDATED_AT_FORMAT.format(new Date(fit.updated_at))}`;
   // Item count only once `getFitItems` has resolved -- never a guessed or
@@ -537,21 +521,18 @@ export default function FitDetail() {
             caption={isWornToday ? 'Worn today' : 'Wear today'}
             selected={isWornToday}
             onPress={handleToggleWornToday}
-            disabled={deleting || wearBusy || photoActions.busy}
+            disabled={wearDisabled}
           >
             {isWornToday ? (
               // Solid when worn, like Favorite's filled heart, so the state reads at a glance.
               <CheckIcon
                 size={ACTION_ICON_SIZE}
-                color={deleting || wearBusy || photoActions.busy ? inkDisabled : inkPrimary}
+                color={wearDisabled ? inkDisabled : inkPrimary}
                 filled
                 checkColor={surfaceBase}
               />
             ) : (
-              <CalendarIcon
-                size={ACTION_ICON_SIZE}
-                color={deleting || wearBusy || photoActions.busy ? inkDisabled : inkPrimary}
-              />
+              <CalendarIcon size={ACTION_ICON_SIZE} color={wearDisabled ? inkDisabled : inkPrimary} />
             )}
           </DetailAction>
           {/* Empty state above already offers its own "Add item" CTA for this exact action -- avoid two differently-labeled controls for the same thing. */}
@@ -564,7 +545,7 @@ export default function FitDetail() {
             label="Delete Fit"
             caption="Delete"
             onPress={() => void handleDeletePress()}
-            disabled={deleting || countingPhotos || favoriteBusy || wearBusy || sharing || photoActions.busy}
+            disabled={deleting || countingPhotos || favoriteBusy || wornToday.busy || sharing || photoActions.busy}
           >
             {deleting ? <ActivityIndicator size="small" /> : <TrashIcon size={ACTION_ICON_SIZE} color={inkPrimary} />}
           </DetailAction>
