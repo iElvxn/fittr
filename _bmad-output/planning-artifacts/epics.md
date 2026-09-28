@@ -145,9 +145,10 @@ Users can assign a saved Fit to a day on a weekly calendar, view/replace/remove 
 *Scope added after the PRD (user request, 2026-09-24):* Stories 5.3 (month view) and 5.4 (outfit photos) have no PRD FR of their own.
 
 ### Epic 6: Launch Readiness & Account Lifecycle
-Users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
+The app is made fast, frugal and observable before real users arrive: images are cached by their storage path and Fit covers get small thumbnails, the auth session is read once, React Query is set up for React Native, wear counts come from the server, crashes and analytics are tied to real users with readable stack traces, JS fixes can ship over the air, and the React Compiler handles re-renders (Stories 6.1-6.7, added 2026-09-27 from a performance and production-readiness review). Then users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
 **FRs covered:** FR4, FR30, FR31
 **NFRs covered:** NFR6, NFR7, NFR8
+*Scope added after the PRD (performance and production-readiness review, 2026-09-27):* Stories 6.1-6.7 harden what Epics 1-5 built and have no PRD FR of their own. Stories 6.1, 6.2 and 6.6 also serve NFR6 (free-tier storage and egress).
 
 *Not carried into an epic:* M6 Cohort (TestFlight rollout, two-week funnel review) is a post-launch operational activity with no FRs of its own — nothing to implement, so no epic.
 
@@ -568,7 +569,7 @@ So that I remember how it actually looked, not just the collage.
 **When** they try to read or write my wear photos
 **Then** RLS and Storage policies deny it
 
-*Implementation note: a nullable photo path column on `fit_wears` plus a private per-user Storage folder, RLS-scoped like the wardrobe bucket (NFR5). Unlike wardrobe items (NFR4), the photo itself is the thing kept, so it counts against the storage budget (NFR6): compress on-device before upload. Account deletion (Story 6.2) must also remove these files. Needs a mockup on the design canvas before its spec.*
+*Implementation note: a nullable photo path column on `fit_wears` plus a private per-user Storage folder, RLS-scoped like the wardrobe bucket (NFR5). Unlike wardrobe items (NFR4), the photo itself is the thing kept, so it counts against the storage budget (NFR6): compress on-device before upload. Account deletion (Story 6.9) must also remove these files. Needs a mockup on the design canvas before its spec.*
 
 ### Story 5.5: See a Fit's Wear Photos on Fit Detail
 
@@ -644,9 +645,155 @@ So that I see how the outfit actually looked without losing the plan.
 
 ## Epic 6: Launch Readiness & Account Lifecycle
 
-Users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
+The app is made fast, frugal and observable before real users arrive: images are cached by their storage path and Fit covers get small thumbnails, the auth session is read once, React Query is set up for React Native, wear counts come from the server, crashes and analytics are tied to real users with readable stack traces, JS fixes can ship over the air, and the React Compiler handles re-renders (Stories 6.1-6.7, added 2026-09-27 from a performance and production-readiness review). Then users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
 
-### Story 6.1: Guided Onboarding to First Fit
+### Story 6.1: Cache Storage Images by Path
+
+As a user,
+I want images I've already seen to load instantly,
+So that the app feels fast and doesn't use my data downloading the same photos again.
+
+**Acceptance Criteria:**
+
+**Given** an image from storage (item thumbnail, Fit cover, avatar, wear photo) already shown on this device
+**When** its signed link is re-issued (expiry, a changed list, or returning to a screen)
+**Then** it's shown from the device cache without downloading again
+
+**Given** I change my avatar
+**Then** the new one shows at once everywhere, never the cached old one
+
+**Given** a recycled grid cell showing a different item
+**Then** it never flashes the previous item's image
+
+*Implementation note: one shared `StorageImage` keyed by storage path (the `WearPhotoImage` pattern); the avatar moves to a new path per upload so every cached path is write-once; write-once uploads declare a long `cacheControl`. One migration adds the `wardrobe` bucket's missing folder-scoped DELETE policy, without which every existing cleanup in that bucket (old covers, save rollbacks, the old avatar) deletes nothing. No table change. Spec: `spec-6-1-cache-storage-images-by-path.md`.*
+
+### Story 6.2: Small WebP Fit Cover Thumbnails
+
+As a user,
+I want grids and calendars of my Fits to load quickly,
+So that browsing and planning never wait on full-size images.
+
+**Acceptance Criteria:**
+
+**Given** I save or edit a Fit
+**Then** a small WebP thumbnail is stored with its cover, and a failed thumbnail upload fails the save cleanly
+
+**Given** My Fits, Home's week strip, the Planner or Item detail's Fits strip
+**When** they show a Fit
+**Then** they use its thumbnail, or the full cover for a Fit saved before thumbnails existed
+
+**Given** Fit detail, Home's big tile or Share
+**Then** they keep the full cover
+
+*Implementation note: nullable `fits.cover_thumb_path` (migration), made on-device with the existing WebP resize pipeline, write-once like the cover. Depends on Story 6.1 (`StorageImage` and the DELETE policy). Spec: `spec-6-2-small-webp-fit-cover-thumbnails.md`.*
+
+### Story 6.3: One Shared Auth Session
+
+As a user,
+I want screens to open without a loading flash and my session to stay valid,
+So that the app feels instant and never fails right after I come back to it.
+
+**Acceptance Criteria:**
+
+**Given** I'm signed in
+**When** I open any screen
+**Then** it has my session immediately, with no session-loading state
+
+**Given** I'm signed out (or my session ends while the app is open)
+**When** I try to reach any authenticated screen, including by deep link
+**Then** I land on Welcome, and the previous user's cached data is cleared
+
+**Given** the app goes to the background and comes back
+**Then** session refreshing stops while backgrounded and resumes on return
+
+**Given** I sign up for a new account (Apple, Google or email)
+**Then** I go straight to onboarding with no flash of Home, and a returning sign-in goes straight to Home
+
+*Implementation note: one `SessionProvider` behind the unchanged `useSession()` API, Expo Router `Stack.Protected` guards, and Supabase's once-only AppState `startAutoRefresh`/`stopAutoRefresh`. The new-account routing decision moves into the provider (existing `isNewAccount`) so it can't race the guards. Closes the session-guard half of Epic 1 retro item 2. Spec: `spec-6-3-one-shared-auth-session.md`.*
+
+### Story 6.4: Production Crash and Analytics Wiring
+
+As the team,
+We want production crashes to point at real code and analytics to follow real users,
+So that we can fix launch issues fast and measure whether users come back.
+
+**Acceptance Criteria:**
+
+**Given** a crash in an EAS production build
+**Then** Sentry shows the original source file and line, tied to the user's id
+
+**Given** a user signs up, adds items and makes a Fit
+**Then** PostHog records those events under one person keyed by their user id, and signing out starts a fresh anonymous identity
+
+**Given** production traffic
+**Then** performance traces are sampled per screen, not sent for every session
+
+**Given** a JS-only fix after launch
+**When** it's published with `eas update` to the production channel
+**Then** installed builds pick it up on next launch, and its crashes are symbolicated too
+
+*Implementation note: depends on Story 6.3. Source-map upload on the production profile (EAS secret `SENTRY_AUTH_TOKEN`) with Sentry's Metro config, trace sampling by environment with the navigation integration, `expo-updates` with a fingerprint runtime version (a native change, so it must be in the cohort build), identify/reset from Story 6.3's provider with the user id only; closes Epic 1 retro item 1 (`EXPO_PUBLIC_` env names). Spec: `spec-6-4-production-crash-and-analytics-wiring.md`.*
+
+### Story 6.5: React Query Set Up for React Native
+
+As a user,
+I want data to stay fresh without constant reloading, and to hear about lost connections right away,
+So that the app is quick, light on data and honest when I'm offline.
+
+**Acceptance Criteria:**
+
+**Given** I switch tabs
+**When** the data was fetched less than a minute ago
+**Then** nothing reloads; older data refreshes in the background
+
+**Given** I add an item, save a Fit, plan a day or mark a wear
+**Then** every screen showing it updates without relying on a refocus
+
+**Given** no connection
+**When** a screen loads data
+**Then** the "No connection" state appears at once, and data refreshes when the connection returns
+
+*Implementation note: build after Story 6.3 (both change the root layout). One `createQueryClient()` with React Native defaults (`staleTime` 60s, `networkMode: 'always'`, no retry when offline), `focusManager`/`onlineManager` wiring, and a stale-only `useRefreshOnFocus` replacing each screen's manual refetch list; every write invalidates what it changes, including Item detail's Fits strip after a Fit save or delete. Spec: `spec-6-5-react-query-set-up-for-react-native.md`.*
+
+### Story 6.6: Count Wears on the Server
+
+As a user,
+I want my Fits' wear counts to load quickly however long I've used the app,
+So that My Fits, Home and the Planner stay fast.
+
+**Acceptance Criteria:**
+
+**Given** any number of logged wears
+**When** wear counts load
+**Then** one row per worn Fit arrives, not one per wear, and every count reads as before
+
+**And** the counts view enforces the caller's row-level security, so no user can see another's counts
+
+*Implementation note: a `fit_wear_counts` view created `with (security_invoker = true)`, readable by `authenticated` only, with RLS test coverage. Also fixes counts cut off past PostgREST's 1000-row limit. Spec: `spec-6-6-count-wears-on-the-server.md`.*
+
+### Story 6.7: Turn On the React Compiler
+
+As a user,
+I want scrolling, tab switches and the Fit canvas to stay smooth,
+So that the app never stutters as my closet grows.
+
+**Acceptance Criteria:**
+
+**Given** the app built with the React Compiler enabled
+**When** the full test suite, typecheck and lint run
+**Then** all pass, and lint reports no new `react-hooks` suppressions
+
+**Given** every screen in light and dark mode
+**When** the color scheme is switched while the app is open
+**Then** every screen restyles correctly (NativeWind dark variants under the compiler)
+
+**Given** the Fit canvas, rapid camera capture and the Wardrobe grid
+**When** used on a device
+**Then** drag, pinch, rotate, capture and scrolling behave as before
+
+*Implementation note: build last, after Story 6.5 removes most of the `react-hooks` suppressions (the compiler skips any component that has one). `experiments.reactCompiler: true` in `app.json`; the Babel plugin is already installed. Reanimated shared values move from `.value` to `.get()`/`.set()` in compiled components, or a component opts out with `'use no memo'` and a comment saying why. Spec to be written before building.*
+
+### Story 6.8: Guided Onboarding to First Fit
 
 As a new user,
 I want a guided onboarding step for adding my first 5 items,
@@ -665,7 +812,7 @@ So that I quickly get to a place where creating a Fit is useful.
 **Given** I reach 5 items and create my first Fit
 **Then** the progress card disappears and an `onboarding_completed` event (with `items_added`) is recorded
 
-### Story 6.2: Delete Account
+### Story 6.9: Delete Account
 
 As a user,
 I want to permanently delete my account and everything in it,
@@ -683,7 +830,7 @@ So that I control my own data.
 **Given** deletion completes
 **Then** I'm signed out and returned to Welcome; an `account_deleted` event is recorded before deletion finishes
 
-### Story 6.3: Loading, Empty, and Error States Everywhere
+### Story 6.10: Loading, Empty, and Error States Everywhere
 
 As a user,
 I want every list screen to clearly show what's happening,
@@ -703,7 +850,9 @@ So that I'm never staring at a blank or broken screen.
 
 **And** a review confirms row-level security actually rejects cross-user reads/writes on every table (FR30)
 
-### Story 6.4: Pre-Launch Verification
+*Implementation note: also fix the optimistic favorite/worn override that stays stuck on its reverted value after a failed write (`deferred-work.md`, Story 4.2 grid-cell review): after a failure, the UI returns to the server's value and follows later refetches.*
+
+### Story 6.11: Pre-Launch Verification
 
 As the team,
 We want to verify the app is actually ready to hand to a cohort,
@@ -718,6 +867,9 @@ So that launch criteria are met before real users arrive.
 **Given** projected image and row volume for the launch cohort
 **When** checked against Supabase's free tier
 **Then** usage is confirmed to stay within limits (or a mitigation is documented)
+
+**Given** the build handed to the cohort
+**Then** it includes EAS Update (Story 6.4), and a test update published to a preview channel is picked up by a preview build
 
 **Given** the codebase
 **When** audited

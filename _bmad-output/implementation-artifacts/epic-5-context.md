@@ -54,4 +54,4 @@ This epic adds forward planning and a record of what was actually worn to the wa
 - Stories 5.2, 5.3 and 5.6 read `planned_fits` from Story 5.1. Stories 5.3 and 5.6 build on 5.1's day sheet.
 - Story 5.4 attaches photos to `fit_wears` rows. Stories 5.5 and 5.6 reuse 5.4's photo pipeline and UI, and 5.6 reuses 5.2's mark-worn/undo. The 5.5 strip deep-links into a Planner day.
 - Story 5.7 reworks Story 5.2's Home tile and reverses Story 5.4's rule that the tile always keeps the collage. Its photo page opens Story 5.6's day sheet for today.
-- Account deletion (Story 6.2) must also remove wear-photo files, and the Epic 6 storage-budget check must account for them.
+- Account deletion (Story 6.9) must also remove wear-photo files, and the Epic 6 storage-budget check must account for them.

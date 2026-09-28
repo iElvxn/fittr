@@ -73,10 +73,17 @@ development_status:
   epic-5-retrospective: optional
 
   epic-6: backlog
-  6-1-guided-onboarding-to-first-fit: backlog
-  6-2-delete-account: backlog
-  6-3-loading-empty-and-error-states-everywhere: backlog
-  6-4-pre-launch-verification: backlog
+  6-1-cache-storage-images-by-path: backlog
+  6-2-small-webp-fit-cover-thumbnails: backlog
+  6-3-one-shared-auth-session: backlog
+  6-4-production-crash-and-analytics-wiring: backlog
+  6-5-react-query-set-up-for-react-native: backlog
+  6-6-count-wears-on-the-server: backlog
+  6-7-turn-on-the-react-compiler: backlog
+  6-8-guided-onboarding-to-first-fit: backlog
+  6-9-delete-account: backlog
+  6-10-loading-empty-and-error-states-everywhere: backlog
+  6-11-pre-launch-verification: backlog
   epic-6-retrospective: optional
 action_items:
   - id: "epic-1-retro-item-1-fix-analytics-env-var-prefix"

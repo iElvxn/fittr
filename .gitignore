@@ -54,3 +54,6 @@ yarn-error.*
 
 # EAS
 .eas/
+
+# Supabase CLI state
+supabase/.temp/
