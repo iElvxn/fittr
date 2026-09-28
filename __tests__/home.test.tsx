@@ -210,8 +210,49 @@ describe('Home tab', () => {
 
       expect(screen.getByText('Monday, Sep 29')).toBeTruthy();
       expect(usePlannedFits).toHaveBeenLastCalledWith('user-1', '2025-09-29');
+      expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', '2025-09-29');
       expect(refetchToday).toHaveBeenCalled();
       expect(refetchDates).toHaveBeenCalled();
+    });
+
+    it("reads today's wears under today's date", async () => {
+      await renderHome();
+
+      expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', WED);
+    });
+
+    it("never shows yesterday's Worn today while the new day's wears load", async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }, { planned_on: THU, fit_id: 'fit-a' }]);
+      const worn = query({ data: new Map([['fit-a', { id: 'wear-fit-a', photo: null }]]) });
+      const loading = query({ isLoading: true });
+      (useTodayWornFitIds as jest.Mock).mockImplementation((_userId: string, date: string) => (date === WED ? worn : loading));
+      await renderHome();
+      expect(button('Worn today. Tap to undo')).toBeTruthy();
+
+      mockToday = THU;
+      // Every `change` listener, as the app would: Home's own and `useToday`'s.
+      const listeners = (AppState.addEventListener as jest.Mock).mock.calls
+        .filter(([event]) => event === 'change')
+        .map(([, listener]) => listener as (state: string) => void);
+      await act(async () => listeners.forEach((listener) => listener('active')));
+
+      expect(screen.queryByRole('button', { name: 'Worn today. Tap to undo' })).toBeNull();
+      expect(screen.getByTestId('home-skeleton', { includeHiddenElements: true })).toBeTruthy();
+    });
+
+    it('moves to the new day at midnight without leaving the app', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(2025, 8, 24, 23, 59, 0));
+      try {
+        await render(homeTree());
+
+        mockToday = THU;
+        await act(async () => jest.advanceTimersByTime(60_000));
+
+        expect(screen.getByText('Thursday, Sep 25')).toBeTruthy();
+        expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', THU);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('ignores the app going to the background', async () => {

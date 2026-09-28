@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
-import { todayLocalDate } from './localDate';
 import { toWearRef, WEAR_PHOTO_COLUMNS, type WearPhotoRow, type WearRef } from './wearRef';
 
 /**
@@ -48,13 +47,15 @@ export function useFitWearCounts(userId: string | undefined) {
  * Story 5.4: each Fit id maps to today's wear and its photo, so an undo can
  * confirm first when a photo would go with it, and Home can add one. It's a
  * Map, so `.has(fitId)` still answers "worn today?".
+ * `today` is the screen's `useToday()` date, not read here, so the query
+ * and its cache key always describe the same day.
  */
-export async function getTodayWornFitIds(userId: string): Promise<Map<string, WearRef>> {
+export async function getTodayWornFitIds(userId: string, today: string): Promise<Map<string, WearRef>> {
   const { data, error } = await supabase
     .from('fit_wears')
     .select(`id, fit_id, ${WEAR_PHOTO_COLUMNS}`)
     .eq('user_id', userId)
-    .eq('worn_on', todayLocalDate());
+    .eq('worn_on', today);
 
   if (error) {
     if (isNoConnectionError(error)) {
@@ -66,11 +67,17 @@ export async function getTodayWornFitIds(userId: string): Promise<Map<string, We
   return new Map(((data ?? []) as (WearPhotoRow & { fit_id: string })[]).map((row) => [row.fit_id, toWearRef(row)]));
 }
 
-/** Mirrors `useFitWearCounts` -- live Supabase read, no local cache-of-record. */
-export function useTodayWornFitIds(userId: string | undefined) {
+/**
+ * Mirrors `useFitWearCounts` -- live Supabase read, no local cache-of-record.
+ * The date is in the key, so a new day is a new query that loads rather
+ * than yesterday's cached wears standing in for today. Every wear write
+ * still refetches it through `invalidateWearQueries`, whose
+ * `['todayWornFitIds', userId]` prefix matches every day's key.
+ */
+export function useTodayWornFitIds(userId: string | undefined, today: string) {
   return useQuery({
-    queryKey: ['todayWornFitIds', userId],
-    queryFn: () => getTodayWornFitIds(userId as string),
+    queryKey: ['todayWornFitIds', userId, today],
+    queryFn: () => getTodayWornFitIds(userId as string, today),
     enabled: Boolean(userId),
   });
 }

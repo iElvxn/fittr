@@ -1,4 +1,4 @@
-import { ActionSheetIOS } from 'react-native';
+import { ActionSheetIOS, AppState } from 'react-native';
 import type { ReactElement } from 'react';
 import { act, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -35,9 +35,10 @@ jest.mock('@/lib/fits/wearPhoto', () => ({
 }));
 jest.mock('@/lib/fits/fitWearPhotos', () => ({ useFitWearPhotos: jest.fn() }));
 // Pins "today" to Sun Sep 27 2026 without faking timers, as `home.test.tsx` does.
+let mockToday = '2026-09-27';
 jest.mock('@/lib/fits/localDate', () => ({
   ...jest.requireActual('@/lib/fits/localDate'),
-  todayLocalDate: () => '2026-09-27',
+  todayLocalDate: () => mockToday,
 }));
 jest.mock('@/lib/analytics/posthog', () => ({ trackFitWorn: jest.fn() }));
 jest.mock('@/lib/fits/wornFitIds', () => ({ useTodayWornFitIds: jest.fn() }));
@@ -97,6 +98,7 @@ function renderFitDetail() {
 describe('Fit detail', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockToday = '2026-09-27';
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     (useLocalSearchParams as jest.Mock).mockReturnValue({ id: 'fit-1' });
     (useSession as jest.Mock).mockReturnValue({ session: { user: { id: 'user-1' } }, loading: false });
@@ -827,6 +829,82 @@ describe('Fit detail', () => {
     });
   });
 
+  describe('Wear today through the shared toggle', () => {
+    const WORN = new Map([['fit-1', { id: 'wear-1', photo: null }]]);
+    const WORN_WITH_PHOTO = new Map([
+      ['fit-1', { id: 'wear-1', photo: { path: 'user-1/wear-1/p.webp', thumbPath: 'user-1/wear-1/p_thumb.webp', thumbhash: 'h' } }],
+    ]);
+
+    it("reads today's wears under today's date", async () => {
+      await renderFitDetail();
+
+      expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', '2026-09-27');
+    });
+
+    it('ignores a second tap while the undo-with-photo confirmation is showing', async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: WORN_WITH_PHOTO });
+      // The confirmation stays open: its callback is never called.
+      jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+
+      expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledTimes(1);
+      expect(unmarkFitWornToday).not.toHaveBeenCalled();
+    });
+
+    it("ignores the toggle while Delete's photo count is in flight", async () => {
+      let resolveCount: (count: number) => void = () => {};
+      (countFitWearPhotos as jest.Mock).mockReturnValue(new Promise<number>((resolve) => (resolveCount = resolve)));
+      jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+      await waitFor(() => expect(countFitWearPhotos).toHaveBeenCalled());
+
+      const toggle = screen.getByRole('button', { name: 'Wear today' });
+      expect(toggle.props.accessibilityState).toMatchObject({ disabled: true });
+      await user.press(toggle);
+      expect(markFitWornToday).not.toHaveBeenCalled();
+
+      await act(async () => resolveCount(0));
+    });
+
+    it('disables Delete while a wear write is in flight', async () => {
+      let resolveMark: () => void = () => {};
+      (markFitWornToday as jest.Mock).mockReturnValue(new Promise<void>((resolve) => (resolveMark = resolve)));
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Wear today' }));
+
+      const deleteButton = screen.getByRole('button', { name: 'Delete Fit' });
+      expect(deleteButton.props.accessibilityState).toMatchObject({ disabled: true });
+      await user.press(deleteButton);
+      expect(countFitWearPhotos).not.toHaveBeenCalled();
+
+      await act(async () => resolveMark());
+    });
+
+    it("clears the toggle's error when another action starts", async () => {
+      (useTodayWornFitIds as jest.Mock).mockReturnValue({ data: WORN });
+      (unmarkFitWornToday as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+      jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+      await renderFitDetail();
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: "Remove today's wear entry" }));
+      expect(await screen.findByText(NO_CONNECTION_MESSAGE)).toBeTruthy();
+
+      await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+      await waitFor(() => expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull());
+    });
+  });
+
   describe('Share (Story 4.3)', () => {
     const SIGNED_COVER_URL = 'https://signed.example/cover.png';
 
@@ -1198,6 +1276,83 @@ describe('Fit detail', () => {
 
         expect(screen.getByRole('button', { name: ADD_LABEL })).toBeTruthy();
         expect(screen.queryAllByTestId('fit-wear-photo')).toHaveLength(0);
+      });
+    });
+
+    describe('when the day rolls over', () => {
+      const SEP_27 = wearPhoto('wear-27', '2026-09-27');
+
+      /** Every `change` listener registered so far, called as the app would. */
+      function appStateChange(state: string) {
+        const listeners = (AppState.addEventListener as jest.Mock).mock.calls
+          .filter(([event]) => event === 'change')
+          .map(([, listener]) => listener as (next: string) => void);
+        return act(async () => listeners.forEach((listener) => listener(state)));
+      }
+
+      /** Worn on the 27th with no photo yet; the 28th's wears come from `nextDay`. */
+      function wornYesterday(nextDay: Record<string, unknown>) {
+        const worn = { data: new Map([['fit-1', { id: 'wear-27', photo: null }]]) };
+        (useTodayWornFitIds as jest.Mock).mockImplementation((_userId: string, date: string) =>
+          date === TODAY ? worn : nextDay,
+        );
+        mockPhotos([SEP_27, SEP_19]);
+      }
+
+      it("offers Wear today, no Add, and dates yesterday's photo after a next-day resume", async () => {
+        wornYesterday({ data: new Map() });
+        await renderSettled();
+        expect(screen.getByRole('button', { name: "Remove today's wear entry" })).toBeTruthy();
+
+        mockToday = '2026-09-28';
+        await appStateChange('active');
+
+        expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', '2026-09-28');
+        expect(screen.getByRole('button', { name: 'Wear today' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: ADD_LABEL })).toBeNull();
+        expect(captions()).toEqual(['Sep 27', 'Sep 19']);
+      });
+
+      it("shows no Worn today or Add while the new day's wears load", async () => {
+        wornYesterday({ data: undefined, isLoading: true });
+        await renderSettled();
+
+        mockToday = '2026-09-28';
+        await appStateChange('active');
+
+        expect(screen.getByRole('button', { name: 'Wear today' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: ADD_LABEL })).toBeNull();
+      });
+
+      it('marks the new day worn, not the old one, from the Wear today that follows', async () => {
+        wornYesterday({ data: new Map() });
+        (markFitWornToday as jest.Mock).mockResolvedValue(undefined);
+        await renderSettled();
+
+        mockToday = '2026-09-28';
+        await appStateChange('active');
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: 'Wear today' }));
+
+        await waitFor(() => expect(markFitWornToday).toHaveBeenCalledWith('user-1', 'fit-1'));
+        expect(unmarkFitWornToday).not.toHaveBeenCalled();
+      });
+
+      it('moves to the new day at midnight without leaving the screen', async () => {
+        wornYesterday({ data: new Map() });
+        jest.useFakeTimers().setSystemTime(new Date(2026, 8, 27, 23, 59, 0));
+        try {
+          await renderFitDetail();
+
+          mockToday = '2026-09-28';
+          await act(async () => jest.advanceTimersByTime(60_000));
+
+          expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', '2026-09-28');
+          expect(screen.getByRole('button', { name: 'Wear today' })).toBeTruthy();
+          expect(screen.queryByRole('button', { name: ADD_LABEL })).toBeNull();
+        } finally {
+          jest.useRealTimers();
+        }
       });
     });
 
