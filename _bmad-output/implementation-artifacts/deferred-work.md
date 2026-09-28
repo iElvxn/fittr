@@ -201,7 +201,7 @@
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
   summary: Turn on the Supabase spend cap and usage alerts before launch, and count wear photos in Epic 6's storage-budget check.
-  evidence: Story 5.4's cost controls 9 and 10. Both are launch and Epic 6 tasks, not code in this story. Epic 5 context also notes account deletion (Story 6.2) must remove `wear-photos` files.
+  evidence: Story 5.4's cost controls 9 and 10. Both are launch and Epic 6 tasks, not code in this story. Epic 5 context also notes account deletion (Story 6.9) must remove `wear-photos` files.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
   summary: Wrap `auth.uid()` in `(select auth.uid())` in the `wardrobe` bucket's storage policies (`0002_avatar_storage.sql`), so it's evaluated once per statement rather than per row.
@@ -212,3 +212,19 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
   summary: Fit detail left open across midnight keeps yesterday's `todayWornFitIds`, so the worn toggle (and now the Worn strip's Add tile) acts on yesterday's wear.
   evidence: the `['todayWornFitIds', userId]` key has no date and Fit detail has no day-rollover refresh like Home's AppState listener; unverified whether a focus refetch covers it in practice — settle by leaving Fit detail open past midnight on a device.
+
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
+  summary: Move the My Fits grid (`app/(tabs)/fits.tsx:290`) from `FlatList` to FlashList v2, like the Wardrobe grid, with `recyclingKey` on its images.
+  evidence: Performance review of 2026-09-27. Minor on its own; pick up alongside Story 6.2, which already touches `FitsGridCell`.
+
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
+  summary: Add `npx expo-doctor` to CI (`.github/workflows/ci.yml` has lint, typecheck and test only).
+  evidence: Performance review of 2026-09-27. Catches mismatched native dependency versions before an EAS build does.
+
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
+  summary: Saving a Fit (`lib/fits/saveFit.ts`) is several requests with client-side rollback, not one transaction, so a failure part-way can leave an orphaned row or file.
+  evidence: Performance review of 2026-09-27, and the independent plan review found the rollback weaker than it looks: the `wardrobe` bucket had no DELETE policy, so file rollbacks did nothing until Story 6.1 adds one. A transactional save needs an RPC function, which Story 6.6 rules out for its own scope; it's a separate design decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-6-count-wears-on-the-server.md`
+  summary: `getWearDates` (`lib/fits/wearStreak.ts:12`) downloads every wear's `worn_on` for the streak, so the download grows with every wear.
+  evidence: Independent plan review, 2026-09-28. Ordered newest-first, so a response cut off at PostgREST's `max_rows` drops the oldest history, not the streak days; not wrong today, only growing. Fix when needed with a distinct-dates view (same `security_invoker` pattern as 6.6) or by reading only recent days.
