@@ -15,7 +15,7 @@ import { PlannerMonthSkeleton } from '@/components/planner/PlannerMonthSkeleton'
 import { PlannerViewChips } from '@/components/planner/PlannerViewChips';
 import { PlanDaySheet } from '@/components/planner/PlanDaySheet';
 import { useSession } from '@/lib/auth/useSession';
-import { useFits, type FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, useFits, type FitRow } from '@/lib/fits/listFits';
 import { useToday } from '@/lib/fits/useToday';
 import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import {
@@ -277,8 +277,8 @@ export default function Planner() {
   }, [isMonth, monthDayFits, weekDayWears]);
   const { data: photoUrls } = useWearPhotoUrls(photoThumbPaths);
 
-  const coverPaths = useMemo(() => fits.flatMap((fit) => (fit.cover_path ? [fit.cover_path] : [])), [fits]);
-  const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
+  const coverThumbPaths = useMemo(() => fits.flatMap((fit) => fitThumbPath(fit) ?? []), [fits]);
+  const { data: thumbnailUrls } = useThumbnailUrls(coverThumbPaths);
 
   const { sheetDate, sheetFit, busy, writeError, openDay, closeSheet, pickFit, removeFit } = usePlanDayWrites({
     userId,
@@ -506,7 +506,8 @@ export default function Planner() {
         >
           {days.map((day) => {
             const fit = planByDate.get(day.date) ?? null;
-            const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
+            const coverThumbPath = fit ? fitThumbPath(fit) : null;
+            const coverUrl = coverThumbPath ? (thumbnailUrls?.[coverThumbPath] ?? null) : null;
             const photo = weekDayWears.get(day.date)?.wear.photo ?? null;
             const meta = !fit
               ? ''

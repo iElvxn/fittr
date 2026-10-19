@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { StorageImage } from '@/components/ui/StorageImage';
 import { Text } from '@/components/ui/Text';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
-import type { FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, type FitRow } from '@/lib/fits/listFits';
 
 const TILE_WIDTH = 108;
 /** Same fixed 3:4 as the My Fits grid tile. */
@@ -27,8 +27,8 @@ type Props = {
  */
 export function ItemFitsStrip({ fits }: Props) {
   const fontScale = PixelRatio.getFontScale();
-  const coverPaths = fits.flatMap((fit) => (fit.cover_path ? [fit.cover_path] : []));
-  const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
+  const coverThumbPaths = fits.flatMap((fit) => fitThumbPath(fit) ?? []);
+  const { data: thumbnailUrls } = useThumbnailUrls(coverThumbPaths);
 
   return (
     <ScrollView
@@ -39,7 +39,8 @@ export function ItemFitsStrip({ fits }: Props) {
       contentContainerStyle={{ gap: TILE_GAP }}
     >
       {fits.map((fit) => {
-        const coverUrl = fit.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
+        const coverThumbPath = fitThumbPath(fit);
+        const coverUrl = coverThumbPath ? (thumbnailUrls?.[coverThumbPath] ?? null) : null;
         return (
           <Pressable
             key={fit.id}
@@ -61,11 +62,11 @@ export function ItemFitsStrip({ fits }: Props) {
                   : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
               }
             >
-              {fit.cover_path && coverUrl ? (
+              {coverThumbPath && coverUrl ? (
                 <StorageImage
                   testID="item-fits-cover"
                   accessibilityLabel=""
-                  path={fit.cover_path}
+                  path={coverThumbPath}
                   url={coverUrl}
                   style={{ width: '100%', height: '100%' }}
                   contentFit="contain"

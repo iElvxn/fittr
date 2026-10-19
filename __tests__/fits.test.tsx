@@ -2,7 +2,13 @@ import { act, fireEvent, render, screen, userEvent } from '@testing-library/reac
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
-jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
+// Keeps the real `fitThumbPath` -- the one thumbnail-vs-cover fallback rule.
+jest.mock('@/lib/fits/listFits', () => ({
+  ...jest.requireActual('@/lib/fits/listFits'),
+  useFits: jest.fn(),
+}));
+// `listFits.ts`'s real module (kept above for `fitThumbPath`) imports `@/lib/supabase`.
+jest.mock('@/lib/supabase', () => ({ supabase: {} }));
 jest.mock('@/lib/fits/wornFitIds', () => ({ useFitWearCounts: jest.fn() }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
 // `FitsGridCell`'s favorite badge (Story 4.2 fast-follow) imports
@@ -40,6 +46,7 @@ function fit(overrides: Partial<FitRow> = {}): FitRow {
     id: 'fit-1',
     name: 'Weekend Look',
     cover_path: 'user-1/fits/fit-1/cover.png',
+    cover_thumb_path: null,
     canvas_background_color: null,
     updated_at: SAVED_AT,
     is_favorite: false,
@@ -343,6 +350,36 @@ describe('Fits tab', () => {
 
     expect(screen.getByTestId('fits-grid-thumbnail-fallback')).toBeTruthy();
     expect(screen.queryByTestId('fits-grid-thumbnail-image')).toBeNull();
+  });
+
+  describe('cover thumbnail (Story 6.2)', () => {
+    const THUMB = 'user-1/fits/a/cover-1_thumb.webp';
+    const COVER = 'user-1/fits/a/cover-1.png';
+
+    function gridImageSource() {
+      const value = screen.getByTestId('fits-grid-thumbnail-image').props.source;
+      return Array.isArray(value) ? value[0] : value;
+    }
+
+    it("signs and shows a Fit's small WebP thumbnail, not its full cover", async () => {
+      mockFits({ data: [fit({ id: 'a', cover_path: COVER, cover_thumb_path: THUMB })] });
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: { [THUMB]: 'https://signed/thumb.webp' } });
+
+      await renderFits();
+
+      expect(useThumbnailUrls).toHaveBeenLastCalledWith([THUMB]);
+      expect(gridImageSource()).toEqual({ uri: 'https://signed/thumb.webp', cacheKey: THUMB });
+    });
+
+    it('falls back to the full cover for a Fit saved before thumbnails existed', async () => {
+      mockFits({ data: [fit({ id: 'a', cover_path: COVER, cover_thumb_path: null })] });
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: { [COVER]: 'https://signed/cover.png' } });
+
+      await renderFits();
+
+      expect(useThumbnailUrls).toHaveBeenLastCalledWith([COVER]);
+      expect(gridImageSource()).toEqual({ uri: 'https://signed/cover.png', cacheKey: COVER });
+    });
   });
 
   describe('loading', () => {

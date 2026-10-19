@@ -5,7 +5,7 @@ import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { StorageImage } from '@/components/ui/StorageImage';
 import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
 import type { WearPhoto } from '@/lib/fits/wearRef';
-import type { FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, type FitRow } from '@/lib/fits/listFits';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import type { WeekDay } from '@/lib/planner/week';
 import { colors } from '@/lib/theme/colors';
@@ -63,6 +63,7 @@ function MonthCell({
 }) {
   const fontScale = PixelRatio.getFontScale();
   const fit = dayFit?.fit ?? null;
+  const coverThumbPath = fit ? fitThumbPath(fit) : null;
   const photo = dayFit?.worn ? dayFit.photo : null;
   const status = fit
     ? `${fit.name}, ${photo ? 'worn, with your photo' : dayFit?.worn ? 'worn' : 'planned'}`
@@ -137,10 +138,11 @@ function MonthCell({
             day.isToday ? 'border-ink-primary dark:border-ink-primaryDark' : '',
           ].join(' ')}
         >
-          {dayFit?.fit.cover_path && coverUrl ? (
+          {coverThumbPath && coverUrl ? (
             <StorageImage
+              testID={`planner-month-cover-${day.date}`}
               accessibilityLabel=""
-              path={dayFit.fit.cover_path}
+              path={coverThumbPath}
               url={coverUrl}
               style={{ width: '100%', height: '100%' }}
               contentFit="contain"
@@ -193,14 +195,14 @@ export function PlannerMonthGrid({ weeks, dayFits, thumbnailUrls, photoUrls, onO
                 return <View key={`blank-${index}`} className="flex-1" />;
               }
               const dayFit = dayFits.get(day.date);
-              const coverPath = dayFit?.fit.cover_path;
+              const coverThumbPath = dayFit ? fitThumbPath(dayFit.fit) : null;
               const thumbPath = dayFit?.photo?.thumbPath;
               return (
                 <MonthCell
                   key={day.date}
                   day={day}
                   dayFit={dayFit}
-                  coverUrl={coverPath ? (thumbnailUrls?.[coverPath] ?? null) : null}
+                  coverUrl={coverThumbPath ? (thumbnailUrls?.[coverThumbPath] ?? null) : null}
                   photoUrl={thumbPath ? (photoUrls?.[thumbPath] ?? null) : null}
                   onPress={() => onOpenDay(day.date)}
                 />

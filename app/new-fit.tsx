@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { captureRef } from 'react-native-view-shot';
+import { SaveFormat } from 'expo-image-manipulator';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
@@ -26,7 +27,8 @@ import { colors } from '@/lib/theme/colors';
 import { getNextFitName } from '@/lib/fits/nextFitName';
 import { getFitItems } from '@/lib/fits/getFitItems';
 import { useFits } from '@/lib/fits/listFits';
-import { uploadCover, insertFit, type FitItemPlacement } from '@/lib/fits/saveFit';
+import { uploadCover, insertFit, FIT_COVER_THUMB_LONG_EDGE, type FitItemPlacement } from '@/lib/fits/saveFit';
+import { resizeLongEdge } from '@/lib/wardrobe/processImage';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import type { TemplateId } from '@/lib/fitBuilder/templates';
@@ -36,10 +38,18 @@ const CLOSE_BUTTON_SIZE = 36;
 
 type ScreenMode = 'template' | 'canvas';
 
-/** Pending state between tapping Save and confirming the sheet -- `fitId` stays fixed across a retry so a failed save's upload/insert stay idempotent. */
+/**
+ * Pending state between tapping Save and confirming the sheet -- `fitId` and
+ * `ts` (the cover pair's path version) stay fixed across a retry so a failed
+ * save's upload/insert stay idempotent: a retry overwrites its own partial
+ * upload instead of leaving a second cover/thumbnail pair behind.
+ */
 type PendingSave = {
   fitId: string;
+  ts: number;
   collageUri: string;
+  /** Local WebP thumbnail of `collageUri`, made at capture so a retry reuses the same file. */
+  thumbUri: string;
   defaultName: string;
 };
 
@@ -227,6 +237,10 @@ export default function NewFit() {
       setCapturingCollage(true);
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const collageUri = await captureRef(canvasRef, { format: 'png', quality: 1 });
+      // Made here, not at confirm: a resize failure surfaces as the same
+      // "couldn't capture" error before any upload, and a retry reuses this
+      // exact file.
+      const thumb = await resizeLongEdge(collageUri, FIT_COVER_THUMB_LONG_EDGE, SaveFormat.WEBP);
       // Editing reuses the Fit's own current name as the sheet's starting
       // point (still editable) and skips the generated-default fetch
       // entirely -- that fetch only makes sense for a brand-new Fit.
@@ -239,7 +253,13 @@ export default function NewFit() {
         }
       }
       setConnectionError(false);
-      setPendingSave({ fitId: isEditMode && fitId ? fitId : Crypto.randomUUID(), collageUri, defaultName });
+      setPendingSave({
+        fitId: isEditMode && fitId ? fitId : Crypto.randomUUID(),
+        ts: Date.now(),
+        collageUri,
+        thumbUri: thumb.uri,
+        defaultName,
+      });
     } catch (error) {
       console.error('[new-fit] collage capture failed:', error);
       Sentry.captureException(error);
@@ -257,7 +277,13 @@ export default function NewFit() {
     setSaving(true);
     setConnectionError(false);
     try {
-      const coverPath = await uploadCover(userId, pendingSave.fitId, pendingSave.collageUri);
+      const { coverPath, thumbPath } = await uploadCover(
+        userId,
+        pendingSave.fitId,
+        pendingSave.ts,
+        pendingSave.collageUri,
+        pendingSave.thumbUri,
+      );
       const placements: FitItemPlacement[] = placedItems.map((item) => ({
         id: item.id,
         wardrobeItemId: item.wardrobeItemId,
@@ -272,7 +298,9 @@ export default function NewFit() {
         pendingSave.fitId,
         name,
         coverPath,
+        thumbPath,
         editingFit?.cover_path ?? null,
+        editingFit?.cover_thumb_path ?? null,
         canvasBackgroundColor,
         placements,
       );

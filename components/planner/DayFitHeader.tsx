@@ -3,7 +3,7 @@ import { PixelRatio, Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { StorageImage } from '@/components/ui/StorageImage';
 import { WornTodayButton } from '@/components/fits/WornTodayButton';
-import type { FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, type FitRow } from '@/lib/fits/listFits';
 
 /** Same 3:4 as every Fit tile, sized to sit beside the name in the sheet. */
 const COLLAGE_WIDTH = 96;
@@ -39,6 +39,7 @@ type Props = {
  */
 export function DayFitHeader({ fit, coverUrl, status, showCollage, busy, onViewFit, wornToggle = null }: Props) {
   const fontScale = PixelRatio.getFontScale();
+  const coverThumbPath = fitThumbPath(fit);
 
   return (
     <View testID="day-fit-header" className="gap-4">
@@ -56,10 +57,11 @@ export function DayFitHeader({ fit, coverUrl, status, showCollage, busy, onViewF
                 : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
             }
           >
-            {fit.cover_path && coverUrl ? (
+            {coverThumbPath && coverUrl ? (
               <StorageImage
+                testID="day-fit-header-cover"
                 accessibilityLabel=""
-                path={fit.cover_path}
+                path={coverThumbPath}
                 url={coverUrl}
                 style={{ width: '100%', height: '100%' }}
                 contentFit="contain"

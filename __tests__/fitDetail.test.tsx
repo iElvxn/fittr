@@ -76,6 +76,7 @@ function makeFit(overrides: Partial<FitRow> = {}): FitRow {
     id: 'fit-1',
     name: 'Weekend Look',
     cover_path: 'user-1/fits/fit-1/cover.png',
+    cover_thumb_path: null,
     canvas_background_color: null,
     updated_at: '2026-09-18T00:00:00.000Z',
     is_favorite: false,
@@ -174,6 +175,23 @@ describe('Fit detail', () => {
       { uri: 'https://signed.example/cover.png', cacheKey: 'user-1/fits/fit-1/cover.png' },
     ]);
     expect(cover.props.cachePolicy).toBe('memory-disk');
+  });
+
+  it('keeps the full cover (also what Share sends) even when the Fit has a small thumbnail', async () => {
+    (useFits as jest.Mock).mockReturnValue({
+      data: [makeFit({ cover_thumb_path: 'user-1/fits/fit-1/cover-1_thumb.webp' })],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+    await renderFitDetail();
+
+    expect(useThumbnailUrls).toHaveBeenCalledWith(['user-1/fits/fit-1/cover.png']);
+    expect(useThumbnailUrls).not.toHaveBeenCalledWith(['user-1/fits/fit-1/cover-1_thumb.webp']);
+    expect(screen.getByTestId('fit-detail-cover').props.source).toEqual([
+      { uri: 'https://signed.example/cover.png', cacheKey: 'user-1/fits/fit-1/cover.png' },
+    ]);
   });
 
   it("shows the Fit's last-updated date", async () => {

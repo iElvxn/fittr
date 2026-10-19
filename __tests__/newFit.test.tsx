@@ -18,7 +18,15 @@ jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({
   useThumbnailUrls: jest.fn(() => ({ data: {} })),
 }));
 jest.mock('@/lib/fits/nextFitName', () => ({ getNextFitName: jest.fn() }));
-jest.mock('@/lib/fits/saveFit', () => ({ uploadCover: jest.fn(), insertFit: jest.fn() }));
+jest.mock('@/lib/fits/saveFit', () => ({
+  ...jest.requireActual('@/lib/fits/saveFit'),
+  uploadCover: jest.fn(),
+  insertFit: jest.fn(),
+}));
+// The real module pulls in the native background-removal and Skia modules;
+// only `resizeLongEdge` (the cover thumbnail) is used here.
+jest.mock('@/lib/wardrobe/processImage', () => ({ resizeLongEdge: jest.fn() }));
+jest.mock('expo-image-manipulator', () => ({ SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' } }));
 jest.mock('@/lib/fits/getFitItems', () => ({ getFitItems: jest.fn() }));
 jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn(() => ({ data: [] })) }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
@@ -32,7 +40,8 @@ import NewFit from '@/app/new-fit';
 import { router, useLocalSearchParams } from 'expo-router';
 import { captureRef } from 'react-native-view-shot';
 import { getNextFitName } from '@/lib/fits/nextFitName';
-import { uploadCover, insertFit } from '@/lib/fits/saveFit';
+import { resizeLongEdge } from '@/lib/wardrobe/processImage';
+import { uploadCover, insertFit, FIT_COVER_THUMB_LONG_EDGE } from '@/lib/fits/saveFit';
 import { getFitItems } from '@/lib/fits/getFitItems';
 import { useFits } from '@/lib/fits/listFits';
 import { useWardrobeItems } from '@/lib/wardrobe/listItems';
@@ -40,6 +49,11 @@ import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fi
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 
 let queryClient: QueryClient;
+
+const UPLOADED_PAIR = {
+  coverPath: 'user-1/fits/fit-1/cover-1700000000000.png',
+  thumbPath: 'user-1/fits/fit-1/cover-1700000000000_thumb.webp',
+};
 
 function renderNewFit() {
   return render(
@@ -55,6 +69,7 @@ beforeEach(() => {
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   useFitBuilderStore.setState({ templateId: null, items: [], selectedId: null, canvasBackgroundColor: null });
   (captureRef as jest.Mock).mockResolvedValue('file://collage.png');
+  (resizeLongEdge as jest.Mock).mockResolvedValue({ uri: 'file://collage-thumb.webp' });
   (getNextFitName as jest.Mock).mockResolvedValue('Fit 12');
   (useLocalSearchParams as jest.Mock).mockReturnValue({});
   (useFits as jest.Mock).mockReturnValue({ data: [] });
@@ -104,7 +119,7 @@ describe('New Fit -- Save flow', () => {
   });
 
   it('resets the canvas and dismisses to the Fits tab on a successful save', async () => {
-    (uploadCover as jest.Mock).mockResolvedValue('user-1/fits/fit-1/cover.png');
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
     (insertFit as jest.Mock).mockResolvedValue(undefined);
 
     await renderNewFit();
@@ -144,11 +159,85 @@ describe('New Fit -- Save flow', () => {
   });
 });
 
+describe('New Fit -- cover thumbnail (Story 6.2)', () => {
+  async function openSaveSheet() {
+    await renderNewFit();
+    const user = userEvent.setup();
+    await user.press(screen.getByText('Skip for now'));
+    await act(async () => {
+      useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    });
+    await user.press(screen.getByRole('button', { name: 'Save Fit' }));
+    await screen.findByDisplayValue('Fit 12');
+    return user;
+  }
+
+  it('makes a WebP thumbnail of the captured collage at the shared long edge, at Save tap', async () => {
+    await openSaveSheet();
+
+    expect(resizeLongEdge).toHaveBeenCalledTimes(1);
+    expect(resizeLongEdge).toHaveBeenCalledWith('file://collage.png', FIT_COVER_THUMB_LONG_EDGE, 'webp');
+  });
+
+  it('shows the capture error and never opens the sheet when the thumbnail resize fails', async () => {
+    (resizeLongEdge as jest.Mock).mockRejectedValue(new Error('resize boom'));
+
+    await renderNewFit();
+    const user = userEvent.setup();
+    await user.press(screen.getByText('Skip for now'));
+    await act(async () => {
+      useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    });
+    await user.press(screen.getByRole('button', { name: 'Save Fit' }));
+
+    await waitFor(() => expect(screen.getByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy());
+    expect(screen.queryByDisplayValue('Fit 12')).toBeNull();
+    expect(uploadCover).not.toHaveBeenCalled();
+  });
+
+  it('saves with the pending ts and thumbnail, and a retry reuses the same fitId, ts and thumbnail', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+    (uploadCover as jest.Mock)
+      .mockRejectedValueOnce(new FitError('no_connection', NO_CONNECTION_MESSAGE))
+      .mockResolvedValueOnce(UPLOADED_PAIR);
+    (insertFit as jest.Mock).mockResolvedValue(undefined);
+
+    const user = await openSaveSheet();
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByText(NO_CONNECTION_MESSAGE)).toBeTruthy());
+
+    // Time moves on before the retry -- the retry must still reuse the
+    // pending save's own `ts`, not mint a new one.
+    nowSpy.mockReturnValue(1700000099999);
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalled());
+    expect(uploadCover).toHaveBeenCalledTimes(2);
+    const [first, retry] = (uploadCover as jest.Mock).mock.calls;
+    expect(first).toEqual(['user-1', expect.any(String), 1700000000000, 'file://collage.png', 'file://collage-thumb.webp']);
+    expect(retry).toEqual(first);
+    expect(resizeLongEdge).toHaveBeenCalledTimes(1);
+    expect(insertFit).toHaveBeenCalledWith(
+      'user-1',
+      first[1],
+      'Fit 12',
+      UPLOADED_PAIR.coverPath,
+      UPLOADED_PAIR.thumbPath,
+      null,
+      null,
+      null,
+      expect.any(Array),
+    );
+    nowSpy.mockRestore();
+  });
+});
+
 describe('New Fit -- edit mode (Story 3.3)', () => {
   const EDITING_FIT = {
     id: 'fit-1',
     name: 'Weekend Look',
-    cover_path: 'user-1/fits/fit-1/cover.png',
+    cover_path: 'user-1/fits/fit-1/cover-1699999999999.png',
+    cover_thumb_path: 'user-1/fits/fit-1/cover-1699999999999_thumb.webp',
     canvas_background_color: '#F6DADA',
     updated_at: '2026-09-18T00:00:00.000Z',
   };
@@ -274,7 +363,7 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
 
   it('re-saving reuses the same fitId and the Fit\'s current name, and dismisses to its detail screen', async () => {
     (getFitItems as jest.Mock).mockResolvedValue([SAVED_PLACEMENT]);
-    (uploadCover as jest.Mock).mockResolvedValue('user-1/fits/fit-1/cover.png');
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
     (insertFit as jest.Mock).mockResolvedValue(undefined);
     // Pins the contract `app/fit/[id].tsx` relies on: it has no focus-refetch
     // of its own, so a stale `useFits` cache after this dismiss would show
@@ -296,8 +385,10 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
         'user-1',
         'fit-1',
         'Weekend Look',
-        expect.any(String),
+        UPLOADED_PAIR.coverPath,
+        UPLOADED_PAIR.thumbPath,
         EDITING_FIT.cover_path,
+        EDITING_FIT.cover_thumb_path,
         '#F6DADA',
         expect.any(Array),
       ),

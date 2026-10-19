@@ -9,7 +9,7 @@ import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { WearPhotoSection } from '@/components/planner/WearPhotoSection';
 import { DayFitHeader, type DayFitWornToggle } from '@/components/planner/DayFitHeader';
 import type { WearRef } from '@/lib/fits/wearRef';
-import type { FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, type FitRow } from '@/lib/fits/listFits';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import type { WeekDay } from '@/lib/planner/week';
 import { colors } from '@/lib/theme/colors';
@@ -100,6 +100,10 @@ export function PlanDaySheet({
 
   const tileWidth = (width - GUTTER * 2 - COLUMN_GAP * (COLUMNS - 1)) / COLUMNS;
   const tileHeight = tileWidth * (4 / 3);
+  const coverUrlFor = (fit: FitRow) => {
+    const path = fitThumbPath(fit);
+    return path ? (thumbnailUrls?.[path] ?? null) : null;
+  };
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={busy ? () => {} : onClose} statusBarTranslucent>
@@ -154,7 +158,7 @@ export function PlanDaySheet({
               <View className="pb-4">
                 <DayFitHeader
                   fit={header.fit}
-                  coverUrl={header.fit.cover_path ? (thumbnailUrls?.[header.fit.cover_path] ?? null) : null}
+                  coverUrl={coverUrlFor(header.fit)}
                   status={header.status}
                   showCollage={!worn}
                   busy={busy}
@@ -169,7 +173,7 @@ export function PlanDaySheet({
                   dayLabel={day.long}
                   fit={worn.fit}
                   wear={worn.wear}
-                  coverUrl={worn.fit.cover_path ? (thumbnailUrls?.[worn.fit.cover_path] ?? null) : null}
+                  coverUrl={coverUrlFor(worn.fit)}
                   savingUri={photoSavingUri}
                   busy={busy}
                   onAddPhoto={() => onAddPhoto?.(worn.wear)}
@@ -188,7 +192,8 @@ export function PlanDaySheet({
             <View className="flex-row flex-wrap" style={{ columnGap: COLUMN_GAP, rowGap: ROW_GAP }}>
               {fits.map((fit) => {
                 const selected = fit.id === selectedFitId;
-                const coverUrl = fit.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
+                const coverThumbPath = fitThumbPath(fit);
+                const coverUrl = coverThumbPath ? (thumbnailUrls?.[coverThumbPath] ?? null) : null;
                 return (
                   <Pressable
                     key={fit.id}
@@ -211,10 +216,11 @@ export function PlanDaySheet({
                           : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
                       }
                     >
-                      {fit.cover_path && coverUrl ? (
+                      {coverThumbPath && coverUrl ? (
                         <StorageImage
+                          testID={`plan-sheet-cover-${fit.id}`}
                           accessibilityLabel=""
-                          path={fit.cover_path}
+                          path={coverThumbPath}
                           url={coverUrl}
                           style={{ width: '100%', height: '100%' }}
                           contentFit="contain"

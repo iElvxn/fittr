@@ -6,7 +6,7 @@ import { PlusIcon } from '@/components/ui/icons/PlusIcon';
 import { StorageImage } from '@/components/ui/StorageImage';
 import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
 import type { WearPhoto } from '@/lib/fits/wearRef';
-import type { FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, type FitRow } from '@/lib/fits/listFits';
 import type { WeekDay } from '@/lib/planner/week';
 import { colors } from '@/lib/theme/colors';
 
@@ -45,6 +45,7 @@ type Props = {
  */
 export function PlannerDayRow({ day, fit, coverUrl, meta, photo = null, photoUrl = null, onPress }: Props) {
   const scheme = useColorScheme();
+  const coverThumbPath = fit ? fitThumbPath(fit) : null;
   const palette = scheme === 'dark' ? colors.dark : colors.light;
   const fontScale = PixelRatio.getFontScale();
 
@@ -107,11 +108,11 @@ export function PlannerDayRow({ day, fit, coverUrl, meta, photo = null, photoUrl
                   : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
               }
             >
-              {fit?.cover_path && coverUrl ? (
+              {coverThumbPath && coverUrl ? (
                 <StorageImage
                   testID={`planner-cover-${day.date}`}
                   accessibilityLabel=""
-                  path={fit.cover_path}
+                  path={coverThumbPath}
                   url={coverUrl}
                   style={{ width: '100%', height: '100%' }}
                   contentFit="contain"

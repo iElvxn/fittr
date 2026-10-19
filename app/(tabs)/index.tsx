@@ -19,7 +19,7 @@ import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { useSession } from '@/lib/auth/useSession';
 import { useProfile } from '@/lib/profile/useProfile';
 import { useAvatarUrl } from '@/lib/profile/avatarUrl';
-import { useFits, type FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, useFits, type FitRow } from '@/lib/fits/listFits';
 import { useToday } from '@/lib/fits/useToday';
 import { isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { useFitWearCounts, useTodayWornFitIds } from '@/lib/fits/wornFitIds';
@@ -148,7 +148,13 @@ export default function Home() {
   }, [plansQuery.data, fits]);
   const todayFit = planByDate.get(today) ?? null;
 
-  const coverPaths = useMemo(() => fits.flatMap((fit) => (fit.cover_path ? [fit.cover_path] : [])), [fits]);
+  // Small surfaces (week strip, day sheet) take each Fit's thumbnail; the
+  // today card keeps the full cover, so it's signed alongside them.
+  const coverPaths = useMemo(() => {
+    const paths = fits.flatMap((fit) => fitThumbPath(fit) ?? []);
+    const todayCover = todayFit?.cover_path;
+    return todayCover && !paths.includes(todayCover) ? [...paths, todayCover] : paths;
+  }, [fits, todayFit]);
   const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
 
   const { sheetDate, sheetFit, busy, writeError, openDay, closeSheet, pickFit, removeFit } = usePlanDayWrites({

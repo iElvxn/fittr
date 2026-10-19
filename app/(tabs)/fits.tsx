@@ -19,7 +19,7 @@ import { FitsGridCell } from '@/components/fits/FitsGridCell';
 import { FitsGridSkeleton } from '@/components/fits/FitsGridSkeleton';
 import { FitsFilterChips, type FitsFilter } from '@/components/fits/FitsFilterChips';
 import { useSession } from '@/lib/auth/useSession';
-import { useFits, type FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, useFits, type FitRow } from '@/lib/fits/listFits';
 import { useFitWearCounts } from '@/lib/fits/wornFitIds';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
@@ -148,8 +148,11 @@ export default function Fits() {
     }
   }, [isWornError, isWornNoConnection, wornError]);
 
-  const coverPaths = useMemo(() => (fits ?? []).map((fit) => fit.cover_path).filter((path): path is string => Boolean(path)), [fits]);
-  const { data: thumbnailUrls } = useThumbnailUrls(coverPaths);
+  const coverThumbPaths = useMemo(
+    () => (fits ?? []).map((fit) => fitThumbPath(fit)).filter((path): path is string => Boolean(path)),
+    [fits],
+  );
+  const { data: thumbnailUrls } = useThumbnailUrls(coverThumbPaths);
   const columnWidth = (width - GUTTER * 2 - COLUMN_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
   const fitCount = fits?.length ?? 0;
   const isReady = Boolean(userId) && !isLoading && !isWornLoading && !isError;
@@ -249,12 +252,13 @@ export default function Fits() {
   }
 
   function renderCell({ item }: { item: FitRow }) {
-    const thumbnailUrl = item.cover_path ? (thumbnailUrls?.[item.cover_path] ?? null) : null;
+    const thumbnailPath = fitThumbPath(item);
+    const thumbnailUrl = thumbnailPath ? (thumbnailUrls?.[thumbnailPath] ?? null) : null;
     return (
       <FitsGridCell
         name={item.name}
         thumbnailUrl={thumbnailUrl}
-        thumbnailPath={item.cover_path}
+        thumbnailPath={thumbnailPath}
         columnWidth={columnWidth}
         onPress={() => router.push({ pathname: '/fit/[id]', params: { id: item.id } } as Href)}
         fitId={item.id}
