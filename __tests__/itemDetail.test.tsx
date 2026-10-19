@@ -15,7 +15,11 @@ jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }
 jest.mock('@/lib/wardrobe/updateItem', () => ({ updateWardrobeItem: jest.fn() }));
 jest.mock('@/lib/wardrobe/deleteItem', () => ({ deleteWardrobeItem: jest.fn() }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
-jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
+// Keeps the real `fitThumbPath` -- the one thumbnail-vs-cover fallback rule.
+jest.mock('@/lib/fits/listFits', () => ({
+  ...jest.requireActual('@/lib/fits/listFits'),
+  useFits: jest.fn(),
+}));
 jest.mock('@/lib/wardrobe/itemFits', () => ({ useItemFitIds: jest.fn() }));
 
 import ItemDetail from '@/app/item/[id]';
@@ -55,6 +59,7 @@ function makeFit(overrides: Partial<FitRow> = {}): FitRow {
     id: 'fit-a',
     name: 'Sunday Market',
     cover_path: null,
+    cover_thumb_path: null,
     canvas_background_color: null,
     updated_at: '2026-09-20T12:00:00.000Z',
     is_favorite: false,
@@ -236,6 +241,29 @@ describe('Item detail', () => {
       { uri: 'https://signed.example/fit-a-cover.png', cacheKey: 'user-1/fits/fit-a/cover.png' },
     ]);
     expect(image.props.contentFit).toBe('contain');
+  });
+
+  it("signs and shows a Fit's small thumbnail in the strip when it has one", async () => {
+    const thumb = 'user-1/fits/fit-a/cover-1_thumb.webp';
+    (useFits as jest.Mock).mockReturnValue({
+      data: [makeFit({ id: 'fit-a', cover_path: 'user-1/fits/fit-a/cover-1.png', cover_thumb_path: thumb })],
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+    (useThumbnailUrls as jest.Mock).mockReturnValue({
+      data: {
+        'user-1/items/item-1/cutout.png': 'https://signed.example/cutout.png',
+        [thumb]: 'https://signed.example/fit-a-thumb.webp',
+      },
+    });
+    mockItemFitIds({ data: ['fit-a'] });
+    await renderItemDetail();
+
+    expect(useThumbnailUrls).toHaveBeenCalledWith([thumb]);
+    expect(useThumbnailUrls).not.toHaveBeenCalledWith(['user-1/fits/fit-a/cover-1.png']);
+    const image = within(screen.getByTestId('item-fits-tile')).getByTestId('item-fits-cover');
+    expect(image.props.source).toEqual([{ uri: 'https://signed.example/fit-a-thumb.webp', cacheKey: thumb }]);
   });
 
   it('refetches the Fits that use the piece on screen focus', async () => {

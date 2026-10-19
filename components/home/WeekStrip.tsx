@@ -2,7 +2,7 @@ import { Pressable, View } from 'react-native';
 
 import { StorageImage } from '@/components/ui/StorageImage';
 import { Text } from '@/components/ui/Text';
-import type { FitRow } from '@/lib/fits/listFits';
+import { fitThumbPath, type FitRow } from '@/lib/fits/listFits';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import type { WeekDay } from '@/lib/planner/week';
 
@@ -51,7 +51,8 @@ export function WeekStrip({ days, planByDate, thumbnailUrls, onOpenPlanner }: Pr
       <View testID="home-week" className="flex-row gap-1.5">
         {days.map((day) => {
           const fit = planByDate.get(day.date) ?? null;
-          const coverUrl = fit?.cover_path ? (thumbnailUrls?.[fit.cover_path] ?? null) : null;
+          const coverThumbPath = fit ? fitThumbPath(fit) : null;
+          const coverUrl = coverThumbPath ? (thumbnailUrls?.[coverThumbPath] ?? null) : null;
           return (
             <View
               key={day.date}
@@ -68,10 +69,11 @@ export function WeekStrip({ days, planByDate, thumbnailUrls, onOpenPlanner }: Pr
                 ]}
                 className={tileClassName(fit, day.isToday)}
               >
-                {fit?.cover_path && coverUrl ? (
+                {coverThumbPath && coverUrl ? (
                   <StorageImage
+                    testID={`home-week-cover-${day.date}`}
                     accessibilityLabel=""
-                    path={fit.cover_path}
+                    path={coverThumbPath}
                     url={coverUrl}
                     style={{ width: '100%', height: '100%' }}
                     contentFit="contain"

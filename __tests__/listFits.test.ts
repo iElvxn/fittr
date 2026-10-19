@@ -4,7 +4,7 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
-import { getFits } from '@/lib/fits/listFits';
+import { fitThumbPath, getFits } from '@/lib/fits/listFits';
 import { supabase } from '@/lib/supabase';
 
 function mockSelectChain(result: { data: unknown; error: unknown }) {
@@ -17,13 +17,14 @@ function mockSelectChain(result: { data: unknown; error: unknown }) {
 }
 
 describe('getFits', () => {
-  it('selects is_favorite alongside the existing columns and passes it through', async () => {
+  it('selects is_favorite and cover_thumb_path alongside the existing columns and passes them through', async () => {
     const { select, eq, is, order } = mockSelectChain({
       data: [
         {
           id: 'fit-1',
           name: 'Weekend Look',
           cover_path: 'user-1/fits/fit-1/cover.png',
+          cover_thumb_path: null,
           canvas_background_color: null,
           updated_at: '2026-09-18T00:00:00.000Z',
           is_favorite: true,
@@ -35,7 +36,9 @@ describe('getFits', () => {
     const fits = await getFits('user-1');
 
     expect(supabase.from).toHaveBeenCalledWith('fits');
-    expect(select).toHaveBeenCalledWith('id, name, cover_path, canvas_background_color, updated_at, is_favorite');
+    expect(select).toHaveBeenCalledWith(
+      'id, name, cover_path, cover_thumb_path, canvas_background_color, updated_at, is_favorite',
+    );
     expect(eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(is).toHaveBeenCalledWith('deleted_at', null);
     expect(order).toHaveBeenCalledWith('updated_at', { ascending: false });
@@ -46,5 +49,26 @@ describe('getFits', () => {
     mockSelectChain({ data: null, error: new Error('boom') });
 
     await expect(getFits('user-1')).rejects.toThrow('boom');
+  });
+});
+
+describe('fitThumbPath', () => {
+  it("prefers the cover's small WebP thumbnail when the Fit has one", () => {
+    expect(
+      fitThumbPath({
+        cover_path: 'user-1/fits/fit-1/cover-1.png',
+        cover_thumb_path: 'user-1/fits/fit-1/cover-1_thumb.webp',
+      }),
+    ).toBe('user-1/fits/fit-1/cover-1_thumb.webp');
+  });
+
+  it('falls back to the full cover for a Fit saved before thumbnails existed', () => {
+    expect(fitThumbPath({ cover_path: 'user-1/fits/fit-1/cover.png', cover_thumb_path: null })).toBe(
+      'user-1/fits/fit-1/cover.png',
+    );
+  });
+
+  it('is null when the Fit has neither', () => {
+    expect(fitThumbPath({ cover_path: null, cover_thumb_path: null })).toBeNull();
   });
 });

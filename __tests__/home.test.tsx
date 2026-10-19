@@ -5,7 +5,11 @@ import { ActionSheetIOS, Alert, AppState, ScrollView, StyleSheet } from 'react-n
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
 jest.mock('@/lib/profile/useProfile', () => ({ useProfile: jest.fn() }));
 jest.mock('@/lib/profile/avatarUrl', () => ({ useAvatarUrl: jest.fn() }));
-jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
+// Keeps the real `fitThumbPath` -- the one thumbnail-vs-cover fallback rule.
+jest.mock('@/lib/fits/listFits', () => ({
+  ...jest.requireActual('@/lib/fits/listFits'),
+  useFits: jest.fn(),
+}));
 jest.mock('@/lib/planner/plannedFits', () => ({
   usePlannedFits: jest.fn(),
   planFit: jest.fn(),
@@ -74,6 +78,7 @@ function fit(overrides: Partial<FitRow> = {}): FitRow {
     id: 'fit-a',
     name: 'Sunday Market',
     cover_path: 'user-1/fits/fit-a/cover.png',
+    cover_thumb_path: null,
     canvas_background_color: '#DCE8DC',
     updated_at: '2025-09-20T12:00:00.000Z',
     is_favorite: false,
@@ -1227,6 +1232,48 @@ describe('Home tab', () => {
 
       expect(screen.getByText('Planned for today')).toBeTruthy();
       expect(Sentry.captureException).toHaveBeenCalled();
+    });
+  });
+
+  describe('cover thumbnail (Story 6.2)', () => {
+    const THUMB_A = 'user-1/fits/fit-a/cover-1_thumb.webp';
+
+    /** The cover image the week strip renders inside a day's tile. */
+    function weekCover(date: string) {
+      return imageProp(screen.getByTestId(`home-week-cover-${date}`), 'source');
+    }
+
+    it("shows each Fit's thumbnail in the week strip while the today card keeps the full cover", async () => {
+      const fitA = fit({ cover_thumb_path: THUMB_A });
+      mockFits({ data: [fitA, FIT_B] });
+      mockPlans([
+        { planned_on: MON, fit_id: 'fit-b' },
+        { planned_on: WED, fit_id: 'fit-a' },
+      ]);
+      (useThumbnailUrls as jest.Mock).mockImplementation((paths: string[]) => ({
+        data: Object.fromEntries(paths.map((path) => [path, `https://signed/${path}`])),
+      }));
+
+      await renderHome();
+
+      const signed = (useThumbnailUrls as jest.Mock).mock.calls.at(-1)[0];
+      expect([...signed].sort()).toEqual([THUMB_A, FIT_B.cover_path, FIT_A.cover_path].sort());
+      expect(weekCover(WED)).toEqual({ uri: `https://signed/${THUMB_A}`, cacheKey: THUMB_A });
+      // Fit B has no thumbnail yet, so its tile falls back to the full cover.
+      expect(weekCover(MON)).toEqual({ uri: `https://signed/${FIT_B.cover_path}`, cacheKey: FIT_B.cover_path });
+      expect(imageProp(screen.getByTestId('today-fit-cover'), 'source')).toEqual({
+        uri: `https://signed/${FIT_A.cover_path}`,
+        cacheKey: FIT_A.cover_path,
+      });
+    });
+
+    it("signs today's full cover only once when the Fit has no thumbnail", async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+
+      await renderHome();
+
+      const signed = (useThumbnailUrls as jest.Mock).mock.calls.at(-1)[0];
+      expect(signed.filter((path: string) => path === FIT_A.cover_path)).toHaveLength(1);
     });
   });
 

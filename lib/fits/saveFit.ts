@@ -16,23 +16,60 @@ export type FitItemPlacement = {
 };
 
 /**
- * Uploads the rendered collage under the Fit's own folder, one path per
- * save (`cover-{version}.png`, not a fixed `cover.png`) -- overwriting the
- * same path in place made a re-saved cover indistinguishable, URL-wise,
- * from the one before it, which neither `expo-image`'s cache nor Storage's
- * own CDN would treat as changed content. `insertFit` best-effort deletes
- * the previous version once this new one is confirmed committed. `upsert:
- * true` still guards a retried upload landing on this exact same generated
- * path (e.g. this function called twice with the same `Date.now()` value,
- * astronomically unlikely but not the guarantee to skip).
+ * Long edge (px) of a Fit cover's small WebP thumbnail. The collage is
+ * taller than the 3:4 grid tile, so a `contain`ed cover is height-bound: the
+ * tile is ~259pt tall on the largest phones, and 3x needs ~780px. Small
+ * surfaces (My Fits grid, Home's week strip, the Planner) show this instead
+ * of the full-resolution PNG cover.
  */
-export async function uploadCover(userId: string, fitId: string, collageUri: string): Promise<string> {
-  const coverPath = `${userId}/fits/${fitId}/cover-${Date.now()}.png`;
-  const file = new File(collageUri);
+export const FIT_COVER_THUMB_LONG_EDGE = 800;
+
+/**
+ * Uploads the rendered collage and its small WebP thumbnail under the Fit's
+ * own folder, one pair per save (`cover-{ts}.png` + `cover-{ts}_thumb.webp`,
+ * not a fixed `cover.png`) -- overwriting the same path in place made a
+ * re-saved cover indistinguishable, URL-wise, from the one before it, which
+ * neither `expo-image`'s cache nor Storage's own CDN would treat as changed
+ * content. `ts` is minted once per save attempt by the caller and kept
+ * across a retry, so a retried upload lands on (and `upsert: true`
+ * overwrites) its own earlier partial upload instead of leaving a second
+ * pair behind. `insertFit` best-effort deletes the previous pair once this
+ * new one is confirmed committed.
+ *
+ * Cover + thumbnail are one unit: both upload in parallel and, on any
+ * failure, both are removed. The rollback waits for both uploads to settle
+ * first -- removing while the sibling is still in flight would let that
+ * object land afterwards, orphaned.
+ */
+export async function uploadCover(
+  userId: string,
+  fitId: string,
+  ts: number,
+  collageUri: string,
+  thumbUri: string,
+): Promise<{ coverPath: string; thumbPath: string }> {
+  const coverPath = `${userId}/fits/${fitId}/cover-${ts}.png`;
+  const thumbPath = `${userId}/fits/${fitId}/cover-${ts}_thumb.webp`;
+
+  const results = await Promise.allSettled([
+    uploadOne(coverPath, collageUri, 'image/png'),
+    uploadOne(thumbPath, thumbUri, 'image/webp'),
+  ]);
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failure) {
+    await rollbackCover(coverPath, thumbPath);
+    throw failure.reason;
+  }
+
+  return { coverPath, thumbPath };
+}
+
+async function uploadOne(path: string, localUri: string, contentType: string): Promise<void> {
+  const file = new File(localUri);
   const arrayBuffer = await file.arrayBuffer();
 
-  const { error } = await supabase.storage.from('wardrobe').upload(coverPath, arrayBuffer, {
-    contentType: 'image/png',
+  const { error } = await supabase.storage.from('wardrobe').upload(path, arrayBuffer, {
+    contentType,
     upsert: true,
     cacheControl: WRITE_ONCE_CACHE_CONTROL,
   });
@@ -43,12 +80,10 @@ export async function uploadCover(userId: string, fitId: string, collageUri: str
     }
     throw error;
   }
-
-  return coverPath;
 }
 
-async function rollbackCover(coverPath: string): Promise<void> {
-  await supabase.storage.from('wardrobe').remove([coverPath]).catch(() => {});
+async function rollbackCover(coverPath: string, thumbPath: string): Promise<void> {
+  await Promise.resolve(supabase.storage.from('wardrobe').remove([coverPath, thumbPath])).catch(() => {});
 }
 
 /**
@@ -69,8 +104,9 @@ async function rollbackOrphanedFit(fitId: string): Promise<void> {
  * `onConflict: 'id'` on both -- same idempotent-retry reasoning as
  * `insertWardrobeItem`, since `fitId` and each placement's own `id` stay
  * fixed across a retry after a no-connection failure. `previousCoverPath`
- * (the Fit's cover before this save, `null` for a brand-new Fit) is
- * best-effort deleted once every write below has fully committed -- never
+ * and `previousThumbPath` (the Fit's cover pair before this save, `null` for
+ * a brand-new Fit or a pre-thumbnail Fit) are best-effort deleted once every
+ * write below has fully committed -- never
  * awaited into the failure path, since a cleanup failure must not undo or
  * mis-report an otherwise-successful save.
  */
@@ -79,7 +115,9 @@ export async function insertFit(
   fitId: string,
   name: string,
   coverPath: string,
+  thumbPath: string,
   previousCoverPath: string | null,
+  previousThumbPath: string | null,
   canvasBackgroundColor: string | null,
   items: FitItemPlacement[],
 ): Promise<void> {
@@ -89,6 +127,7 @@ export async function insertFit(
       user_id: userId,
       name,
       cover_path: coverPath,
+      cover_thumb_path: thumbPath,
       canvas_background_color: canvasBackgroundColor,
       // Explicit, not left to the column default: a retry after
       // `rollbackOrphanedFit` soft-deleted this same row on an earlier
@@ -100,7 +139,7 @@ export async function insertFit(
   );
 
   if (fitError) {
-    await rollbackCover(coverPath);
+    await rollbackCover(coverPath, thumbPath);
     if (isNoConnectionError(fitError)) {
       throw new FitError('no_connection', NO_CONNECTION_MESSAGE);
     }
@@ -121,7 +160,7 @@ export async function insertFit(
   const { error: itemsError } = await supabase.from('fit_items').upsert(rows, { onConflict: 'id' });
 
   if (itemsError) {
-    await rollbackCover(coverPath);
+    await rollbackCover(coverPath, thumbPath);
     await rollbackOrphanedFit(fitId);
     if (isNoConnectionError(itemsError)) {
       throw new FitError('no_connection', NO_CONNECTION_MESSAGE);
@@ -131,8 +170,11 @@ export async function insertFit(
 
   await deleteOrphanedFitItems(fitId, rows.map((row) => row.id));
 
-  if (previousCoverPath && previousCoverPath !== coverPath) {
-    await supabase.storage.from('wardrobe').remove([previousCoverPath]).catch(() => {});
+  const stalePaths = [previousCoverPath, previousThumbPath].filter(
+    (path): path is string => Boolean(path) && path !== coverPath && path !== thumbPath,
+  );
+  if (stalePaths.length > 0) {
+    await Promise.resolve(supabase.storage.from('wardrobe').remove(stalePaths)).catch(() => {});
   }
 }
 

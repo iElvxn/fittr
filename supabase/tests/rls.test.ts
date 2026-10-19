@@ -541,6 +541,59 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
     }
   });
 
+  it("accepts a cover_thumb_path under the Fit's own folder and rejects one under another Fit's (Story 6.2)", async () => {
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email = `rls-fits-thumb-${stamp}@mailinator.com`;
+
+    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    expect(created.error).toBeNull();
+    const userId = created.data.user?.id;
+    expect(userId).toBeTruthy();
+
+    const fitId = randomUUID();
+    const otherFitId = randomUUID();
+
+    try {
+      const client = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn = await client.auth.signInWithPassword({ email, password });
+      expect(signIn.error).toBeNull();
+
+      const validInsert = await client.from('fits').insert({
+        id: fitId,
+        user_id: userId,
+        name: 'Weekend brunch',
+        cover_path: `${userId}/fits/${fitId}/cover-${stamp}.png`,
+        cover_thumb_path: `${userId}/fits/${fitId}/cover-${stamp}_thumb.webp`,
+      });
+      expect(validInsert.error).toBeNull();
+
+      // A pre-6.2 row with no thumbnail stays valid.
+      const clearThumb = await client.from('fits').update({ cover_thumb_path: null }).eq('id', fitId);
+      expect(clearThumb.error).toBeNull();
+
+      const foreignFolder = await client
+        .from('fits')
+        .update({ cover_thumb_path: `${userId}/fits/${otherFitId}/cover-${stamp}_thumb.webp` })
+        .eq('id', fitId);
+      expect(foreignFolder.error).not.toBeNull();
+
+      const wrongFormat = await client
+        .from('fits')
+        .update({ cover_thumb_path: `${userId}/fits/${fitId}/cover-${stamp}_thumb.png` })
+        .eq('id', fitId);
+      expect(wrongFormat.error).not.toBeNull();
+
+      const { data: row } = await admin.from('fits').select('cover_thumb_path').eq('id', fitId).maybeSingle();
+      expect(row?.cover_thumb_path).toBeNull();
+    } finally {
+      await admin.from('fits').delete().eq('id', fitId);
+      if (userId) await admin.auth.admin.deleteUser(userId);
+    }
+  });
+
   it("a second user cannot SELECT, INSERT into, UPDATE, or DELETE the first user's fit_items rows", async () => {
     const admin = createClient(supabaseUrl!, supabaseSecretKey!);
 

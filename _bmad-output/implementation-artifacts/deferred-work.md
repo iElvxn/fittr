@@ -252,3 +252,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
   summary: The account-deletion Storage cleanup (Epic 1 retro item 5) must remove the whole `wardrobe/{uid}/` folder, not just `avatar.jpg`.
   evidence: Story 6.1 review (triage #16). Avatars are now `avatar-{ts}.jpg`, and a failed best-effort delete (or a no-connection save) can leave several.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-small-webp-fit-cover-thumbnails.md`
+  summary: Closing the Save sheet (or tapping Save again) after a failed offline Fit save leaves that attempt's cover/thumbnail pair orphaned in Storage, because the offline rollback `remove` also fails and the next attempt mints a new `ts`.
+  evidence: Pre-existing for the cover alone (`app/new-fit.tsx` onClose clears `pendingSave`); Story 6.2 makes it two files. Triage #4/#30.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-small-webp-fit-cover-thumbnails.md`
+  summary: `insertFit` rolls back the uploaded cover pair on any `fits`/`fit_items` error, including a lost response after the row actually committed, so an abandoned save can leave a live row pointing at deleted files (and on edit, soft-delete the existing Fit).
+  evidence: Pre-existing rollback design in `lib/fits/saveFit.ts`; a same-`ts` retry now restores the exact paths, but an abandon does not. Severity unverified as medium. Settle by simulating a committed upsert with a dropped response. Triage #5.

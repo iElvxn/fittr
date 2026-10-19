@@ -6,10 +6,22 @@ export type FitRow = {
   id: string;
   name: string;
   cover_path: string | null;
+  /** Small WebP thumbnail of the cover (Story 6.2); `null` for Fits saved before it existed, until their next edit. */
+  cover_thumb_path: string | null;
   canvas_background_color: string | null;
   updated_at: string;
   is_favorite: boolean;
 };
+
+/**
+ * The one fallback rule every small Fit surface (grid, week strip, Planner,
+ * Item detail's Fits strip) uses: the small WebP thumbnail when the Fit has
+ * one, else the full cover. Fit detail, the Home today card and Share read
+ * `cover_path` directly instead.
+ */
+export function fitThumbPath(fit: Pick<FitRow, 'cover_path' | 'cover_thumb_path'>): string | null {
+  return fit.cover_thumb_path ?? fit.cover_path;
+}
 
 /**
  * Plain, directly-testable core (same split as `getFitItems.ts`/
@@ -19,7 +31,7 @@ export type FitRow = {
 export async function getFits(userId: string): Promise<FitRow[]> {
   const { data, error } = await supabase
     .from('fits')
-    .select('id, name, cover_path, canvas_background_color, updated_at, is_favorite')
+    .select('id, name, cover_path, cover_thumb_path, canvas_background_color, updated_at, is_favorite')
     .eq('user_id', userId)
     .is('deleted_at', null)
     .order('updated_at', { ascending: false });

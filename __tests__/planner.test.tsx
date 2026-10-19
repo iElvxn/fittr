@@ -3,7 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ActionSheetIOS, AppState, StyleSheet } from 'react-native';
 
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
-jest.mock('@/lib/fits/listFits', () => ({ useFits: jest.fn() }));
+// Keeps the real `fitThumbPath` -- the one thumbnail-vs-cover fallback rule.
+jest.mock('@/lib/fits/listFits', () => ({
+  ...jest.requireActual('@/lib/fits/listFits'),
+  useFits: jest.fn(),
+}));
 jest.mock('@/lib/planner/plannedFits', () => ({
   usePlannedFits: jest.fn(),
   useWeekWears: jest.fn(),
@@ -79,6 +83,7 @@ function fit(overrides: Partial<FitRow> = {}): FitRow {
     id: 'fit-a',
     name: 'Sunday Market',
     cover_path: 'user-1/fits/fit-a/cover.png',
+    cover_thumb_path: null,
     canvas_background_color: null,
     updated_at: '2025-09-20T12:00:00.000Z',
     is_favorite: false,
@@ -318,6 +323,23 @@ describe('Planner tab', () => {
       const cover = screen.getByTestId(`planner-cover-${THU}`);
       expect(imageProp(cover, 'source')).toEqual({ uri: 'https://signed/fit-b.png', cacheKey: 'user-1/fits/fit-b/cover.png' });
       expect(cover.props.cachePolicy).toBe('memory-disk');
+    });
+
+    it("signs and shows a planned day's thumbnail when the Fit has one", async () => {
+      const thumb = 'user-1/fits/fit-b/cover-1_thumb.webp';
+      mockFits({ data: [FIT_A, { ...FIT_B, cover_thumb_path: thumb }] });
+      mockPlans([{ planned_on: THU, fit_id: 'fit-b' }]);
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: { [thumb]: 'https://signed/fit-b-thumb.webp' } });
+
+      await renderPlanner();
+
+      const signed = (useThumbnailUrls as jest.Mock).mock.calls.at(-1)[0];
+      expect(signed).toContain(thumb);
+      expect(signed).not.toContain(FIT_B.cover_path);
+      expect(imageProp(screen.getByTestId(`planner-cover-${THU}`), 'source')).toEqual({
+        uri: 'https://signed/fit-b-thumb.webp',
+        cacheKey: thumb,
+      });
     });
 
     it('shows an empty day as "Nothing planned"', async () => {
@@ -1407,6 +1429,49 @@ describe('Planner tab', () => {
         expect(unmarkFitWornToday).not.toHaveBeenCalled();
         await act(async () => resolve());
       });
+    });
+  });
+
+  describe('cover thumbnail (Story 6.2)', () => {
+    const THUMB_A = 'user-1/fits/fit-a/cover-1_thumb.webp';
+    const signedThumb = `https://signed/${THUMB_A}`;
+    const thumbSource = { uri: signedThumb, cacheKey: THUMB_A };
+
+    beforeEach(() => {
+      mockFits({ data: [fit({ cover_thumb_path: THUMB_A }), FIT_B] });
+      (useThumbnailUrls as jest.Mock).mockImplementation((paths: string[]) => ({
+        data: Object.fromEntries(paths.map((path) => [path, `https://signed/${path}`])),
+      }));
+    });
+
+    it("shows the thumbnail in the day sheet's Fit header and its picker tile", async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+      const { user } = await renderPlanner();
+
+      await user.press(row('Wednesday, Sep 24: Sunday Market'));
+
+      expect(imageProp(screen.getByTestId('day-fit-header-cover'), 'source')).toEqual(thumbSource);
+      expect(imageProp(screen.getByTestId('plan-sheet-cover-fit-a'), 'source')).toEqual(thumbSource);
+    });
+
+    it("shows the thumbnail beside a worn day's photo slot", async () => {
+      mockPlans([{ planned_on: MON, fit_id: 'fit-a' }]);
+      mockWears([`fit-a|${MON}`]);
+      const { user } = await renderPlanner();
+
+      await user.press(row('Monday, Sep 22: Sunday Market'));
+
+      expect(imageProp(screen.getByTestId('wear-photo-cover'), 'source')).toEqual(thumbSource);
+    });
+
+    it('shows the thumbnail in a month grid cell', async () => {
+      mockToday = '2026-09-26';
+      mockMonthPlans([{ planned_on: '2026-09-11', fit_id: 'fit-a' }]);
+      const { user } = await renderPlanner();
+
+      await user.press(screen.getByRole('button', { name: 'Month' }));
+
+      expect(imageProp(screen.getByTestId('planner-month-cover-2026-09-11'), 'source')).toEqual(thumbSource);
     });
   });
 

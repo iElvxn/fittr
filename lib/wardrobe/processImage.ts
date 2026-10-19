@@ -55,7 +55,7 @@ export async function processWardrobePhoto(sourceUri: string): Promise<Processed
 }
 
 /** Resizes so the longer edge equals `longEdge`, preserving aspect ratio; skips upscaling a source that's already smaller. */
-async function resizeLongEdge(uri: string, longEdge: number, format: SaveFormat) {
+export async function resizeLongEdge(uri: string, longEdge: number, format: SaveFormat) {
   const probe = await ImageManipulator.manipulate(uri).renderAsync();
 
   if (Math.max(probe.width, probe.height) <= longEdge) {
