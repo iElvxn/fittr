@@ -687,6 +687,23 @@ So that browsing and planning never wait on full-size images.
 
 *Implementation note: nullable `fits.cover_thumb_path` (migration), made on-device with the existing WebP resize pipeline, write-once like the cover. Depends on Story 6.1 (`StorageImage` and the DELETE policy). Spec: `spec-6-2-small-webp-fit-cover-thumbnails.md`.*
 
+### Story 6.12: WebP Item Cutouts
+
+As the team,
+We want item cutouts stored as WebP instead of PNG,
+So that storage and image downloads per item stay cheap enough to offer a free closet.
+
+**Acceptance Criteria:**
+
+**Given** I add an item
+**Then** its cutout is stored as `cutout.webp`, with the same dimensions and transparency as before
+
+**Given** an item added before this change
+**When** Item detail or the Fit builder shows it
+**Then** its PNG cutout renders as before
+
+*Implementation note: on-device WebP encode after background removal; dominant color still read from the lossless output; migration widens the `cutout_path` check to accept `.webp`; no backfill. Placed after 6.2 so it lands before 6.11's storage check. Depends on Story 6.1. Spec: `spec-6-12-webp-item-cutouts.md`.*
+
 ### Story 6.3: One Shared Auth Session
 
 As a user,
