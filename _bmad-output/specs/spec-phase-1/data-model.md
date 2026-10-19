@@ -83,7 +83,11 @@ Every table gets explicit per-operation policies, never one blanket rule: `USING
 ### Storage layout
 ```
 wardrobe/{user_id}/items/{item_id}/cutout.png
-wardrobe/{user_id}/items/{item_id}/thumb.jpg
-wardrobe/{user_id}/fits/{fit_id}/cover.png
-wardrobe/{user_id}/avatar.jpg
+wardrobe/{user_id}/items/{item_id}/thumb.webp
+wardrobe/{user_id}/fits/{fit_id}/cover-{timestamp}.png
+wardrobe/{user_id}/avatar-{timestamp}.jpg
 ```
+Covers and avatars get a new file name on every change, never an overwrite: the
+app caches images on the device by storage path, which is only valid while a
+path's bytes never change. The previous file is deleted once the row points at
+the new one.

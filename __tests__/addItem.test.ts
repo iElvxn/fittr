@@ -29,12 +29,12 @@ describe('uploadItem', () => {
     expect(upload).toHaveBeenCalledWith(
       CUTOUT_PATH,
       expect.any(ArrayBuffer),
-      expect.objectContaining({ contentType: 'image/png', upsert: true }),
+      expect.objectContaining({ contentType: 'image/png', upsert: true, cacheControl: '31536000' }),
     );
     expect(upload).toHaveBeenCalledWith(
       THUMB_PATH,
       expect.any(ArrayBuffer),
-      expect.objectContaining({ contentType: 'image/webp', upsert: true }),
+      expect.objectContaining({ contentType: 'image/webp', upsert: true, cacheControl: '31536000' }),
     );
     expect(paths).toEqual({ cutoutPath: CUTOUT_PATH, thumbPath: THUMB_PATH });
   });

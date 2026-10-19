@@ -1,9 +1,9 @@
 import { PixelRatio, Pressable, useColorScheme, View } from 'react-native';
-import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
 import { ChevronRightIcon } from '@/components/ui/icons/ChevronRightIcon';
 import { PlusIcon } from '@/components/ui/icons/PlusIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
 import type { WearPhoto } from '@/lib/fits/wearRef';
 import type { FitRow } from '@/lib/fits/listFits';
@@ -107,10 +107,12 @@ export function PlannerDayRow({ day, fit, coverUrl, meta, photo = null, photoUrl
                   : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
               }
             >
-              {coverUrl ? (
-                <Image
+              {fit?.cover_path && coverUrl ? (
+                <StorageImage
+                  testID={`planner-cover-${day.date}`}
                   accessibilityLabel=""
-                  source={{ uri: coverUrl }}
+                  path={fit.cover_path}
+                  url={coverUrl}
                   style={{ width: '100%', height: '100%' }}
                   contentFit="contain"
                 />

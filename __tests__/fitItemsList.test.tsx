@@ -72,7 +72,7 @@ describe('FitItemsList', () => {
 
     // `expo-image` normalizes `source` into an array, same as `profileEdit.test.tsx`'s `avatar-preview` assertion.
     expect(screen.getByTestId('fit-items-list-thumbnail').props.source).toEqual(
-      expect.arrayContaining([{ uri: 'https://signed.example/a.webp' }]),
+      expect.arrayContaining([{ uri: 'https://signed.example/a.webp', cacheKey: 'user-1/items/a/thumb.webp' }]),
     );
   });
 

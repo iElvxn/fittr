@@ -1,6 +1,7 @@
 import { File } from 'expo-file-system';
 
 import { supabase } from '@/lib/supabase';
+import { WRITE_ONCE_CACHE_CONTROL } from '@/lib/storageCache';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
 
 /** One canvas placement, shaped straight off `stores/fitBuilder.ts`'s `PlacedItem`. */
@@ -33,6 +34,7 @@ export async function uploadCover(userId: string, fitId: string, collageUri: str
   const { error } = await supabase.storage.from('wardrobe').upload(coverPath, arrayBuffer, {
     contentType: 'image/png',
     upsert: true,
+    cacheControl: WRITE_ONCE_CACHE_CONTROL,
   });
 
   if (error) {

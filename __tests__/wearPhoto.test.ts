@@ -247,7 +247,7 @@ describe('saveWearPhoto', () => {
     ]);
     for (const [, body, options] of upload.mock.calls as unknown as [string, unknown, Record<string, unknown>][]) {
       expect(body).toBeInstanceOf(ArrayBuffer);
-      expect(options).toEqual({ contentType: 'image/webp' });
+      expect(options).toEqual({ contentType: 'image/webp', cacheControl: '31536000' });
     }
     expect(supabase.from).toHaveBeenCalledWith('fit_wears');
     expect(update).toHaveBeenCalledWith({

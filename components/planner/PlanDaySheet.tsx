@@ -1,7 +1,7 @@
 import { Modal, PixelRatio, Pressable, ScrollView, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 
+import { StorageImage } from '@/components/ui/StorageImage';
 import { Text } from '@/components/ui/Text';
 import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { CloseIcon } from '@/components/ui/icons/CloseIcon';
@@ -211,10 +211,11 @@ export function PlanDaySheet({
                           : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
                       }
                     >
-                      {coverUrl ? (
-                        <Image
+                      {fit.cover_path && coverUrl ? (
+                        <StorageImage
                           accessibilityLabel=""
-                          source={{ uri: coverUrl }}
+                          path={fit.cover_path}
+                          url={coverUrl}
                           style={{ width: '100%', height: '100%' }}
                           contentFit="contain"
                         />

@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 
 describe('uploadCover', () => {
-  it('uploads to a version-stamped path with upsert', async () => {
+  it('uploads to a version-stamped path with upsert, cached for a year', async () => {
     const upload = jest.fn().mockResolvedValue({ error: null });
     (supabase.storage.from as jest.Mock).mockReturnValue({ upload });
 
@@ -42,7 +42,7 @@ describe('uploadCover', () => {
     expect(upload).toHaveBeenCalledWith(
       COVER_PATH,
       expect.any(ArrayBuffer),
-      expect.objectContaining({ contentType: 'image/png', upsert: true }),
+      expect.objectContaining({ contentType: 'image/png', upsert: true, cacheControl: '31536000' }),
     );
     expect(coverPath).toBe(COVER_PATH);
   });

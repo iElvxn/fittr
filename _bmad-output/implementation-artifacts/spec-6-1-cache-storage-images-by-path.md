@@ -1,10 +1,11 @@
 ---
 title: 'Story 6.1: Cache Storage Images by Path'
 type: 'refactor'
-created: '2026-09-27'
-status: 'draft'
-route: ''
-review_loop_iteration: 0
+created: '2026-09-28'
+status: 'done'
+baseline_commit: '6143e0dedf0ed7b1bf6231dcad988f7cd846c91e'
+route: 'dispatch'
+review_loop_iteration: 1
 context: []
 ---
 
@@ -46,37 +47,82 @@ context: []
 
 ## Code Map
 
-- `components/fits/WearPhotoImage.tsx` -- the golden example (`cacheKey: path`, `memory-disk`, `recyclingKey`). Generalize it into `components/ui/StorageImage.tsx` (props: `path`, `url`, plus pass-through Image props), and make `WearPhotoImage` a thin wrapper or replace it.
-- Call sites that show a signed Storage URL by `uri` (from a grep of `source={{ uri`): `components/fits/FitItemsList.tsx:54`, `components/fits/FitsGridCell.tsx:139`, `components/home/TodayFitCard.tsx:96`, `components/home/WeekStrip.tsx:72`, `components/planner/DayFitHeader.tsx:62`, `components/planner/PlanDaySheet.tsx:217`, `components/planner/PlannerDayRow.tsx:113`, `components/planner/PlannerMonthGrid.tsx:143`, `components/planner/WearPhotoSection.tsx:121`, `components/wardrobe/ClosetTile.tsx:129` (and its `recyclingKey={thumbnailUrl}` at :132), `components/wardrobe/ItemFitsStrip.tsx:68`, `components/wardrobe/WardrobeGridCell.tsx:29`, `components/fitBuilder/CanvasItem.tsx:219`, `app/(tabs)/index.tsx:276` (avatar), `app/fit/[id].tsx:480`, `app/item/[id].tsx:316`. Each already has the path next to the URL (the signed-URL map is keyed by path).
-- Conditional site: `app/profile.tsx:110,133` -- `displayedAvatarUri = pickedAvatarUri ?? avatarUrl` mixes a local file with the signed avatar. Render the picked URI with a plain `Image` and the stored avatar with `StorageImage` (path `profile.avatar_path`).
-- Leave alone (local URIs): `components/fitBuilder/SaveFitSheet.tsx:77`, `components/wardrobe/BatchQueueRow.tsx:110`, `components/wardrobe/CameraFilmstrip.tsx:43`, `app/onboarding.tsx:96`.
-- `lib/profile/avatar.ts:30-45` -- fixed path + `upsert: true`. Change to a versioned path, no upsert, and return it. The caller (`lib/profile/updateProfile.ts`) removes the previous path after the row update succeeds. `app/profile.tsx` and `app/onboarding.tsx` call it.
-- Uploads that get `cacheControl`: `lib/fits/saveFit.ts:33`, `lib/wardrobe/addItem.ts:76`, `lib/fits/wearPhoto.ts:136`, `lib/profile/avatar.ts:35`.
-- `supabase/migrations/0002_avatar_storage.sql` -- the read/insert/update policies are by folder, so a versioned file name needs no change to them. It has no DELETE policy (`:8,68`).
-- `supabase/migrations/0014_wardrobe_storage_delete.sql` (new) -- `wardrobe_delete_own`, modeled on `0013_wear_photos.sql:111-119`. Update the comments in `0002` that say deletes are not allowed.
-- `supabase/tests/rls.test.ts:114` (`wardrobe storage RLS`) -- add owner-can-delete and other-user-cannot-delete cases, following the wear-photos case at `:934-961`.
-- Existing cleanups that start working once the policy exists: `lib/fits/saveFit.ts` (previous-cover delete and `rollbackCover`), `lib/wardrobe/addItem.ts` rollback. No code change needed; check that their tests don't assume the delete is a no-op.
-- Epic 1 retro item 3 (database check on `avatar_path` shape, still open) must accept `{userId}/avatar-{ts}.jpg` as well as the old `{userId}/avatar.jpg`.
+- `components/fits/WearPhotoImage.tsx` -- the golden example: `{ uri: url, cacheKey: path }`, `cachePolicy="memory-disk"`, `recyclingKey`, and a `localUri` that bypasses the cache. Generalize into `components/ui/StorageImage.tsx` (`path`, `url`, plus pass-through `Image` props such as `contentFit`, `style`, `testID`, `accessibilityLabel`, `onLoad`, `placeholder`, `transition`). It passes no source while `url` is null and defaults `recyclingKey` to `path`. `WearPhotoImage` becomes a thin wrapper that keeps its `contentFit="cover"`, thumbhash placeholder, `transition` and `recyclingKey` override.
+- Call sites that already hold the path next to the URL (swap `Image` for `StorageImage`): `components/fits/FitItemsList.tsx:54` (`item.thumbPath`); `components/home/WeekStrip.tsx:72`, `components/planner/PlanDaySheet.tsx:217`, `components/wardrobe/ItemFitsStrip.tsx:68` (`fit.cover_path`); `components/wardrobe/ClosetTile.tsx:129` (`thumbPath` prop); `app/fit/[id].tsx:480` (cover); `app/item/[id].tsx:316` (cutout); `app/(tabs)/index.tsx:276` (`profile.avatar_path`).
+- Call sites that receive only a URL prop (add a sibling path prop, filled by the parent from the key it signed): `FitsGridCell` (`thumbnailUrl`; parent `app/(tabs)/fits.tsx`), `TodayFitCard` (`coverUrl`), `DayFitHeader` (`coverUrl`; parent `PlanDaySheet.tsx:157,172`), `PlannerDayRow` and `PlannerMonthGrid` (`coverUrl`; they already take `photo.thumbPath` for the wear photo), `WearPhotoSection` (`coverUrl`), `WardrobeGridCell` (`thumbnailUrl`; parent `components/fitBuilder/CatalogSheet.tsx`), `CanvasItem` (`imageUrl`; parent `components/fitBuilder/FitCanvas.tsx:161`, which already has `cutoutPath`).
+- `components/wardrobe/ClosetTile.tsx:94-110` -- `handleLoad` ignores any `onLoad` whose `event.source.url` isn't the current `thumbnailUrl`, to skip a recycled tile's late load. With a path cache key, a cache hit may report the URL the file was first stored under (unverified in expo-image), which would reject every cached load and leave tiles at the category default aspect. Guard by path instead (e.g. the path the load was requested for), not by URL.
+- `app/profile.tsx:110,133` -- `displayedAvatarUri = pickedAvatarUri ?? avatarUrl`. Picked: plain `Image` by URI. Stored: `StorageImage` with `profile.avatar_path`. Keep `testID="avatar-preview"` on whichever renders.
+- Leave alone (local URIs or bundled assets): `components/fitBuilder/SaveFitSheet.tsx:77`, `components/wardrobe/BatchQueueRow.tsx:110`, `components/wardrobe/CameraFilmstrip.tsx:43`, `app/onboarding.tsx:96`, `components/fitBuilder/GarmentSilhouette.tsx:38`.
+- `lib/profile/avatar.ts:25-45` -- `uploadAvatar` writes `{userId}/avatar.jpg` with `upsert: true`. Change to `{userId}/avatar-${Date.now()}.jpg`, no upsert, with `cacheControl`; return the path. Update its doc comment.
+- `lib/profile/updateProfile.ts` -- add optional `previousAvatarPath`. After the row update succeeds and `avatarPath` differs from it, best-effort `remove([previousAvatarPath])`, reported to Sentry on failure, never thrown. If the server rejects the row update after a new `avatarPath` was uploaded, best-effort remove the new file before rethrowing, so a failed save leaves no orphan. Not on a no-connection error: the update may have committed before the response was lost, and removing the file would leave the row pointing at nothing -- an orphan is the cheaper failure.
+- Callers: `app/profile.tsx:82-88` passes `profile?.avatar_path`. `app/onboarding.tsx:58-59` passes nothing (a new account has no avatar). Update both files' "fixed-filename upsert" comments (`profile.tsx:32-35`, `onboarding.tsx:22-24`). Cancel stays a true no-op, since nothing uploads until Save.
+- `cacheControl: '31536000'` on: `lib/fits/saveFit.ts:33` (`uploadCover`); `lib/wardrobe/addItem.ts:76` (`uploadOne`: its paths are fixed per item id, but a retry only re-uploads the same processed bytes); `lib/fits/wearPhoto.ts:136` (`upload`, `wear-photos` bucket); `lib/profile/avatar.ts`.
+- `supabase/migrations/0014_wardrobe_storage_delete.sql` (new) -- `drop policy if exists` then `create policy "wardrobe_delete_own" on storage.objects for delete to authenticated using (bucket_id = 'wardrobe' and (storage.foldername(name))[1] = (select auth.uid())::text)`, copied from `0013_wear_photos.sql:111-119`. Its header comment explains why `0002`'s "deliberately no DELETE policy" no longer holds. Don't edit `0002`; applied migrations stay as they are.
+- `supabase/tests/rls.test.ts:114-184` (`wardrobe storage RLS`) -- add: a second user's `remove` leaves the file (checked with `admin.storage.list`), the owner's `remove` deletes it. Follow `:934-961`.
+- Cleanups that start working with the policy, no code change: `saveFit.ts` `rollbackCover` and `insertFit`'s previous-cover delete; `addItem.ts:65` and `saveBatch` rollbacks. Their unit tests mock Storage, so they don't change.
+- Tests asserting `source.uri` that gain `cacheKey`: `__tests__/fitDetail.test.tsx`, `fitItemsList.test.tsx`, `home.test.tsx`, `itemDetail.test.tsx`, `planner.test.tsx`, `profileEdit.test.tsx`.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `__tests__/storageImage.test.tsx` and the affected screen/component tests -- the component passes `cacheKey: path`, `memory-disk` and `recyclingKey={path}`, and a changed URL for the same path keeps the same cache key. Update existing `imageProp(...).uri` assertions to also expect `cacheKey`.
-- [ ] `components/ui/StorageImage.tsx`, `components/fits/WearPhotoImage.tsx` -- the shared component.
-- [ ] every call site in the Code Map -- switch to `StorageImage`.
-- [ ] `lib/profile/avatar.ts`, `lib/profile/updateProfile.ts` (+ tests) -- versioned avatar path and cleanup of the previous file.
-- [ ] the four upload sites -- `cacheControl: '31536000'`.
-- [ ] `supabase/migrations/0014_wardrobe_storage_delete.sql`, `supabase/tests/rls.test.ts` -- the delete policy and its cross-user test. Apply the migration to the CI Supabase project before the RLS suite runs.
+- [x] `__tests__/storageImage.test.tsx` (new) -- `cacheKey: path`, `memory-disk`, `recyclingKey` defaulting to `path`, a re-signed URL for the same path keeps the same cache key, a null URL passes no source.
+- [x] `components/ui/StorageImage.tsx`, `components/fits/WearPhotoImage.tsx` -- the shared component; the wrapper keeps wear-photo behavior.
+- [x] Every call site in the Code Map (parents pass the path; `ClosetTile`'s load guard compares by path) -- switch to `StorageImage`, and update the listed tests to expect `cacheKey`.
+- [x] `app/profile.tsx` -- split the picked and stored avatar preview.
+- [x] `lib/profile/avatar.ts`, `lib/profile/updateProfile.ts`, `app/profile.tsx`, `app/onboarding.tsx` (+ `avatar.test.ts`, `updateProfile.test.ts`, `profileEdit.test.tsx`) -- versioned avatar path; delete the previous file after the row update; remove the new file if the row update fails.
+- [x] `lib/fits/saveFit.ts`, `lib/wardrobe/addItem.ts`, `lib/fits/wearPhoto.ts` (+ their upload-option assertions) -- `cacheControl: '31536000'`.
+- [x] `supabase/migrations/0014_wardrobe_storage_delete.sql`, `supabase/tests/rls.test.ts` -- the policy and its cross-user test. The developer applies `0014` to the dev/CI Supabase project (SQL Editor, as with `0013`) before running the RLS suite.
 
 **Acceptance Criteria:**
-- Given `grep -rn "source={{ uri" components app`, when run, then only the local-URI call sites listed above remain.
-- Given the RLS suite with live credentials, when run, then the owner can delete a file in their `wardrobe` folder and a second user cannot.
-- Given the app on a device, when the Wardrobe grid is opened, an item is added, and the grid is opened again, then the existing thumbnails don't download again (check in the network inspector or with an offline toggle after the first load).
+- Given `grep -rn "source={{ uri" components app`, when run, then only the local-URI sites in the Code Map remain, plus `app/profile.tsx`'s picked-avatar branch.
+- Given the RLS suite with live credentials and `0014` applied, when run, then the owner can delete a file in their `wardrobe` folder and a second user cannot.
+- Given the Wardrobe grid on a device, when it is opened, an item is added, and it is opened again, then existing thumbnails don't download again and tiles keep their measured shapes.
 
 ## Design Notes
 
-- Supabase's Smart CDN caches each signed link separately, so new tokens always miss it. The device cache keyed by path is the only layer that can skip the download. `cacheControl` only sets the HTTP client lifetime, and expo-image's disk cache goes by `cacheKey`, so it's a small secondary gain.
+- Supabase's Smart CDN caches each signed link separately, so new tokens always miss it. The device cache keyed by path is the only layer that can skip the download; `cacheControl` is a small secondary gain.
+- Paths can't collide across buckets: wear photos live under `{userId}/{wearId}/`, wardrobe files under `{userId}/items/`, `{userId}/fits/` and `{userId}/avatar-*`.
 - The signed-link requests themselves still run. They are small JSON calls, and reducing them is out of scope.
+- Epic 1 retro item 3 (a database check on `avatar_path`'s shape, still open) must accept `{userId}/avatar-{ts}.jpg` as well as `{userId}/avatar.jpg`.
+
+## Implementation Notes
+
+- Path props (deviation from the Code Map's wording, same intent): `TodayFitCard`, `DayFitHeader`, `PlannerDayRow`, `WearPhotoSection` and `PlannerMonthGrid`'s `MonthCell` already receive the `fit` whose `cover_path` their parent signed, so they read `fit.cover_path` rather than take a sibling `coverPath` prop -- one source of truth, and their parents are unchanged. Only URL-only components get a new required prop: `FitsGridCell.thumbnailPath` (`string | null`), `WardrobeGridCell.thumbnailPath`, `CanvasItem.imagePath` (`string | null`).
+- `WearPhotoImage`'s `localUri` branch stays a plain `Image` (matrix: local images never go through `StorageImage`); `storageImageUsage.test.ts` allows it only for `localUri`. Stored wear photos without a `recyclingKey` now recycle by path.
+- `storageImageUsage.test.ts` encodes the first acceptance criterion (the `source={{ uri` grep) as a test.
+
+## Spec Change Log
+
+- Review 1, triage #1 (blind-hunter + verification-gap): the Code Map's "remove the new file if the row update fails" also removed it on a no-connection error, after which the row may already point at it (a committed update whose response was lost) -- a broken avatar. Amended the `updateProfile.ts` line to roll back only on a server rejection. Known-bad state avoided: profile row pointing at a deleted avatar file. KEEP: every other change in this story as implemented and reviewed task by task (StorageImage, all call sites, ClosetTile guard, Profile preview split, versioned avatar, cleanup order, cacheControl, 0014 and its RLS test); the user chose a targeted fix over a full revert.
+
+## Review Triage Log
+
+Review 1 (blind-hunter, edge-case-hunter, verification-gap). Verdict / route -- finding -- evidence.
+
+| # | Verdict | Route | Finding | Evidence |
+|---|---|---|---|---|
+| 1 | medium | bad_spec | `updateProfile` deletes the new avatar on a no-connection update error, though the row may have committed (lost response) | `AuthRetryableFetchError` is raised by a failed fetch, which can follow a server-side commit; the row would then point at a deleted file. Code follows the Code Map's "remove the new file if the row update fails". |
+| 2 | low | patch | Home/Planner covers and the Home avatar have no rendered `cacheKey` assertion | `home.test.tsx`/`planner.test.tsx` assert `cacheKey` only for wear photos; Home's avatar is always mocked absent (`home.test.tsx:165-166`). A wrong `path` would pass the source-text guard. |
+| 3 | low | defer | `CanvasItem`'s `StorageImage` branch is never rendered by a test | `CanvasItem` is mocked in every suite (Reanimated v4 has no working jest mock, `fitCanvas.test.tsx:9-18`); it has had no rendered test since before this story. |
+| 4 | maybe-false | defer | `0014` may not be applied to the project CI's RLS suite uses | Applied and passing (31/31) on the project in `.env.local`; whether CI's secrets point at the same project is unknown -- settle by checking the CI secrets' project ref. |
+| 5 | low | reject | Update matching zero rows would delete the previous avatar the row still uses | Unreachable in practice: the row is created by `handle_new_user` and `profiles_update_own` covers it; fix adds a `.select` + branch. |
+| 6 | false | reject | Saving before the profile loads leaves `previousAvatarPath` undefined | `app/profile.tsx:121-189`: Edit only renders after `isLoading`/`isError` clear, so `profile` is loaded. A stale cache can only orphan a file (low). |
+| 7 | low | reject | Upload committed but response lost leaves an orphan `avatar-{ts}.jpg` | Orphan costs storage only; same pre-existing pattern as `uploadCover`; fix adds a branch. |
+| 8 | false | reject | Older builds overwriting legacy `avatar.jpg` serve a stale path-cached avatar | The app is unreleased (no tags or store builds); every build runs this JS, so nothing writes `avatar.jpg` any more. |
+| 9 | maybe-false | defer | A cache hit may report a non-signed `source.url` (bare key or `file://`), so `isSignedUrlFor` drops the measurement | User's device check passed (tiles kept shapes); the other platform is unverified. If true: medium (tiles stay at default aspect). Settle by logging `event.source.url` on a cached load on iOS and Android. |
+| 10 | low | patch | `storageImageUsage` regex misses the `source={{ uri }}` shorthand | Real: `uri\s*:` requires a colon. Direct regex fix. Variables/template literals are left to the rendered tests. |
+| 11 | false | reject | Guard scans only `app/` and `components/` | No `.tsx` exists under `lib/` or `stores/`; all JSX lives in the scanned roots. |
+| 12 | low | reject | Whole-file allowlist exemptions | The four files show only local captures/collages; pinning each adds test machinery for an unlikely regression. |
+| 13 | low | patch | `addItem.ts` comment says `upsert` is "same as `uploadAvatar`" | `uploadAvatar` no longer upserts (`lib/wardrobe/addItem.ts:40`). |
+| 14 | medium | defer | Editing a Fit whose `fit_items` write fails soft-deletes the existing Fit (`rollbackOrphanedFit`), and 0014 now makes `rollbackCover` delete its new cover | Pre-existing: `app/new-fit.tsx:270` reuses `insertFit` for edits with the same id. A retry restores it (`deleted_at: null`), but an abandoned save makes the Fit vanish. Not caused by this story. |
+| 15 | low | patch | `docs/phase-1-spec.md:145` and `spec-phase-1/data-model.md:88` still give `avatar.jpg` | Doc drift caused by the versioned path. |
+| 16 | low | defer | Epic 1 retro action (sprint-status) targets `avatar.jpg` only for account deletion | Users can now hold several `avatar-*.jpg` (failed best-effort deletes); that story should remove the whole `{uid}/` folder. |
+| 17 | low | patch | `lib/storageCache.ts` comment overstates the header's effect | The device cache (SDWebImage/Glide) ignores `max-age`; the header only reaches HTTP layers. Claim of no measurement is false: the device check logged `cacheType`. |
+| 18 | medium | defer | Private images stay in the device cache after sign-out | Pre-existing: expo-image's default `cachePolicy` is already `disk`, and nothing clears it on sign-out today. |
+| 19 | low | reject | `isSignedUrlFor` should live in `lib/` | One caller; no named harm. |
+| 20 | low | reject | Same-millisecond avatar uploads collide (409) | A retry gets a new timestamp; two devices in one ms is not everyday use. |
+| 21 | false | reject | Onboarding test doesn't assert that no `previousAvatarPath` is passed | `onboarding.test.tsx`'s `toHaveBeenCalledWith('user-1', { displayName, avatarPath })` already fails on any defined extra key. Its mock was updated to the versioned path shape. |
+| 22 | low | patch | RLS test doesn't check an anonymous client can't delete | Cheap security check; `0014` is `to authenticated`. |
 
 ## Verification
 

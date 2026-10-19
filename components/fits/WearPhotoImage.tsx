@@ -1,5 +1,7 @@
-import { Image, type ImageStyle } from 'expo-image';
+import { Image, type ImageProps, type ImageStyle } from 'expo-image';
 import type { StyleProp } from 'react-native';
+
+import { StorageImage } from '@/components/ui/StorageImage';
 
 type Props = {
   /** Storage path of the file shown -- the cache key, since the signed URL changes on every re-sign. */
@@ -7,7 +9,7 @@ type Props = {
   /** Signed URL for `path`, or null/undefined while it's being signed (the placeholder shows meanwhile). */
   url: string | null | undefined;
   thumbhash: string | null;
-  /** A just-picked local file shown while it saves; takes the place of `url` and is never cached. */
+  /** A just-picked local file shown while it saves; takes the place of `url` and is never cached by path. */
   localUri?: string;
   /** The day, in grids, so a recycled cell never flashes another day's photo. */
   recyclingKey?: string;
@@ -17,25 +19,23 @@ type Props = {
 
 /**
  * Every wear photo renders through here so the cost controls hold
- * everywhere: cached in memory and on disk by storage path (a replaced photo
- * is a new file name, so a path's cache entry never goes stale) and a
- * thumbhash placeholder while it loads. Decorative to screen readers -- the
+ * everywhere: cached by storage path (`StorageImage`) and a thumbhash
+ * placeholder while it loads. Decorative to screen readers -- the
  * surrounding control carries the label.
  */
 export function WearPhotoImage({ path, url, thumbhash, localUri, recyclingKey, testID, style }: Props) {
-  const source = localUri ? { uri: localUri } : url ? { uri: url, cacheKey: path } : null;
+  const shared: Pick<ImageProps, 'testID' | 'accessible' | 'placeholder' | 'contentFit' | 'transition' | 'style'> = {
+    testID,
+    accessible: false,
+    placeholder: thumbhash ? { thumbhash } : undefined,
+    contentFit: 'cover',
+    transition: 150,
+    style: [{ width: '100%', height: '100%' }, style],
+  };
 
-  return (
-    <Image
-      testID={testID}
-      accessible={false}
-      source={source}
-      placeholder={thumbhash ? { thumbhash } : undefined}
-      cachePolicy="memory-disk"
-      recyclingKey={recyclingKey}
-      contentFit="cover"
-      transition={150}
-      style={[{ width: '100%', height: '100%' }, style]}
-    />
-  );
+  if (localUri) {
+    return <Image {...shared} source={{ uri: localUri }} cachePolicy="memory-disk" recyclingKey={recyclingKey} />;
+  }
+
+  return <StorageImage {...shared} path={path} url={url} recyclingKey={recyclingKey} />;
 }

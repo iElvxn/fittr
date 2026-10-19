@@ -109,6 +109,25 @@ describe('CatalogSheet', () => {
     expect(onSelectItem).toHaveBeenCalledWith(items[0]);
   });
 
+  it("caches each thumbnail by the item's storage path, not its signed URL", async () => {
+    await render(
+      <CatalogSheet
+        visible
+        category="top"
+        items={[item()]}
+        thumbnailUrls={{ 'user-1/items/item-1/thumb.webp': 'https://signed.example/thumb.webp' }}
+        onSelectItem={jest.fn()}
+        onClose={jest.fn()}
+      />,
+    );
+
+    const image = screen.getByTestId('wardrobe-thumbnail-image');
+    expect(image.props.source).toEqual([
+      { uri: 'https://signed.example/thumb.webp', cacheKey: 'user-1/items/item-1/thumb.webp' },
+    ]);
+    expect(image.props.recyclingKey).toBe('user-1/items/item-1/thumb.webp');
+  });
+
   it('shows the empty-category message when the active filter matches nothing', async () => {
     await render(
       <CatalogSheet visible category="shoes" items={[]} thumbnailUrls={{}} onSelectItem={jest.fn()} onClose={jest.fn()} />,

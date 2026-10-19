@@ -173,6 +173,66 @@ describeIfConfigured('wardrobe storage RLS: cross-user isolation', () => {
       if (user2Id) await admin.auth.admin.deleteUser(user2Id);
     }
   });
+
+  // Story 6.1 (0014_wardrobe_storage_delete.sql): the owner can delete files
+  // in their own folder -- old avatars, old covers, rollbacks -- and nobody
+  // else can.
+  it("a second user cannot delete the first user's file, but the owner can", async () => {
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email1 = `rls-storage-del-1-${stamp}@mailinator.com`;
+    const email2 = `rls-storage-del-2-${stamp}@mailinator.com`;
+
+    const created1 = await admin.auth.admin.createUser({ email: email1, password, email_confirm: true });
+    expect(created1.error).toBeNull();
+    const user1Id = created1.data.user?.id;
+    expect(user1Id).toBeTruthy();
+
+    const created2 = await admin.auth.admin.createUser({ email: email2, password, email_confirm: true });
+    expect(created2.error).toBeNull();
+    const user2Id = created2.data.user?.id;
+    expect(user2Id).toBeTruthy();
+
+    const fileName = `avatar-${stamp}.jpg`;
+    const objectPath = `${user1Id}/${fileName}`;
+    const listUser1Folder = async () =>
+      (await admin.storage.from('wardrobe').list(user1Id!)).data?.map((file) => file.name) ?? [];
+
+    try {
+      const client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn1 = await client1.auth.signInWithPassword({ email: email1, password });
+      expect(signIn1.error).toBeNull();
+
+      const uploadResult = await client1.storage
+        .from('wardrobe')
+        .upload(objectPath, new Uint8Array([1, 2, 3, 4]), { contentType: 'image/jpeg' });
+      expect(uploadResult.error).toBeNull();
+
+      const client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn2 = await client2.auth.signInWithPassword({ email: email2, password });
+      expect(signIn2.error).toBeNull();
+
+      // Storage's remove reports RLS-hidden objects as an empty result, not
+      // an error, so check the object is still there -- after a signed-out
+      // client and after another signed-in user.
+      const anon = createClient(supabaseUrl!, supabasePublishableKey!);
+      await anon.storage.from('wardrobe').remove([objectPath]);
+      expect(await listUser1Folder()).toContain(fileName);
+
+      await client2.storage.from('wardrobe').remove([objectPath]);
+      expect(await listUser1Folder()).toContain(fileName);
+
+      const ownDelete = await client1.storage.from('wardrobe').remove([objectPath]);
+      expect(ownDelete.error).toBeNull();
+      expect(await listUser1Folder()).not.toContain(fileName);
+    } finally {
+      await admin.storage.from('wardrobe').remove([objectPath]);
+      if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+      if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+    }
+  });
 });
 
 /**

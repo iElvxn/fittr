@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { PixelRatio, Pressable, View, useColorScheme } from 'react-native';
-import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
 import { HeartIcon } from '@/components/ui/icons/HeartIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { FitError } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
@@ -22,6 +22,8 @@ const FAVORITE_HIT_SLOP = 8;
 type Props = {
   name: string;
   thumbnailUrl: string | null;
+  /** Storage path `thumbnailUrl` was signed for -- the image's cache key. Null when the Fit has no cover. */
+  thumbnailPath: string | null;
   columnWidth: number;
   onPress: () => void;
   fitId: string;
@@ -50,6 +52,7 @@ type Props = {
 export function FitsGridCell({
   name,
   thumbnailUrl,
+  thumbnailPath,
   columnWidth,
   onPress,
   fitId,
@@ -132,11 +135,12 @@ export function FitsGridCell({
           backgroundColor ? 'overflow-hidden rounded-lg' : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
         }
       >
-        {thumbnailUrl ? (
-          <Image
+        {thumbnailPath && thumbnailUrl ? (
+          <StorageImage
             testID="fits-grid-thumbnail-image"
             accessibilityLabel=""
-            source={{ uri: thumbnailUrl }}
+            path={thumbnailPath}
+            url={thumbnailUrl}
             style={{ width: '100%', height: '100%' }}
             contentFit="contain"
           />

@@ -1,7 +1,7 @@
 import { PixelRatio, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
-import { Image } from 'expo-image';
 
+import { StorageImage } from '@/components/ui/StorageImage';
 import { Text } from '@/components/ui/Text';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import type { FitRow } from '@/lib/fits/listFits';
@@ -61,11 +61,12 @@ export function ItemFitsStrip({ fits }: Props) {
                   : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
               }
             >
-              {coverUrl ? (
-                <Image
+              {fit.cover_path && coverUrl ? (
+                <StorageImage
                   testID="item-fits-cover"
                   accessibilityLabel=""
-                  source={{ uri: coverUrl }}
+                  path={fit.cover_path}
+                  url={coverUrl}
                   style={{ width: '100%', height: '100%' }}
                   contentFit="contain"
                 />

@@ -70,7 +70,7 @@ describe('Onboarding', () => {
 
   it('uploads a picked avatar and includes its path on continue', async () => {
     (pickAvatar as jest.Mock).mockResolvedValue({ uri: 'file://picked.jpg' });
-    (uploadAvatar as jest.Mock).mockResolvedValue('user-1/avatar.jpg');
+    (uploadAvatar as jest.Mock).mockResolvedValue('user-1/avatar-1700000000000.jpg');
     (updateProfile as jest.Mock).mockResolvedValue(undefined);
     const user = userEvent.setup();
 
@@ -84,7 +84,7 @@ describe('Onboarding', () => {
     expect(uploadAvatar).toHaveBeenCalledWith('user-1', 'file://picked.jpg');
     expect(updateProfile).toHaveBeenCalledWith('user-1', {
       displayName: 'Jane Doe',
-      avatarPath: 'user-1/avatar.jpg',
+      avatarPath: 'user-1/avatar-1700000000000.jpg',
     });
   });
 

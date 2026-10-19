@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, ScrollView, TextInput, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
@@ -11,6 +10,7 @@ import { BackHeader } from '@/components/ui/BackHeader';
 import { ACTION_ICON_SIZE, DetailAction } from '@/components/ui/DetailAction';
 import { PencilIcon } from '@/components/ui/icons/PencilIcon';
 import { TrashIcon } from '@/components/ui/icons/TrashIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { CategoryPicker } from '@/components/wardrobe/CategoryPicker';
 import { ColorSwatchPicker, colorLabel } from '@/components/wardrobe/ColorSwatchPicker';
@@ -310,10 +310,11 @@ export default function ItemDetail() {
   }
 
   const cutout = cutoutUrl ? (
-    <Image
+    <StorageImage
       testID="item-detail-cutout"
       accessibilityLabel="Item photo"
-      source={{ uri: cutoutUrl }}
+      path={item.cutout_path}
+      url={cutoutUrl}
       style={{ width: '100%', height: '100%' }}
       contentFit="contain"
     />

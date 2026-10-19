@@ -164,6 +164,7 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
                     key={item.id}
                     item={item}
                     imageUrl={imageUrl}
+                    imagePath={cutoutPath ?? null}
                     canvasWidth={size.width}
                     canvasHeight={size.height}
                     itemSize={CANVAS_ITEM_SIZE}

@@ -101,6 +101,7 @@ export function CatalogSheet({ visible, category, items, thumbnailUrls, onSelect
                   category={item.category}
                   name={item.name}
                   thumbnailUrl={thumbnailUrls[item.thumb_path] ?? null}
+                  thumbnailPath={item.thumb_path}
                   size={cellSize}
                   onPress={() => onSelectItem(item)}
                 />

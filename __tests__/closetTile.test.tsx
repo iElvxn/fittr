@@ -9,11 +9,23 @@ import {
   TILE_PADDING,
   clampAspect,
   closetTileHeight,
+  isSignedUrlFor,
   resetMeasuredAspectCache,
 } from '@/components/wardrobe/ClosetTile';
 import { typeScale } from '@/lib/theme/fonts';
 
 const WIDTH = 110;
+
+/** Shaped like a Supabase signed link: the object path is in the URL, the token changes on every re-sign. */
+function signedUrl(path: string, token: string) {
+  return `https://project.supabase.co/storage/v1/object/sign/wardrobe/${path}?token=${token}`;
+}
+
+/** expo-image normalizes `source` into an array on its native view. */
+function imageSource() {
+  const source = screen.getByTestId('wardrobe-thumbnail-image').props.source;
+  return Array.isArray(source) ? source[0] : source;
+}
 
 function wellHeight() {
   return StyleSheet.flatten(screen.getByTestId('closet-tile-well').props.style).height;
@@ -184,15 +196,15 @@ describe('ClosetTile', () => {
 
     it('drops the previous measurement when a recycled tile gets a different item', async () => {
       const view = await render(
-        <ClosetTile category="top" name={null} brand={null} thumbPath="path/a" thumbnailUrl="https://x/a.webp?sig=1" width={WIDTH} onPress={jest.fn()} />,
+        <ClosetTile category="top" name={null} brand={null} thumbPath="user-1/items/a/thumb.webp" thumbnailUrl={signedUrl('user-1/items/a/thumb.webp', '1')} width={WIDTH} onPress={jest.fn()} />,
       );
       await fireEvent(screen.getByTestId('wardrobe-thumbnail-image'), 'load', {
-        nativeEvent: { source: { url: 'https://x/a.webp?sig=1', width: 200, height: 200 } },
+        nativeEvent: { source: { url: signedUrl('user-1/items/a/thumb.webp', '1'), width: 200, height: 200 } },
       });
       expect(wellHeight()).toBeCloseTo(closetTileHeight(WIDTH, 1));
 
       await view.rerender(
-        <ClosetTile category="shoes" name={null} brand={null} thumbPath="path/b" thumbnailUrl="https://x/b.webp?sig=1" width={WIDTH} onPress={jest.fn()} />,
+        <ClosetTile category="shoes" name={null} brand={null} thumbPath="user-1/items/b/thumb.webp" thumbnailUrl={signedUrl('user-1/items/b/thumb.webp', '1')} width={WIDTH} onPress={jest.fn()} />,
       );
 
       expect(wellHeight()).toBeCloseTo(closetTileHeight(WIDTH, CATEGORY_DEFAULT_ASPECT.shoes));
@@ -200,26 +212,38 @@ describe('ClosetTile', () => {
 
     it("ignores a late load from the recycled tile's previous image", async () => {
       await render(
-        <ClosetTile category="shoes" name={null} brand={null} thumbPath="path/b" thumbnailUrl="https://x/b.webp?sig=1" width={WIDTH} onPress={jest.fn()} />,
+        <ClosetTile category="shoes" name={null} brand={null} thumbPath="user-1/items/b/thumb.webp" thumbnailUrl={signedUrl('user-1/items/b/thumb.webp', '1')} width={WIDTH} onPress={jest.fn()} />,
       );
 
       await fireEvent(screen.getByTestId('wardrobe-thumbnail-image'), 'load', {
-        nativeEvent: { source: { url: 'https://x/a.webp?sig=1', width: 200, height: 200 } },
+        nativeEvent: { source: { url: signedUrl('user-1/items/a/thumb.webp', '1'), width: 200, height: 200 } },
       });
 
       expect(wellHeight()).toBeCloseTo(closetTileHeight(WIDTH, CATEGORY_DEFAULT_ASPECT.shoes));
     });
 
+    it('measures a cache hit that reports the older signed URL the file was first stored under', async () => {
+      await render(
+        <ClosetTile category="shoes" name={null} brand={null} thumbPath="user-1/items/a/thumb.webp" thumbnailUrl={signedUrl('user-1/items/a/thumb.webp', 'new')} width={WIDTH} onPress={jest.fn()} />,
+      );
+
+      await fireEvent(screen.getByTestId('wardrobe-thumbnail-image'), 'load', {
+        nativeEvent: { source: { url: signedUrl('user-1/items/a/thumb.webp', 'old'), width: 300, height: 400 } },
+      });
+
+      expect(wellHeight()).toBeCloseTo(closetTileHeight(WIDTH, 0.75));
+    });
+
     it('keeps the measured height when the same path gets a newly signed URL', async () => {
       const view = await render(
-        <ClosetTile category="shoes" name={null} brand={null} thumbPath="path/a" thumbnailUrl="https://x/a.webp?sig=1" width={WIDTH} onPress={jest.fn()} />,
+        <ClosetTile category="shoes" name={null} brand={null} thumbPath="user-1/items/a/thumb.webp" thumbnailUrl={signedUrl('user-1/items/a/thumb.webp', '1')} width={WIDTH} onPress={jest.fn()} />,
       );
       await fireEvent(screen.getByTestId('wardrobe-thumbnail-image'), 'load', {
-        nativeEvent: { source: { url: 'https://x/a.webp?sig=1', width: 300, height: 400 } },
+        nativeEvent: { source: { url: signedUrl('user-1/items/a/thumb.webp', '1'), width: 300, height: 400 } },
       });
 
       await view.rerender(
-        <ClosetTile category="shoes" name={null} brand={null} thumbPath="path/a" thumbnailUrl="https://x/a.webp?sig=2" width={WIDTH} onPress={jest.fn()} />,
+        <ClosetTile category="shoes" name={null} brand={null} thumbPath="user-1/items/a/thumb.webp" thumbnailUrl={signedUrl('user-1/items/a/thumb.webp', '2')} width={WIDTH} onPress={jest.fn()} />,
       );
 
       expect(wellHeight()).toBeCloseTo(closetTileHeight(WIDTH, 0.75));
@@ -228,6 +252,61 @@ describe('ClosetTile', () => {
     it('sizes the well so the inset cutout keeps its aspect ratio', () => {
       expect(closetTileHeight(WIDTH, 1)).toBeCloseTo(WIDTH);
       expect(closetTileHeight(WIDTH, 0.5)).toBeCloseTo((WIDTH - TILE_PADDING * 2) / 0.5 + TILE_PADDING * 2);
+    });
+  });
+
+  describe('isSignedUrlFor', () => {
+    const PATH = 'user-1/items/a/thumb.webp';
+
+    it('matches the same path whatever the token', () => {
+      expect(isSignedUrlFor(signedUrl(PATH, 'old'), PATH)).toBe(true);
+      expect(isSignedUrlFor(signedUrl(PATH, 'new'), PATH)).toBe(true);
+    });
+
+    it("rejects another item's URL, including one whose path merely starts the same", () => {
+      expect(isSignedUrlFor(signedUrl('user-1/items/b/thumb.webp', '1'), PATH)).toBe(false);
+      expect(isSignedUrlFor(signedUrl('user-1/items/ab/thumb.webp', '1'), 'user-1/items/b/thumb.webp')).toBe(false);
+    });
+
+    it('matches a percent-encoded path', () => {
+      expect(isSignedUrlFor(signedUrl('user-1/items/a%2Fthumb.webp', '1'), PATH)).toBe(true);
+    });
+
+    it('ignores the path when it only appears in the query string', () => {
+      expect(isSignedUrlFor(`https://x/other.webp?next=/${PATH}`, PATH)).toBe(false);
+    });
+
+    it('fails closed on a URL that cannot be decoded', () => {
+      expect(isSignedUrlFor('https://x/%E0%A4%A/thumb.webp', PATH)).toBe(false);
+    });
+  });
+
+  describe('image caching', () => {
+    it('caches the thumbnail by storage path, in memory and on disk', async () => {
+      await render(
+        <ClosetTile category="top" name={null} brand={null} thumbPath="user-1/items/a/thumb.webp" thumbnailUrl={signedUrl('user-1/items/a/thumb.webp', '1')} width={WIDTH} onPress={jest.fn()} />,
+      );
+
+      expect(imageSource()).toEqual({ uri: signedUrl('user-1/items/a/thumb.webp', '1'), cacheKey: 'user-1/items/a/thumb.webp' });
+      expect(screen.getByTestId('wardrobe-thumbnail-image').props.cachePolicy).toBe('memory-disk');
+    });
+
+    it('recycles by path: stable across a re-sign, new for a different item', async () => {
+      const view = await render(
+        <ClosetTile category="top" name={null} brand={null} thumbPath="user-1/items/a/thumb.webp" thumbnailUrl={signedUrl('user-1/items/a/thumb.webp', '1')} width={WIDTH} onPress={jest.fn()} />,
+      );
+      expect(screen.getByTestId('wardrobe-thumbnail-image').props.recyclingKey).toBe('user-1/items/a/thumb.webp');
+
+      await view.rerender(
+        <ClosetTile category="top" name={null} brand={null} thumbPath="user-1/items/a/thumb.webp" thumbnailUrl={signedUrl('user-1/items/a/thumb.webp', '2')} width={WIDTH} onPress={jest.fn()} />,
+      );
+      expect(screen.getByTestId('wardrobe-thumbnail-image').props.recyclingKey).toBe('user-1/items/a/thumb.webp');
+      expect(imageSource()?.cacheKey).toBe('user-1/items/a/thumb.webp');
+
+      await view.rerender(
+        <ClosetTile category="top" name={null} brand={null} thumbPath="user-1/items/b/thumb.webp" thumbnailUrl={signedUrl('user-1/items/b/thumb.webp', '1')} width={WIDTH} onPress={jest.fn()} />,
+      );
+      expect(screen.getByTestId('wardrobe-thumbnail-image').props.recyclingKey).toBe('user-1/items/b/thumb.webp');
     });
   });
 });

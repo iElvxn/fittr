@@ -245,6 +245,29 @@ describe('FitCanvas capture-time chrome exclusion', () => {
     await waitFor(() => expect(mockCanvasItem).toHaveBeenCalledWith(expect.objectContaining({ capturing: true })));
   });
 
+  it("passes each item's cutout path with its signed URL, so the canvas caches it by path", async () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    mockCanvasItem.mockClear();
+
+    await render(
+      <FitCanvas
+        cutoutUrls={{ 'user-1/items/wardrobe-item-1/cutout.png': 'https://signed.example/cutout.png' }}
+        wardrobeItemCutoutPaths={{ 'wardrobe-item-1': 'user-1/items/wardrobe-item-1/cutout.png' }}
+        onSlotPress={jest.fn()}
+      />,
+    );
+    layout();
+
+    await waitFor(() =>
+      expect(mockCanvasItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageUrl: 'https://signed.example/cutout.png',
+          imagePath: 'user-1/items/wardrobe-item-1/cutout.png',
+        }),
+      ),
+    );
+  });
+
   it('otherwise passes isSelected through normally when not capturing', async () => {
     useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
     const [placed] = useFitBuilderStore.getState().items;

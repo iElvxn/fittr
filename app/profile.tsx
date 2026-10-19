@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { BackHeader } from '@/components/ui/BackHeader';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/auth/useSession';
@@ -18,6 +19,7 @@ import { useProfile } from '@/lib/profile/useProfile';
 import { useAvatarUrl } from '@/lib/profile/avatarUrl';
 
 const AVATAR_SIZE = 96;
+const AVATAR_SHAPE = { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 };
 
 export default function Profile() {
   const { session } = useSession();
@@ -31,8 +33,8 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   // Picking only stages a local file for preview -- nothing is uploaded
-  // until Save is pressed, since the avatar's fixed-filename `upsert`
-  // overwrite can't be undone once it happens (Cancel must be a true no-op).
+  // until Save is pressed, so Cancel stays a true no-op: no new file to
+  // clean up, and the saved avatar is untouched.
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState(false);
@@ -84,7 +86,11 @@ export default function Profile() {
     setSaving(true);
     try {
       const avatarPath = pickedAvatarUri ? await uploadAvatar(userId, pickedAvatarUri) : undefined;
-      await updateProfile(userId, { displayName: editName, avatarPath });
+      await updateProfile(userId, {
+        displayName: editName,
+        avatarPath,
+        previousAvatarPath: profile?.avatar_path,
+      });
       await queryClient.invalidateQueries({ queryKey: ['profile', userId] });
       if (avatarPath) {
         await queryClient.invalidateQueries({ queryKey: ['avatarUrl', avatarPath] });
@@ -107,8 +113,6 @@ export default function Profile() {
     router.replace('/(auth)/welcome');
   }
 
-  const displayedAvatarUri = pickedAvatarUri ?? avatarUrl ?? null;
-
   return (
     <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">
       <BackHeader />
@@ -126,18 +130,25 @@ export default function Profile() {
                 </View>
               ) : null}
 
-              {displayedAvatarUri ? (
+              {/* A just-picked avatar is a local file with no Storage path yet, so it
+                  shows by URI; the saved one is cached by its path. */}
+              {pickedAvatarUri ? (
                 <Image
                   testID="avatar-preview"
                   accessibilityLabel="Profile avatar"
-                  source={{ uri: displayedAvatarUri }}
-                  style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
+                  source={{ uri: pickedAvatarUri }}
+                  style={AVATAR_SHAPE}
+                />
+              ) : profile?.avatar_path && avatarUrl ? (
+                <StorageImage
+                  testID="avatar-preview"
+                  accessibilityLabel="Profile avatar"
+                  path={profile.avatar_path}
+                  url={avatarUrl}
+                  style={AVATAR_SHAPE}
                 />
               ) : (
-                <View
-                  className="border border-border-hairline dark:border-border-hairlineDark"
-                  style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
-                />
+                <View className="border border-border-hairline dark:border-border-hairlineDark" style={AVATAR_SHAPE} />
               )}
 
               {isEditing ? (
