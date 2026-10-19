@@ -87,6 +87,7 @@ describe('Profile edit mode', () => {
       expect(updateProfile).toHaveBeenCalledWith('user-1', {
         displayName: 'New Name',
         avatarPath: undefined,
+        previousAvatarPath: null,
       });
     });
     expect(screen.queryByTestId('display-name-input')).toBeNull();
@@ -154,7 +155,7 @@ describe('Profile edit mode', () => {
 
   it('uploads a picked avatar and includes its path on save', async () => {
     (pickAvatar as jest.Mock).mockResolvedValue({ uri: 'file://picked.jpg' });
-    (uploadAvatar as jest.Mock).mockResolvedValue('user-1/avatar.jpg');
+    (uploadAvatar as jest.Mock).mockResolvedValue('user-1/avatar-1700000000000.jpg');
     (updateProfile as jest.Mock).mockResolvedValue(undefined);
     const user = userEvent.setup();
 
@@ -168,7 +169,8 @@ describe('Profile edit mode', () => {
       expect(uploadAvatar).toHaveBeenCalledWith('user-1', 'file://picked.jpg');
       expect(updateProfile).toHaveBeenCalledWith('user-1', {
         displayName: 'Test User',
-        avatarPath: 'user-1/avatar.jpg',
+        avatarPath: 'user-1/avatar-1700000000000.jpg',
+        previousAvatarPath: null,
       });
     });
   });
@@ -213,8 +215,54 @@ describe('Profile with an existing saved avatar', () => {
     });
 
     const avatar = await screen.findByTestId('avatar-preview');
+    // Cached by path, so a re-signed link never downloads the avatar again.
     expect(avatar.props.source).toEqual(
-      expect.arrayContaining([{ uri: 'https://example.com/signed-avatar' }]),
+      expect.arrayContaining([{ uri: 'https://example.com/signed-avatar', cacheKey: 'user-1/avatar.jpg' }]),
     );
+  });
+
+  it('previews a just-picked avatar by its local uri, uncached, in place of the saved one', async () => {
+    const createSignedUrl = jest
+      .fn()
+      .mockResolvedValue({ data: { signedUrl: 'https://example.com/signed-avatar' }, error: null });
+    (supabase.storage.from as jest.Mock).mockReturnValue({ createSignedUrl });
+    (pickAvatar as jest.Mock).mockResolvedValue({ uri: 'file://picked.jpg' });
+    const user = userEvent.setup();
+
+    await renderProfile();
+    await screen.findByText('Test User');
+    await screen.findByTestId('avatar-preview');
+    await user.press(screen.getByText('Edit'));
+    await user.press(screen.getByText('Change photo'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('avatar-preview').props.source).toEqual([{ uri: 'file://picked.jpg' }]);
+    });
+    expect(screen.getAllByTestId('avatar-preview')).toHaveLength(1);
+  });
+
+  it('passes the saved avatar path as the previous one when saving a new avatar', async () => {
+    const createSignedUrl = jest
+      .fn()
+      .mockResolvedValue({ data: { signedUrl: 'https://example.com/signed-avatar' }, error: null });
+    (supabase.storage.from as jest.Mock).mockReturnValue({ createSignedUrl });
+    (pickAvatar as jest.Mock).mockResolvedValue({ uri: 'file://picked.jpg' });
+    (uploadAvatar as jest.Mock).mockResolvedValue('user-1/avatar-1700000000000.jpg');
+    (updateProfile as jest.Mock).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    await renderProfile();
+    await screen.findByText('Test User');
+    await user.press(screen.getByText('Edit'));
+    await user.press(screen.getByText('Change photo'));
+    await user.press(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(updateProfile).toHaveBeenCalledWith('user-1', {
+        displayName: 'Test User',
+        avatarPath: 'user-1/avatar-1700000000000.jpg',
+        previousAvatarPath: 'user-1/avatar.jpg',
+      });
+    });
   });
 });

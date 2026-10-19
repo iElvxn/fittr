@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, Pressable, ScrollView, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Image } from 'expo-image';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
@@ -15,6 +14,7 @@ import { HeartIcon } from '@/components/ui/icons/HeartIcon';
 import { CalendarIcon } from '@/components/ui/icons/CalendarIcon';
 import { CheckIcon } from '@/components/ui/icons/CheckIcon';
 import { ShareIcon } from '@/components/ui/icons/ShareIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { SectionLabel } from '@/components/wardrobe/SectionLabel';
 import { FitItemsList } from '@/components/fits/FitItemsList';
@@ -473,11 +473,12 @@ export default function FitDetail() {
                 </Text>
                 <Button title="Add item" variant="primary" onPress={handleEditPress} />
               </View>
-            ) : coverUrl ? (
-              <Image
+            ) : fit.cover_path && coverUrl ? (
+              <StorageImage
                 testID="fit-detail-cover"
                 accessibilityLabel="Fit collage"
-                source={{ uri: coverUrl }}
+                path={fit.cover_path}
+                url={coverUrl}
                 style={{ width: '100%', height: '100%' }}
                 contentFit="contain"
                 transition={200}

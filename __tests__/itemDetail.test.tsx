@@ -123,6 +123,16 @@ describe('Item detail', () => {
     mockItemFitIds({ data: [] });
   });
 
+  it('caches the cutout by its storage path, so a re-signed link never downloads it again', async () => {
+    await renderItemDetail();
+
+    const cutout = screen.getByTestId('item-detail-cutout');
+    expect(cutout.props.source).toEqual([
+      { uri: 'https://signed.example/cutout.png', cacheKey: 'user-1/items/item-1/cutout.png' },
+    ]);
+    expect(cutout.props.cachePolicy).toBe('memory-disk');
+  });
+
   it('shows the cutout, the caption/title/brand heading, notes, and the Edit/Delete action row', async () => {
     await renderItemDetail();
 
@@ -222,7 +232,9 @@ describe('Item detail', () => {
     const tile = screen.getByTestId('item-fits-tile');
     const image = within(tile).getByTestId('item-fits-cover');
     // expo-image normalizes `source` to an array on the host element.
-    expect(image.props.source).toEqual([{ uri: 'https://signed.example/fit-a-cover.png' }]);
+    expect(image.props.source).toEqual([
+      { uri: 'https://signed.example/fit-a-cover.png', cacheKey: 'user-1/fits/fit-a/cover.png' },
+    ]);
     expect(image.props.contentFit).toBe('contain');
   });
 

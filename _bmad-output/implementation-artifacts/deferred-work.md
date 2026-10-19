@@ -228,3 +228,27 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-6-count-wears-on-the-server.md`
   summary: `getWearDates` (`lib/fits/wearStreak.ts:12`) downloads every wear's `worn_on` for the streak, so the download grows with every wear.
   evidence: Independent plan review, 2026-09-28. Ordered newest-first, so a response cut off at PostgREST's `max_rows` drops the oldest history, not the streak days; not wrong today, only growing. Fix when needed with a distinct-dates view (same `security_invoker` pattern as 6.6) or by reading only recent days.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: Editing a Fit whose `fit_items` write fails soft-deletes the existing Fit (`rollbackOrphanedFit` in `lib/fits/saveFit.ts`), so an abandoned edit makes the Fit vanish.
+  evidence: Story 6.1 review (triage #14). `app/new-fit.tsx:270` reuses `insertFit` for edits with the same `fitId`; the rollback was written for a brand-new row. A retry restores it (`deleted_at: null`). With 0014 applied, `rollbackCover` now also really deletes the new cover the soft-deleted row points at. Fix: only soft-delete when the row was new, or restore the previous `cover_path` on an edit. Related to the transactional-save entry above.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: Private images stay in expo-image's memory and disk cache after sign-out; nothing calls `Image.clearDiskCache`/`clearMemoryCache`.
+  evidence: Story 6.1 review (triage #18). Pre-existing (expo-image's default `cachePolicy` is already `disk`); matters on a shared or handed-down phone. Fix: clear both caches in the sign-out flow.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: Unverified on the second platform: a cached `onLoad` may report a `source.url` that isn't the signed URL (bare cache key or `file://`), so ClosetTile's `isSignedUrlFor` guard would drop the measurement and tiles would keep the category default aspect.
+  evidence: Story 6.1 review (triage #9), maybe-false; would be medium. The user's device check passed on one platform. Settle by logging `event.source.url` for a cached load on both iOS and Android.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: `CanvasItem`'s `StorageImage` branch (`imagePath && imageUrl`) is never rendered by a test.
+  evidence: Story 6.1 review (triage #3). `CanvasItem` is mocked in every suite because Reanimated v4 has no working jest mock (`__tests__/fitCanvas.test.tsx:9-18`); `FitCanvas` passing `imagePath` is tested. Needs a Reanimated/gesture test harness.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: Confirm migration 0014 is applied to the Supabase project CI's RLS suite uses.
+  evidence: Story 6.1 review (triage #4), maybe-false. Applied and passing 31/31 against the project in `.env.local`; whether CI's secrets point at the same project is unknown. Settle by comparing the CI secret's project ref.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: The account-deletion Storage cleanup (Epic 1 retro item 5) must remove the whole `wardrobe/{uid}/` folder, not just `avatar.jpg`.
+  evidence: Story 6.1 review (triage #16). Avatars are now `avatar-{ts}.jpg`, and a failed best-effort delete (or a no-connection save) can leave several.

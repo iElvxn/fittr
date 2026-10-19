@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 
 import { supabase } from '@/lib/supabase';
+import { WRITE_ONCE_CACHE_CONTROL } from '@/lib/storageCache';
 import { SignUpError, isNoConnectionError } from '@/lib/auth/errors';
 
 export type PickAvatarResult = { uri: string } | { cancelled: true };
@@ -23,18 +24,20 @@ export async function pickAvatar(): Promise<PickAvatarResult> {
 }
 
 /**
- * Uploads to a fixed filename under the user's own folder (`{userId}/avatar.jpg`)
- * with `upsert: true`, so changing the avatar always overwrites rather than
- * accumulating objects -- no client-side delete is ever needed.
+ * Uploads to a new file under the user's own folder on every change
+ * (`{userId}/avatar-{timestamp}.jpg`), never overwriting one: avatars are
+ * cached on the device by storage path (`StorageImage`), which is only
+ * valid while a path's bytes never change. `updateProfile` deletes the
+ * previous file once the profile row points at this one.
  */
 export async function uploadAvatar(userId: string, localUri: string): Promise<string> {
-  const path = `${userId}/avatar.jpg`;
+  const path = `${userId}/avatar-${Date.now()}.jpg`;
   const file = new File(localUri);
   const arrayBuffer = await file.arrayBuffer();
 
   const { error } = await supabase.storage.from('wardrobe').upload(path, arrayBuffer, {
     contentType: 'image/jpeg',
-    upsert: true,
+    cacheControl: WRITE_ONCE_CACHE_CONTROL,
   });
 
   if (error) {

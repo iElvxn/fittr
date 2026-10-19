@@ -166,6 +166,16 @@ describe('Fit detail', () => {
     expect(screen.getByTestId('fit-detail-cover').props.contentFit).toBe('contain');
   });
 
+  it('caches the cover by its storage path, so a re-signed link never downloads it again', async () => {
+    await renderFitDetail();
+
+    const cover = screen.getByTestId('fit-detail-cover');
+    expect(cover.props.source).toEqual([
+      { uri: 'https://signed.example/cover.png', cacheKey: 'user-1/fits/fit-1/cover.png' },
+    ]);
+    expect(cover.props.cachePolicy).toBe('memory-disk');
+  });
+
   it("shows the Fit's last-updated date", async () => {
     const updatedAt = '2026-03-05T12:00:00.000Z';
     (useFits as jest.Mock).mockReturnValue({

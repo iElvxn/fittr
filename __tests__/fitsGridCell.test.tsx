@@ -18,6 +18,7 @@ function renderCell(overrides: Partial<React.ComponentProps<typeof FitsGridCell>
       <FitsGridCell
         name="Weekend Look"
         thumbnailUrl="https://signed.example/cover.png"
+        thumbnailPath="user-1/fits/fit-1/cover-1.png"
         columnWidth={160}
         onPress={jest.fn()}
         fitId="fit-1"
@@ -66,6 +67,17 @@ describe('FitsGridCell tile', () => {
     await renderCell();
 
     expect(screen.getByTestId('fits-grid-thumbnail-image').props.contentFit).toBe('contain');
+  });
+
+  it('caches the cover by its storage path and recycles by it, never by the signed URL', async () => {
+    await renderCell();
+
+    const image = screen.getByTestId('fits-grid-thumbnail-image');
+    expect(image.props.source).toEqual([
+      { uri: 'https://signed.example/cover.png', cacheKey: 'user-1/fits/fit-1/cover-1.png' },
+    ]);
+    expect(image.props.cachePolicy).toBe('memory-disk');
+    expect(image.props.recyclingKey).toBe('user-1/fits/fit-1/cover-1.png');
   });
 
   it('shows no image when there is no cover URL, keeping the 3:4 well', async () => {

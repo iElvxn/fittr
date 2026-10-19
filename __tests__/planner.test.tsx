@@ -309,6 +309,17 @@ describe('Planner tab', () => {
       expect(screen.getByTestId(`planner-tile-${MON}`).props.className).toContain('bg-surface-raised');
     });
 
+    it("caches a planned day's cover by its storage path, not its signed URL", async () => {
+      mockPlans([{ planned_on: THU, fit_id: 'fit-b' }]);
+      (useThumbnailUrls as jest.Mock).mockReturnValue({ data: { 'user-1/fits/fit-b/cover.png': 'https://signed/fit-b.png' } });
+
+      await renderPlanner();
+
+      const cover = screen.getByTestId(`planner-cover-${THU}`);
+      expect(imageProp(cover, 'source')).toEqual({ uri: 'https://signed/fit-b.png', cacheKey: 'user-1/fits/fit-b/cover.png' });
+      expect(cover.props.cachePolicy).toBe('memory-disk');
+    });
+
     it('shows an empty day as "Nothing planned"', async () => {
       await renderPlanner();
 

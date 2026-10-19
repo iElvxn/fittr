@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useQuery } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
+import { WRITE_ONCE_CACHE_CONTROL } from '@/lib/storageCache';
 import { Sentry } from '@/lib/observability/sentry';
 import { toThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
@@ -133,7 +134,9 @@ function photoColumns(photo: WearPhoto | null) {
 /** Never `upsert`: every save has a new name, and the bucket has no UPDATE policy. */
 async function upload(path: string, localUri: string) {
   const body = await new File(localUri).arrayBuffer();
-  const { error } = await supabase.storage.from(WEAR_PHOTO_BUCKET).upload(path, body, { contentType: CONTENT_TYPE });
+  const { error } = await supabase.storage
+    .from(WEAR_PHOTO_BUCKET)
+    .upload(path, body, { contentType: CONTENT_TYPE, cacheControl: WRITE_ONCE_CACHE_CONTROL });
   if (error) {
     classify(error);
   }

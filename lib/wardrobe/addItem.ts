@@ -1,6 +1,7 @@
 import { File } from 'expo-file-system';
 
 import { supabase } from '@/lib/supabase';
+import { WRITE_ONCE_CACHE_CONTROL } from '@/lib/storageCache';
 import { WardrobeItemError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
 
 export type WardrobeItemCategory = 'top' | 'bottom' | 'shoes' | 'outerwear' | 'accessory';
@@ -36,7 +37,7 @@ export type NewWardrobeItemInput = {
 
 /**
  * Uploads both files under the item's own folder. `upsert: true` on both
- * (same as `uploadAvatar`) makes a retried save -- after the app is
+ * makes a retried save -- after the app is
  * backgrounded mid-upload, or a network hiccup -- overwrite the same
  * objects rather than fail, since `itemId` (and therefore the path) is
  * identical on retry.
@@ -76,6 +77,7 @@ async function uploadOne(path: string, localUri: string, contentType: string): P
   const { error } = await supabase.storage.from('wardrobe').upload(path, arrayBuffer, {
     contentType,
     upsert: true,
+    cacheControl: WRITE_ONCE_CACHE_CONTROL,
   });
 
   if (error) {

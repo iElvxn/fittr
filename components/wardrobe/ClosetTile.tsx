@@ -1,7 +1,8 @@
 import { useReducer } from 'react';
 import { Pressable, View } from 'react-native';
-import { Image, type ImageLoadEventData } from 'expo-image';
+import type { ImageLoadEventData } from 'expo-image';
 
+import { StorageImage } from '@/components/ui/StorageImage';
 import { Text } from '@/components/ui/Text';
 import { CATEGORY_LABELS, type WardrobeItemCategory } from '@/lib/wardrobe/addItem';
 
@@ -45,6 +46,21 @@ export function resetMeasuredAspectCache() {
 
 export function clampAspect(aspect: number) {
   return Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, aspect));
+}
+
+/**
+ * Whether a signed URL points at `path`. A signed link is
+ * `.../object/sign/{bucket}/{path}?token=...`, so the token is dropped and
+ * the rest must end in the path. String handling, not `new URL()`: React
+ * Native's `URL` doesn't fully implement `pathname`. A URL that can't be
+ * decoded counts as someone else's.
+ */
+export function isSignedUrlFor(url: string, path: string) {
+  try {
+    return decodeURIComponent(url.split('?')[0]).endsWith(`/${path}`);
+  } catch {
+    return false;
+  }
 }
 
 /** Photo-well height for a tile `width` wide whose inset cutout has `aspect` (width ÷ height). */
@@ -95,8 +111,10 @@ export function ClosetTile({ category, name, brand, thumbPath, thumbnailUrl, wid
   function handleLoad(event: ImageLoadEventData) {
     const { url, width: sourceWidth, height: sourceHeight } = event.source;
     // A recycled tile can still receive the previous image's late `onLoad`
-    // after its URL changed -- don't cache that shape under this item.
-    if (url && url !== thumbnailUrl) {
+    // -- don't cache that shape under this item. Compared by path, not the
+    // exact URL: a cache hit can report the older signed URL the file was
+    // first stored under.
+    if (url && !isSignedUrlFor(url, thumbPath)) {
       return;
     }
     if (!(sourceWidth > 0) || !(sourceHeight > 0)) {
@@ -123,13 +141,14 @@ export function ClosetTile({ category, name, brand, thumbPath, thumbnailUrl, wid
         className="overflow-hidden rounded-lg bg-surface-tile dark:bg-surface-tileDark"
       >
         {thumbnailUrl ? (
-          <Image
+          <StorageImage
             testID="wardrobe-thumbnail-image"
             accessibilityLabel=""
-            source={{ uri: thumbnailUrl }}
+            path={thumbPath}
+            url={thumbnailUrl}
             style={{ width: '100%', height: '100%' }}
             contentFit="contain"
-            recyclingKey={thumbnailUrl}
+            recyclingKey={thumbPath}
             onLoad={handleLoad}
           />
         ) : (

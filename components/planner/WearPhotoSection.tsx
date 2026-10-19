@@ -1,8 +1,8 @@
 import { ActivityIndicator, PixelRatio, Pressable, useColorScheme, useWindowDimensions, View } from 'react-native';
-import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
 import { CameraIcon } from '@/components/ui/icons/CameraIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
 import type { FitRow } from '@/lib/fits/listFits';
 import { useWearPhotoUrls, type WearRef } from '@/lib/fits/wearPhoto';
@@ -117,8 +117,8 @@ export function WearPhotoSection({ dayLabel, fit, wear, coverUrl, savingUri, bus
               : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
           }
         >
-          {coverUrl ? (
-            <Image source={{ uri: coverUrl }} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+          {fit.cover_path && coverUrl ? (
+            <StorageImage path={fit.cover_path} url={coverUrl} style={{ width: '100%', height: '100%' }} contentFit="contain" />
           ) : null}
         </View>
       </View>

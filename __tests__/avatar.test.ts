@@ -38,7 +38,10 @@ describe('pickAvatar', () => {
 });
 
 describe('uploadAvatar', () => {
-  it('uploads to {userId}/avatar.jpg with upsert and returns the path', async () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('uploads a new versioned file, never overwriting, cached for a year, and returns its path', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
     const upload = jest.fn().mockResolvedValue({ error: null });
     (supabase.storage.from as jest.Mock).mockReturnValue({ upload });
 
@@ -46,11 +49,23 @@ describe('uploadAvatar', () => {
 
     expect(supabase.storage.from).toHaveBeenCalledWith('wardrobe');
     expect(upload).toHaveBeenCalledWith(
-      'user-1/avatar.jpg',
+      'user-1/avatar-1700000000000.jpg',
       expect.any(ArrayBuffer),
-      expect.objectContaining({ contentType: 'image/jpeg', upsert: true }),
+      expect.objectContaining({ contentType: 'image/jpeg', cacheControl: '31536000' }),
     );
-    expect(path).toBe('user-1/avatar.jpg');
+    expect(upload.mock.calls[0][2]).not.toHaveProperty('upsert', true);
+    expect(path).toBe('user-1/avatar-1700000000000.jpg');
+  });
+
+  it('uploads to a different path on each change, so a path is never reused for different bytes', async () => {
+    jest.spyOn(Date, 'now').mockReturnValueOnce(1_700_000_000_000).mockReturnValueOnce(1_700_000_000_001);
+    const upload = jest.fn().mockResolvedValue({ error: null });
+    (supabase.storage.from as jest.Mock).mockReturnValue({ upload });
+
+    const first = await uploadAvatar('user-1', 'file://a.jpg');
+    const second = await uploadAvatar('user-1', 'file://b.jpg');
+
+    expect(first).not.toBe(second);
   });
 
   it('classifies a no-connection failure', async () => {

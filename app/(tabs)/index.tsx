@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AppState, Pressable, ScrollView, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { PersonIcon } from '@/components/ui/icons/PersonIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
 import { HomeSkeleton } from '@/components/home/HomeSkeleton';
 import { NothingPlannedCard } from '@/components/home/NothingPlannedCard';
@@ -270,10 +270,12 @@ export default function Home() {
           justifyContent: 'center',
         }}
       >
-        {avatarUrl ? (
-          <Image
+        {profile?.avatar_path && avatarUrl ? (
+          <StorageImage
+            testID="home-avatar"
             accessibilityLabel="Profile avatar"
-            source={{ uri: avatarUrl }}
+            path={profile.avatar_path}
+            url={avatarUrl}
             style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
           />
         ) : (

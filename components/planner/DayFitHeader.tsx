@@ -1,7 +1,7 @@
 import { PixelRatio, Pressable, View } from 'react-native';
-import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { WornTodayButton } from '@/components/fits/WornTodayButton';
 import type { FitRow } from '@/lib/fits/listFits';
 
@@ -56,10 +56,11 @@ export function DayFitHeader({ fit, coverUrl, status, showCollage, busy, onViewF
                 : 'overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark'
             }
           >
-            {coverUrl ? (
-              <Image
+            {fit.cover_path && coverUrl ? (
+              <StorageImage
                 accessibilityLabel=""
-                source={{ uri: coverUrl }}
+                path={fit.cover_path}
+                url={coverUrl}
                 style={{ width: '100%', height: '100%' }}
                 contentFit="contain"
               />

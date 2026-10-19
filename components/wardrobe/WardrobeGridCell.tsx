@@ -1,18 +1,20 @@
 import { Pressable, View } from 'react-native';
-import { Image } from 'expo-image';
 
+import { StorageImage } from '@/components/ui/StorageImage';
 import { CATEGORY_LABELS, type WardrobeItemCategory } from '@/lib/wardrobe/addItem';
 
 type Props = {
   category: WardrobeItemCategory;
   name: string | null;
   thumbnailUrl: string | null;
+  /** Storage path `thumbnailUrl` was signed for -- the image's cache key. */
+  thumbnailPath: string;
   size: number;
   onPress: () => void;
 };
 
 /** Tappable -- navigates to the item detail screen (Story 2.4). */
-export function WardrobeGridCell({ category, name, thumbnailUrl, size, onPress }: Props) {
+export function WardrobeGridCell({ category, name, thumbnailUrl, thumbnailPath, size, onPress }: Props) {
   const label = name ? `${name}, ${CATEGORY_LABELS[category]}` : CATEGORY_LABELS[category];
 
   return (
@@ -24,9 +26,10 @@ export function WardrobeGridCell({ category, name, thumbnailUrl, size, onPress }
       className="active:opacity-70"
     >
       {thumbnailUrl ? (
-        <Image
+        <StorageImage
           testID="wardrobe-thumbnail-image"
-          source={{ uri: thumbnailUrl }}
+          path={thumbnailPath}
+          url={thumbnailUrl}
           style={{ width: size, height: size }}
           contentFit="contain"
         />

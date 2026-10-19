@@ -1,8 +1,8 @@
 import { PixelRatio, Pressable, useColorScheme, View } from 'react-native';
-import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
 import { CheckIcon } from '@/components/ui/icons/CheckIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { WearPhotoImage } from '@/components/fits/WearPhotoImage';
 import type { WearPhoto } from '@/lib/fits/wearRef';
 import type { FitRow } from '@/lib/fits/listFits';
@@ -137,10 +137,11 @@ function MonthCell({
             day.isToday ? 'border-ink-primary dark:border-ink-primaryDark' : '',
           ].join(' ')}
         >
-          {coverUrl ? (
-            <Image
+          {dayFit?.fit.cover_path && coverUrl ? (
+            <StorageImage
               accessibilityLabel=""
-              source={{ uri: coverUrl }}
+              path={dayFit.fit.cover_path}
+              url={coverUrl}
               style={{ width: '100%', height: '100%' }}
               contentFit="contain"
             />

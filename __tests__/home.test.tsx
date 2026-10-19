@@ -277,6 +277,17 @@ describe('Home tab', () => {
     });
   });
 
+  it('caches the header avatar by its storage path, not its signed URL', async () => {
+    (useProfile as jest.Mock).mockReturnValue({ data: { avatar_path: 'user-1/avatar-1700000000000.jpg' } });
+    (useAvatarUrl as jest.Mock).mockReturnValue({ data: 'https://signed/avatar.jpg' });
+
+    await renderHome();
+
+    const avatar = screen.getByTestId('home-avatar');
+    expect(imageProp(avatar, 'source')).toEqual({ uri: 'https://signed/avatar.jpg', cacheKey: 'user-1/avatar-1700000000000.jpg' });
+    expect(avatar.props.cachePolicy).toBe('memory-disk');
+  });
+
   describe("today's Fit", () => {
     it('shows the planned Fit with its wear count and Mark worn', async () => {
       mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
@@ -288,6 +299,16 @@ describe('Home tab', () => {
       expect(screen.getByText('Planned for today · Worn 3×')).toBeTruthy();
       expect(button('Mark worn')).toBeTruthy();
       expect(button("Change today's Fit")).toBeTruthy();
+    });
+
+    it("caches today's cover by its storage path, not its signed URL", async () => {
+      mockPlans([{ planned_on: WED, fit_id: 'fit-a' }]);
+
+      await renderHome();
+
+      const cover = screen.getByTestId('today-fit-cover');
+      expect(imageProp(cover, 'source')).toEqual({ uri: 'https://signed/fit-a.png', cacheKey: 'user-1/fits/fit-a/cover.png' });
+      expect(cover.props.cachePolicy).toBe('memory-disk');
     });
 
     it('leaves the count out for a Fit never worn', async () => {

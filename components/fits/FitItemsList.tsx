@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { View } from 'react-native';
-import { Image } from 'expo-image';
 
+import { StorageImage } from '@/components/ui/StorageImage';
 import { Text } from '@/components/ui/Text';
 import { CATEGORY_LABELS } from '@/lib/wardrobe/addItem';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
@@ -47,11 +47,12 @@ export function FitItemsList({ items }: Props) {
               style={{ width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }}
               className={['overflow-hidden rounded-lg bg-surface-raised dark:bg-surface-raisedDark', item.wardrobeItemDeleted ? 'opacity-40' : ''].join(' ')}
             >
-              {thumbnailUrl ? (
-                <Image
+              {item.thumbPath && thumbnailUrl ? (
+                <StorageImage
                   testID="fit-items-list-thumbnail"
                   accessibilityLabel=""
-                  source={{ uri: thumbnailUrl }}
+                  path={item.thumbPath}
+                  url={thumbnailUrl}
                   style={{ width: '100%', height: '100%' }}
                   contentFit="contain"
                 />

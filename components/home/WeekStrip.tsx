@@ -1,6 +1,6 @@
 import { Pressable, View } from 'react-native';
-import { Image } from 'expo-image';
 
+import { StorageImage } from '@/components/ui/StorageImage';
 import { Text } from '@/components/ui/Text';
 import type { FitRow } from '@/lib/fits/listFits';
 import type { ThumbnailUrlMap } from '@/lib/wardrobe/thumbnailUrls';
@@ -68,8 +68,14 @@ export function WeekStrip({ days, planByDate, thumbnailUrls, onOpenPlanner }: Pr
                 ]}
                 className={tileClassName(fit, day.isToday)}
               >
-                {coverUrl ? (
-                  <Image accessibilityLabel="" source={{ uri: coverUrl }} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+                {fit?.cover_path && coverUrl ? (
+                  <StorageImage
+                    accessibilityLabel=""
+                    path={fit.cover_path}
+                    url={coverUrl}
+                    style={{ width: '100%', height: '100%' }}
+                    contentFit="contain"
+                  />
                 ) : null}
               </View>
               <Text

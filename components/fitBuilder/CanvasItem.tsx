@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
-import { Image, type ImageLoadEventData } from 'expo-image';
+import type { ImageLoadEventData } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, runOnJS } from 'react-native-reanimated';
 import Svg, { Rect } from 'react-native-svg';
 
+import { StorageImage } from '@/components/ui/StorageImage';
 import type { PlacedItem } from '@/stores/fitBuilder';
 import { containSize } from '@/lib/fitBuilder/aspectFit';
 import { colors } from '@/lib/theme/colors';
@@ -32,6 +33,8 @@ function clamp(value: number, min: number, max: number): number {
 type Props = {
   item: PlacedItem;
   imageUrl: string | null;
+  /** Storage path `imageUrl` was signed for -- the image's cache key. */
+  imagePath: string | null;
   canvasWidth: number;
   canvasHeight: number;
   itemSize: number;
@@ -53,6 +56,7 @@ type Props = {
 export function CanvasItem({
   item,
   imageUrl,
+  imagePath,
   canvasWidth,
   canvasHeight,
   itemSize,
@@ -214,9 +218,10 @@ export function CanvasItem({
               </Svg>
             </>
           )
-        ) : imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
+        ) : imagePath && imageUrl ? (
+          <StorageImage
+            path={imagePath}
+            url={imageUrl}
             style={{ width: '100%', height: '100%' }}
             contentFit="contain"
             onLoad={handleLoad}

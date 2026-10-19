@@ -254,6 +254,7 @@ export default function Fits() {
       <FitsGridCell
         name={item.name}
         thumbnailUrl={thumbnailUrl}
+        thumbnailPath={item.cover_path}
         columnWidth={columnWidth}
         onPress={() => router.push({ pathname: '/fit/[id]', params: { id: item.id } } as Href)}
         fitId={item.id}

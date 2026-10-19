@@ -20,8 +20,8 @@ export default function Onboarding() {
 
   const [displayName, setDisplayName] = useState('');
   // Picking only stages a local file for preview -- nothing is uploaded
-  // until Continue is pressed, since the avatar's fixed-filename `upsert`
-  // overwrite can't be undone once it happens.
+  // until Continue is pressed, so backing out leaves no file behind. A new
+  // account has no previous avatar for `updateProfile` to clean up.
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState(false);

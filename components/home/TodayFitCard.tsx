@@ -1,9 +1,9 @@
 import { PixelRatio, Pressable, useColorScheme, View } from 'react-native';
-import { Image } from 'expo-image';
 
 import { Text } from '@/components/ui/Text';
 import { WornTodayButton } from '@/components/fits/WornTodayButton';
 import { CameraIcon } from '@/components/ui/icons/CameraIcon';
+import { StorageImage } from '@/components/ui/StorageImage';
 import { TodayTilePager } from '@/components/home/TodayTilePager';
 import type { WearPhoto } from '@/lib/fits/wearRef';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
@@ -92,8 +92,15 @@ export function TodayFitCard({
             : 'overflow-hidden rounded-lg bg-surface-raised active:opacity-90 dark:bg-surface-raisedDark'
         }
       >
-        {coverUrl ? (
-          <Image accessibilityLabel="" source={{ uri: coverUrl }} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+        {fit.cover_path && coverUrl ? (
+          <StorageImage
+            testID="today-fit-cover"
+            accessibilityLabel=""
+            path={fit.cover_path}
+            url={coverUrl}
+            style={{ width: '100%', height: '100%' }}
+            contentFit="contain"
+          />
         ) : null}
       </Pressable>
     );
