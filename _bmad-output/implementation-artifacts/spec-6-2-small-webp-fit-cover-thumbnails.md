@@ -77,7 +77,7 @@ depends_on: ['6-1-cache-storage-images-by-path']
 - Added `testID="home-week-cover-{date}"` to the week strip's image for the Home test; no visual effect.
 - Home dedupes today's cover against the thumb list, so a pre-thumbnail today Fit is signed once.
 - Matrix audit added `fitDetail.test.tsx` "keeps the full cover … even when the Fit has a small thumbnail" (the Detail/Share row had no test with a thumbnail present).
-- Not yet verified: `supabase db reset` / the new RLS cases (Docker not running). The migration must be applied before this ships, or every save fails on the unknown column.
+- Verified after review: the human applied `0015` to the dev project; the RLS suite with `.env.local` passed 32/32 (incl. the new thumb-path case). Without `0015` both saves and every Fits list fail (`getFits` selects the column), so it must be applied before the client ships. Device: a new save stored a 1.89 MB PNG and a 34 KB WebP (~56x smaller); grid, week strip and Planner look as sharp as before.
 
 ## Spec Change Log
 
