@@ -7,6 +7,8 @@ import { WardrobeItemError, NO_SUBJECT_FOUND_MESSAGE, UNKNOWN_ERROR_MESSAGE } fr
 
 const WORKING_LONG_EDGE = 1500;
 const THUMB_LONG_EDGE = 400;
+/** Lossy quality of the stored WebP cutout; independent of the working JPEG fed to background removal. */
+const CUTOUT_WEBP_QUALITY = 0.9;
 
 /** Alpha below this (out of 255) is treated as background, not part of the item, when sampling color. */
 const OPAQUE_ALPHA_THRESHOLD = 32;
@@ -14,7 +16,7 @@ const OPAQUE_ALPHA_THRESHOLD = 32;
 const MAX_COLOR_SAMPLES = 40_000;
 
 export type ProcessedItemPhoto = {
-  /** Local file:// URI of the transparent PNG cutout. */
+  /** Local file:// URI of the transparent WebP cutout (same dimensions as the background-removal output). */
   cutoutUri: string;
   /** Local file:// URI of the transparent WebP thumbnail. */
   thumbUri: string;
@@ -24,15 +26,16 @@ export type ProcessedItemPhoto = {
 
 /**
  * The on-device capture pipeline (NFR2): resize -> background removal ->
- * dominant-color extraction from opaque pixels -> thumbnail generation.
+ * dominant-color extraction from opaque pixels -> WebP cutout encode and
+ * thumbnail generation.
  * Every step runs locally; nothing here calls a network API.
  */
 export async function processWardrobePhoto(sourceUri: string): Promise<ProcessedItemPhoto> {
   const working = await resizeLongEdge(sourceUri, WORKING_LONG_EDGE, SaveFormat.JPEG);
 
-  let cutoutUri: string;
+  let pngUri: string;
   try {
-    cutoutUri = await removeBackground(working.uri, { trim: true });
+    pngUri = await removeBackground(working.uri, { trim: true });
   } catch {
     // The native module's documented error surface (REQUIRES_API_FALLBACK,
     // Invalid URL, Unable to load image, plus undocumented mask-creation
@@ -43,15 +46,24 @@ export async function processWardrobePhoto(sourceUri: string): Promise<Processed
     throw new WardrobeItemError('processing_failed', NO_SUBJECT_FOUND_MESSAGE);
   }
 
-  const cutoutPixels = await readRgbaPixels(cutoutUri);
+  // Color is sampled from the lossless PNG, before the WebP encode, so the
+  // detected color can't shift with compression artifacts.
+  const cutoutPixels = await readRgbaPixels(pngUri);
   const colorHex = extractDominantColor(cutoutPixels);
 
-  // WebP holds alpha the same way PNG does, so this is a plain resize --
-  // no compositing onto a background color needed (unlike a JPEG output
-  // would have required).
-  const thumb = await resizeLongEdge(cutoutUri, THUMB_LONG_EDGE, SaveFormat.WEBP);
+  // Story 6.12: store the cutout as WebP (alpha kept) to cut storage and
+  // egress; same dimensions, no resize. Encode failures are deliberately not
+  // wrapped -- they are unexpected native errors, not "no subject found",
+  // and add-item reports them to Sentry and marks the item for retake.
+  const decoded = await ImageManipulator.manipulate(pngUri).renderAsync();
+  const cutout = await decoded.saveAsync({ format: SaveFormat.WEBP, compress: CUTOUT_WEBP_QUALITY });
 
-  return { cutoutUri, thumbUri: thumb.uri, colorHex };
+  // The thumbnail is made from the PNG, not the WebP cutout, so it isn't
+  // lossy-encoded twice. WebP holds alpha the same way PNG does, so this is
+  // a plain resize -- no compositing onto a background color needed.
+  const thumb = await resizeLongEdge(pngUri, THUMB_LONG_EDGE, SaveFormat.WEBP);
+
+  return { cutoutUri: cutout.uri, thumbUri: thumb.uri, colorHex };
 }
 
 /** Resizes so the longer edge equals `longEdge`, preserving aspect ratio; skips upscaling a source that's already smaller. */

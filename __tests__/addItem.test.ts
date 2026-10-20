@@ -15,21 +15,21 @@ jest.mock('@/lib/supabase', () => ({
 import { uploadItem, insertWardrobeItem, saveBatch } from '@/lib/wardrobe/addItem';
 import { supabase } from '@/lib/supabase';
 
-const CUTOUT_PATH = 'user-1/items/item-1/cutout.png';
+const CUTOUT_PATH = 'user-1/items/item-1/cutout.webp';
 const THUMB_PATH = 'user-1/items/item-1/thumb.webp';
 
 describe('uploadItem', () => {
-  it('uploads cutout.png and thumb.webp with upsert', async () => {
+  it('uploads cutout.webp and thumb.webp with upsert', async () => {
     const upload = jest.fn().mockResolvedValue({ error: null });
     (supabase.storage.from as jest.Mock).mockReturnValue({ upload });
 
-    const paths = await uploadItem('user-1', 'item-1', 'file://cutout.png', 'file://thumb.webp');
+    const paths = await uploadItem('user-1', 'item-1', 'file://cutout.webp', 'file://thumb.webp');
 
     expect(supabase.storage.from).toHaveBeenCalledWith('wardrobe');
     expect(upload).toHaveBeenCalledWith(
       CUTOUT_PATH,
       expect.any(ArrayBuffer),
-      expect.objectContaining({ contentType: 'image/png', upsert: true, cacheControl: '31536000' }),
+      expect.objectContaining({ contentType: 'image/webp', upsert: true, cacheControl: '31536000' }),
     );
     expect(upload).toHaveBeenCalledWith(
       THUMB_PATH,
@@ -50,7 +50,7 @@ describe('uploadItem', () => {
     (supabase.storage.from as jest.Mock).mockReturnValue({ upload, remove });
 
     await expect(
-      uploadItem('user-1', 'item-1', 'file://cutout.png', 'file://thumb.webp'),
+      uploadItem('user-1', 'item-1', 'file://cutout.webp', 'file://thumb.webp'),
     ).rejects.toThrow('boom');
 
     expect(remove).toHaveBeenCalledWith([CUTOUT_PATH, THUMB_PATH]);
@@ -64,7 +64,7 @@ describe('uploadItem', () => {
     (supabase.storage.from as jest.Mock).mockReturnValue({ upload, remove });
 
     await expect(
-      uploadItem('user-1', 'item-1', 'file://cutout.png', 'file://thumb.webp'),
+      uploadItem('user-1', 'item-1', 'file://cutout.webp', 'file://thumb.webp'),
     ).rejects.toMatchObject({ kind: 'no_connection' });
   });
 });
@@ -108,13 +108,13 @@ describe('insertWardrobeItem', () => {
 describe('saveBatch', () => {
   function pathsFor(itemId: string) {
     return {
-      cutout: `user-1/items/${itemId}/cutout.png`,
+      cutout: `user-1/items/${itemId}/cutout.webp`,
       thumb: `user-1/items/${itemId}/thumb.webp`,
     };
   }
 
-  const ITEM_1 = { itemId: 'item-1', cutoutUri: 'file://c1.png', thumbUri: 'file://t1.webp', category: 'top' as const, colorHex: '#111111' };
-  const ITEM_2 = { itemId: 'item-2', cutoutUri: 'file://c2.png', thumbUri: 'file://t2.webp', category: 'shoes' as const, colorHex: '#222222' };
+  const ITEM_1 = { itemId: 'item-1', cutoutUri: 'file://c1.webp', thumbUri: 'file://t1.webp', category: 'top' as const, colorHex: '#111111' };
+  const ITEM_2 = { itemId: 'item-2', cutoutUri: 'file://c2.webp', thumbUri: 'file://t2.webp', category: 'shoes' as const, colorHex: '#222222' };
 
   it('uploads and inserts every item in order', async () => {
     const upload = jest.fn().mockResolvedValue({ error: null });

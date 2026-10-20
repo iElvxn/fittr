@@ -54,12 +54,12 @@ export async function uploadItem(
   cutoutUri: string,
   thumbUri: string,
 ): Promise<{ cutoutPath: string; thumbPath: string }> {
-  const cutoutPath = `${userId}/items/${itemId}/cutout.png`;
+  const cutoutPath = `${userId}/items/${itemId}/cutout.webp`;
   const thumbPath = `${userId}/items/${itemId}/thumb.webp`;
 
   try {
     await Promise.all([
-      uploadOne(cutoutPath, cutoutUri, 'image/png'),
+      uploadOne(cutoutPath, cutoutUri, 'image/webp'),
       uploadOne(thumbPath, thumbUri, 'image/webp'),
     ]);
   } catch (error) {
@@ -106,7 +106,7 @@ export type BatchSaveItem = {
 };
 
 function itemStoragePaths(userId: string, itemId: string): [string, string] {
-  return [`${userId}/items/${itemId}/cutout.png`, `${userId}/items/${itemId}/thumb.webp`];
+  return [`${userId}/items/${itemId}/cutout.webp`, `${userId}/items/${itemId}/thumb.webp`];
 }
 
 /**

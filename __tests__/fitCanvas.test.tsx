@@ -268,6 +268,42 @@ describe('FitCanvas capture-time chrome exclusion', () => {
     );
   });
 
+  it('renders a Fit mixing pre-6.12 PNG and new WebP cutouts, each by its own path', async () => {
+    useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    useFitBuilderStore.getState().addItem('wardrobe-item-2', 'bottom');
+    mockCanvasItem.mockClear();
+
+    await render(
+      <FitCanvas
+        cutoutUrls={{
+          'user-1/items/wardrobe-item-1/cutout.png': 'https://signed.example/cutout-1.png',
+          'user-1/items/wardrobe-item-2/cutout.webp': 'https://signed.example/cutout-2.webp',
+        }}
+        wardrobeItemCutoutPaths={{
+          'wardrobe-item-1': 'user-1/items/wardrobe-item-1/cutout.png',
+          'wardrobe-item-2': 'user-1/items/wardrobe-item-2/cutout.webp',
+        }}
+        onSlotPress={jest.fn()}
+      />,
+    );
+    layout();
+
+    await waitFor(() => {
+      expect(mockCanvasItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageUrl: 'https://signed.example/cutout-1.png',
+          imagePath: 'user-1/items/wardrobe-item-1/cutout.png',
+        }),
+      );
+      expect(mockCanvasItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageUrl: 'https://signed.example/cutout-2.webp',
+          imagePath: 'user-1/items/wardrobe-item-2/cutout.webp',
+        }),
+      );
+    });
+  });
+
   it('otherwise passes isSelected through normally when not capturing', async () => {
     useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
     const [placed] = useFitBuilderStore.getState().items;
