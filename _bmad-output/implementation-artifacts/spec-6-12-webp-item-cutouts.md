@@ -67,9 +67,32 @@ depends_on: ['6-1-cache-storage-images-by-path']
 
 ## Implementation Notes
 
+- `processImage.ts`: the bg-removal output is renamed `pngUri`. Color and the thumbnail read it, and the cutout WebP is encoded from it (manipulate → render → save, no resize) at `CUTOUT_WEBP_QUALITY = 0.9`. `resizeLongEdge` keeps its own inline `0.9`.
+- `0016` drops every check on `wardrobe_items` whose definition mentions `cutout_path` (only 0003's matches), then adds `wardrobe_items_cutout_path_check` and a column comment.
+- Added the `__tests__/fitCanvas.test.tsx` case "mixing pre-6.12 PNG and new WebP cutouts" to cover the matrix's mixed-Fit row.
+- Verified after review (2026-10-23): the human applied `0016` to the dev project, and new items save, so the widened check accepts `cutout.webp`. Device: new WebP cutouts are consistently ~200 KB. The PNG size of the same garment was not measured, so Story 6.11 still needs the ratio, against a typical older `cutout.png`. Cutout edges look as clean as the PNGs, per the human. `supabase db reset` and the new RLS case have not been run here.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1 (blind-hunter, edge-case-hunter, verification-gap):
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|
+| 1 | processImage tests can't tell cutout from thumb (all three layers) | medium | 100x100 stub never resizes; both saves yield `${PNG_URI}->webp`, so swapping or resizing the cutout passes | patch |
+| 2 | Encode-throws test doesn't pin which encode failed (blind, edge) | low | throws on any PNG_URI webp save, thumbnail included | patch |
+| 3 | `ENCODE_QUALITY` couples working JPEG, cutout and thumb (blind) | low | lowering it for storage would also change the bg-removal input; direct split | patch |
+| 4 | RLS test accepts any error; `foreignFolder` reuses `rejectedItemId` (blind) | low | duplicate-key or RLS error would pass for the wrong reason; direct correction | patch |
+| 5 | 0016 doesn't fail if the lookup drops nothing (blind) | low | `pg_get_constraintdef` of 0003's check always contains `cutout_path`; no environment shown where it misses; fix adds a guard | reject |
+| 6 | Lossy-alpha halos / no PNG fallback (blind) | false | intent fixes `compress: 0.9`; edge and size checks are the spec's manual checks | reject |
+| 7 | PNG decoded twice more (blind) | low | real but a few ms per capture; fix adds a parameter to `resizeLongEdge` | reject |
+| 8 | Intermediate PNG/JPEG never deleted (blind, edge) | low | pre-existing (bg-removal PNG and working JPEG were never deleted before); OS-managed cache; fix adds a cleanup branch | reject |
+| 9 | Older RLS fixtures still insert `cutout.png` (blind) | false | they stand in for pre-6.12 rows, which the spec keeps valid | reject |
+| 10 | No rollback/deploy-order note in 0016 (blind) | low | no migration in the repo carries one; cosmetic | reject |
+| 11 | `docs/phase-1-spec.md` still says PNG (verification-gap) | false | the doc records Phase 1 as built; the spec keeps it historical | reject |
+| 12 | New RLS case fails in CI until 0016 is applied to the hosted project (verification-gap) | false | CI does run it with secrets, but the 0016 push is the normal pre-merge step, same as 0015 in 6.2; not a defect in the diff | reject |
+| 13 | Encode failure shows generic copy, not `processing_failed` (edge) | false | deliberate per Design Notes; item still lands in the retake state | reject |
 
 ## Design Notes
 
