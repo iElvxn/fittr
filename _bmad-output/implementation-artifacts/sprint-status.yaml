@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-10-2026 22:05
-last_updated: 10-19-2026 21:09
+last_updated: 10-23-2026 19:08
 project: fittr
 project_key: NOKEY
 tracking_system: file-system
@@ -75,7 +75,7 @@ development_status:
   epic-6: in-progress
   6-1-cache-storage-images-by-path: done
   6-2-small-webp-fit-cover-thumbnails: done
-  6-12-webp-item-cutouts: review
+  6-12-webp-item-cutouts: done
   6-3-one-shared-auth-session: backlog
   6-4-production-crash-and-analytics-wiring: backlog
   6-5-react-query-set-up-for-react-native: backlog
