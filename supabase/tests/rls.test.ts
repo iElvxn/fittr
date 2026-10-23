@@ -404,6 +404,71 @@ describeIfConfigured('wardrobe_items RLS: cross-user isolation', () => {
       if (user2Id) await admin.auth.admin.deleteUser(user2Id);
     }
   });
+
+  it("accepts a cutout.webp or cutout.png under the item's own folder and rejects any other (Story 6.12)", async () => {
+    const admin = createClient(supabaseUrl!, supabaseSecretKey!);
+
+    const stamp = Date.now();
+    const password = 'Test-password-123!';
+    const email = `rls-wardrobe-cutout-${stamp}@mailinator.com`;
+
+    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    expect(created.error).toBeNull();
+    const userId = created.data.user?.id;
+    expect(userId).toBeTruthy();
+
+    const webpItemId = randomUUID();
+    const pngItemId = randomUUID();
+    const wrongFormatItemId = randomUUID();
+    const foreignFolderItemId = randomUUID();
+    const otherItemId = randomUUID();
+
+    const row = (itemId: string, cutoutPath: string) => ({
+      id: itemId,
+      user_id: userId,
+      category: 'top',
+      cutout_path: cutoutPath,
+      thumb_path: `${userId}/items/${itemId}/thumb.webp`,
+    });
+
+    try {
+      const client = createClient(supabaseUrl!, supabasePublishableKey!);
+      const signIn = await client.auth.signInWithPassword({ email, password });
+      expect(signIn.error).toBeNull();
+
+      // A new item's WebP cutout.
+      const webpInsert = await client
+        .from('wardrobe_items')
+        .insert(row(webpItemId, `${userId}/items/${webpItemId}/cutout.webp`));
+      expect(webpInsert.error).toBeNull();
+
+      // A pre-6.12 item's PNG cutout stays valid.
+      const pngInsert = await client
+        .from('wardrobe_items')
+        .insert(row(pngItemId, `${userId}/items/${pngItemId}/cutout.png`));
+      expect(pngInsert.error).toBeNull();
+
+      const wrongFormat = await client
+        .from('wardrobe_items')
+        .insert(row(wrongFormatItemId, `${userId}/items/${wrongFormatItemId}/cutout.jpg`));
+      // 23514 = check_violation: rejected by the cutout check, not RLS or a key clash.
+      expect(wrongFormat.error?.code).toBe('23514');
+
+      const foreignFolder = await client
+        .from('wardrobe_items')
+        .insert(row(foreignFolderItemId, `${userId}/items/${otherItemId}/cutout.webp`));
+      expect(foreignFolder.error?.code).toBe('23514');
+
+      const { data: rejected } = await admin
+        .from('wardrobe_items')
+        .select('id')
+        .in('id', [wrongFormatItemId, foreignFolderItemId]);
+      expect(rejected).toEqual([]);
+    } finally {
+      await admin.from('wardrobe_items').delete().in('id', [webpItemId, pngItemId, wrongFormatItemId, foreignFolderItemId]);
+      if (userId) await admin.auth.admin.deleteUser(userId);
+    }
+  });
 });
 
 /**
