@@ -82,7 +82,8 @@ context: []
 - Surprise: Jest resolves `@/app/index` to `app.json`; `rootStack.test.tsx` imports `../app/index` with a comment. Other `@/app/...` paths are unaffected.
 - `renderRouter` handles `Stack.Protected` fine. Mutation check: forcing the signed-in guard on failed 3 of 7 routing tests (deep link, new sign-up, session end), then restored.
 - Retro item 4 note appended to `deferred-work.md`, per Design Notes.
-- Verification: `npx jest --maxWorkers=2` → 76 suites passed, 1 skipped (RLS, needs `.env.local`), 1029 tests; `tsc --noEmit` and `expo lint` clean. Device checks not yet run.
+- Verification: `npx jest --maxWorkers=2` → 76 suites passed, 1 skipped (RLS, needs `.env.local`), 1029 tests; `tsc --noEmit` and `expo lint` clean. After review patches: 79 suites, 1042 tests.
+- Device verification (2026-10-23, EAS development build): all passed -- cold start signed in and signed out; no session-loading state across tabs, Fit and Item detail; sign-out from Profile to Welcome with no previous user's data; signed-out `fittr://fit/<id>` to Welcome; signed-in cold-start deep link opens the Fit; returning Apple/Google to Home; new Apple/Google to onboarding, then relaunch to Home; new email sign-up ("Confirm email" off) to onboarding, which settles the deferred `isNewAccount`-on-email-`signUp` item; resume after more than an hour in the background loads data.
 
 ## Spec Change Log
 
