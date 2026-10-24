@@ -1,4 +1,5 @@
 import 'react-native-get-random-values';
+import { AppState } from 'react-native';
 import * as aesjs from 'aes-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -80,4 +81,16 @@ export const supabase = createClient(supabaseUrl ?? '', supabasePublishableKey ?
     persistSession: true,
     detectSessionInUrl: false,
   },
+});
+
+// Supabase's React Native pattern: refresh tokens only while the app is in
+// the foreground. A timer left running in the background is unreliable on
+// mobile, and `startAutoRefresh` refreshes an expired token right away on
+// resume. Registered once, here at module level -- never per screen.
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
 });

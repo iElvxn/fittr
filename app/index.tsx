@@ -1,21 +1,25 @@
-import { ActivityIndicator, View } from 'react-native';
 import { Redirect } from 'expo-router';
 
-import { useSession } from '@/lib/auth/useSession';
+import { useIsNewUser, useSession } from '@/lib/auth/useSession';
 
+/**
+ * The single routing decision for a session. The root layout holds the
+ * splash until the session is read, so `loading` is only a fallback here.
+ * A cold start with a stored session is a returning user (no onboarding
+ * flag exists yet), so only a brand-new account's first sign-in goes to
+ * onboarding.
+ */
 export default function Index() {
   const { session, loading } = useSession();
+  const isNewUser = useIsNewUser();
 
   if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-surface-base dark:bg-surface-baseDark">
-        <ActivityIndicator />
-      </View>
-    );
+    return null;
   }
 
-  // No onboarding-completion flag exists yet (Story 1.3's scope), so any
-  // existing session on cold start is treated as a returning user and goes
-  // straight to Home rather than back through onboarding.
-  return <Redirect href={session ? '/(tabs)' : '/(auth)/welcome'} />;
+  if (!session) {
+    return <Redirect href="/(auth)/welcome" />;
+  }
+
+  return <Redirect href={isNewUser ? '/onboarding' : '/(tabs)'} />;
 }

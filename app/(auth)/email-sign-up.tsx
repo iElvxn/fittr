@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, TextInput, View } from 'react-native';
-import { Link, Stack, router } from 'expo-router';
+import { Link, Stack } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -30,9 +30,11 @@ export default function EmailSignUp() {
     setSubmitting(true);
     try {
       await signUpWithEmail(email, password);
-      // Input stays intact until we know the outcome; on success we leave
-      // the screen entirely, so there's nothing further to reset.
-      router.replace('/onboarding');
+      // Input stays intact until we know the outcome. On success the
+      // SIGNED_IN event flips the route guards and `app/index` sends the new
+      // account to onboarding. With "Confirm email" on there's no session
+      // yet, so the user stays here (the check-your-email state is Epic 1
+      // retro item 2).
     } catch (error) {
       if (error instanceof SignUpError && error.kind === 'no_connection') {
         setConnectionError(true);

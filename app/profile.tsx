@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ActivityIndicator, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
 import { Image } from 'expo-image';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -109,8 +108,9 @@ export default function Profile() {
   }
 
   async function handleSignOut() {
+    // SIGNED_OUT flips the route guards, which removes this screen and lands
+    // on Welcome -- and clears the Query cache -- so nothing to navigate here.
     await supabase.auth.signOut();
-    router.replace('/(auth)/welcome');
   }
 
   return (

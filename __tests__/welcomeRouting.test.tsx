@@ -13,48 +13,38 @@ import Welcome from '@/app/(auth)/welcome';
 import { signUpWithApple } from '@/lib/auth/appleSignIn';
 import { signUpWithGoogle } from '@/lib/auth/googleSignIn';
 
-describe('Welcome routing on successful sign-in', () => {
+// Where a successful sign-in lands (onboarding vs. Home) is decided by the
+// route guards plus `app/index` -- see `rootStack.test.tsx`. Welcome itself
+// must not navigate, or it would race that decision.
+describe('Welcome leaves post-sign-in routing to the guards', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('routes a new Apple user to onboarding', async () => {
-    (signUpWithApple as jest.Mock).mockResolvedValue({ status: 'success', isNewUser: true });
+  it.each([
+    ['Apple', true, 'Sign in with Apple', signUpWithApple],
+    ['Apple', false, 'Sign in with Apple', signUpWithApple],
+    ['Google', true, 'Continue with Google', signUpWithGoogle],
+    ['Google', false, 'Continue with Google', signUpWithGoogle],
+  ])('does not navigate after a successful %s sign-in (isNewUser: %s)', async (_provider, isNewUser, label, signIn) => {
+    (signIn as jest.Mock).mockResolvedValue({ status: 'success', isNewUser });
+    const user = userEvent.setup();
+
+    await render(<Welcome />);
+    await user.press(screen.getByText(label));
+
+    expect(signIn).toHaveBeenCalledTimes(1);
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('stays on Welcome without an error when the user cancels', async () => {
+    (signUpWithApple as jest.Mock).mockResolvedValue({ status: 'cancelled' });
     const user = userEvent.setup();
 
     await render(<Welcome />);
     await user.press(screen.getByText('Sign in with Apple'));
 
-    expect(router.replace).toHaveBeenCalledWith('/onboarding');
-  });
-
-  it('routes a returning Apple user to the tabs root', async () => {
-    (signUpWithApple as jest.Mock).mockResolvedValue({ status: 'success', isNewUser: false });
-    const user = userEvent.setup();
-
-    await render(<Welcome />);
-    await user.press(screen.getByText('Sign in with Apple'));
-
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)');
-  });
-
-  it('routes a new Google user to onboarding', async () => {
-    (signUpWithGoogle as jest.Mock).mockResolvedValue({ status: 'success', isNewUser: true });
-    const user = userEvent.setup();
-
-    await render(<Welcome />);
-    await user.press(screen.getByText('Continue with Google'));
-
-    expect(router.replace).toHaveBeenCalledWith('/onboarding');
-  });
-
-  it('routes a returning Google user to the tabs root', async () => {
-    (signUpWithGoogle as jest.Mock).mockResolvedValue({ status: 'success', isNewUser: false });
-    const user = userEvent.setup();
-
-    await render(<Welcome />);
-    await user.press(screen.getByText('Continue with Google'));
-
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)');
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(screen.queryByText('Something went wrong. Please try again.')).toBeNull();
   });
 });
