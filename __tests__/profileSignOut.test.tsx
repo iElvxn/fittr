@@ -53,7 +53,9 @@ describe('Profile Sign Out', () => {
     queryClient.clear();
   });
 
-  it('calls supabase.auth.signOut() and routes to Welcome when Sign Out is pressed', async () => {
+  // Landing on Welcome comes from SIGNED_OUT flipping the route guards (see
+  // `rootStack.test.tsx`), so Profile must not navigate itself.
+  it('calls supabase.auth.signOut() and leaves navigation to the guards', async () => {
     (supabase.auth.signOut as jest.Mock).mockResolvedValue({ error: null });
     const user = userEvent.setup();
 
@@ -63,7 +65,7 @@ describe('Profile Sign Out', () => {
 
     await waitFor(() => {
       expect(supabase.auth.signOut).toHaveBeenCalled();
-      expect(router.replace).toHaveBeenCalledWith('/(auth)/welcome');
     });
+    expect(router.replace).not.toHaveBeenCalled();
   });
 });

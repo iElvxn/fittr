@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, TextInput, View } from 'react-native';
-import { Stack, router } from 'expo-router';
+import { Stack } from 'expo-router';
 
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -27,9 +27,9 @@ export default function SignIn() {
     setSubmitting(true);
     try {
       await signInWithEmail(email, password);
-      // Input stays intact until we know the outcome; on success we leave
-      // the screen entirely, so there's nothing further to reset.
-      router.replace('/(tabs)');
+      // Input stays intact until we know the outcome. On success the
+      // SIGNED_IN event flips the route guards and `app/index` takes the
+      // user on, so there's nothing to reset or navigate here.
     } catch (error) {
       if (error instanceof SignUpError && error.kind === 'no_connection') {
         setConnectionError(true);

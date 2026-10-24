@@ -259,3 +259,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-2-small-webp-fit-cover-thumbnails.md`
   summary: `insertFit` rolls back the uploaded cover pair on any `fits`/`fit_items` error, including a lost response after the row actually committed, so an abandoned save can leave a live row pointing at deleted files (and on edit, soft-delete the existing Fit).
   evidence: Pre-existing rollback design in `lib/fits/saveFit.ts`; a same-`ts` retry now restores the exact paths, but an abandon does not. Severity unverified as medium. Settle by simulating a committed upsert with a dropped response. Triage #5.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
+  summary: Epic 1 retro item 4 (`handleSignOut` ignores `signOut()`'s error) must now be built against the shared session: Profile no longer navigates after sign-out, and Welcome plus the Query-cache clear both come from `SessionProvider`'s `SIGNED_OUT` event.
+  evidence: Story 6.3 moved sign-out routing onto the `Stack.Protected` guards and cache cleanup onto the event, so a fix that only branches inside `app/profile.tsx` would miss the case where `signOut()` errors but the local session is still cleared.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
+  summary: Confirm on a live project that an email `signUp`'s `SIGNED_IN` user passes `isNewAccount`, so a new email account is routed to onboarding by `app/index` rather than Home.
+  evidence: Story 6.3 review, maybe-false (medium if true). Email sign-up no longer navigates to onboarding unconditionally; `isNewAccount` was written for the ID-token flow (it returns true when `last_sign_in_at` is null). Settle with a device sign-up with "Confirm email" off.

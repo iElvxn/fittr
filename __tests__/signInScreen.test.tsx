@@ -48,13 +48,16 @@ describe('Sign-in screen error-kind-to-message wiring', () => {
     expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it('routes to the tabs root on success', async () => {
+  // Where the session lands is decided by the route guards plus `app/index`
+  // (see `rootStack.test.tsx`); the screen navigating too would race it.
+  it('does not navigate itself on success', async () => {
     (signInWithEmail as jest.Mock).mockResolvedValue(undefined);
     const user = userEvent.setup();
 
     await render(<SignIn />);
     await fillAndSubmit(user);
 
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)');
+    expect(signInWithEmail).toHaveBeenCalledWith('a@b.com', 'somepassword');
+    expect(router.replace).not.toHaveBeenCalled();
   });
 });

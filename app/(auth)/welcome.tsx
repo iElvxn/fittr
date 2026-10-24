@@ -23,10 +23,9 @@ export default function Welcome() {
     setGenericError(false);
     setBusy('apple');
     try {
-      const result = await signUpWithApple();
-      if (result.status === 'success') {
-        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)');
-      }
+      // On success the SIGNED_IN event flips the route guards and `app/index`
+      // picks onboarding or Home -- navigating here too would race it.
+      await signUpWithApple();
       // 'cancelled' — normal path, silently stay on Welcome, no error shown.
     } catch (error) {
       if (isNoConnectionError(error)) {
@@ -44,10 +43,8 @@ export default function Welcome() {
     setGenericError(false);
     setBusy('google');
     try {
-      const result = await signUpWithGoogle();
-      if (result.status === 'success') {
-        router.replace(result.isNewUser ? '/onboarding' : '/(tabs)');
-      }
+      // Same as Apple: the guard flip plus `app/index` does the routing.
+      await signUpWithGoogle();
       // 'cancelled' — normal path, silently stay on Welcome, no error shown.
     } catch (error) {
       if (isNoConnectionError(error)) {

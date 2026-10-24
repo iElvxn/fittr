@@ -1,6 +1,6 @@
-import { ActivityIndicator, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { useColorScheme, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Redirect, Tabs, router } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 
 import { AddItemTabButton } from '@/components/navigation/AddItemTabButton';
 import { TabBarButton } from '@/components/navigation/TabBarButton';
@@ -12,7 +12,6 @@ import { ShirtIcon } from '@/components/ui/icons/ShirtIcon';
 import { CalendarIcon } from '@/components/ui/icons/CalendarIcon';
 import { colors } from '@/lib/theme/colors';
 import { TAB_BAR_HEIGHT } from '@/lib/theme/tabBar';
-import { useSession } from '@/lib/auth/useSession';
 
 const PILL_MARGIN = 16;
 const ITEM_INSET = 6;
@@ -41,23 +40,6 @@ export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const barWidth = width - PILL_MARGIN * 2;
-  const { session, loading } = useSession();
-
-  if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-surface-base dark:bg-surface-baseDark">
-        <ActivityIndicator />
-      </View>
-    );
-  }
-
-  // A session can go null while a tab is mounted — expiry, or being signed
-  // out remotely — not just at cold start (which app/index.tsx already
-  // guards). Without this, an authenticated screen like Profile is left
-  // rendering against no user with no way back to Welcome.
-  if (!session) {
-    return <Redirect href="/(auth)/welcome" />;
-  }
 
   return (
     <Tabs
