@@ -267,3 +267,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
   summary: Confirm on a live project that an email `signUp`'s `SIGNED_IN` user passes `isNewAccount`, so a new email account is routed to onboarding by `app/index` rather than Home.
   evidence: Story 6.3 review, maybe-false (medium if true). Email sign-up no longer navigates to onboarding unconditionally; `isNewAccount` was written for the ID-token flow (it returns true when `last_sign_in_at` is null). Settle with a device sign-up with "Confirm email" off.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-4-production-crash-and-analytics-wiring.md`
+  summary: Set Sentry's `environment` per build (e.g. from `Updates.channel`) so preview builds stop reporting as `production`.
+  evidence: `initSentry` sets no `environment`, and the SDK defaults to `production` outside `__DEV__`, so internal preview crashes mix with store crashes; pre-existing, now easy with `expo-updates` installed.

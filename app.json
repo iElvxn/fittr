@@ -7,6 +7,12 @@
     "icon": "./assets/icon.png",
     "scheme": "fittr",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/98601fda-12e4-444b-aeac-5683b0298186"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.elvinly.fittr",
@@ -54,7 +60,12 @@
           "microphonePermission": false
         }
       ],
-      "@sentry/react-native"
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
