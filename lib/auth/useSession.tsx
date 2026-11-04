@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
 import { isNewAccount } from '@/lib/auth/isNewAccount';
+import { identifySentryUser } from '@/lib/observability/sentry';
+import { identifyAnalyticsUser, resetAnalyticsUser } from '@/lib/analytics/posthog';
 
 type SessionState = { session: Session | null; loading: boolean; isNewUser: boolean };
 
@@ -21,10 +23,16 @@ const SessionContext = createContext<SessionState | null>(null);
  * `isNewUser` is decided here, from the user `SIGNED_IN` already carries,
  * because the `Stack.Protected` guards move the router off `(auth)` as soon
  * as the session appears -- before a sign-in handler's own result returns.
+ *
+ * Crash and analytics identity also hangs off these events, keyed on the
+ * user id *changing* rather than on event names: the cold-start `SIGNED_IN`
+ * + `INITIAL_SESSION` pair and token refreshes then identify only once, and
+ * a missed `SIGNED_OUT` between two accounts still resets before the second.
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<SessionState>({ session: null, loading: true, isNewUser: false });
+  const identifiedId = useRef<string | null>(null);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
@@ -32,6 +40,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // Covers remote sign-out and expiry too, not just Profile's button,
         // so the next user never sees the previous user's cached rows.
         queryClient.clear();
+        resetIdentity();
+        identifiedId.current = null;
+      } else if (session?.user.id && session.user.id !== identifiedId.current) {
+        if (identifiedId.current) {
+          resetIdentity();
+        }
+        identifyAnalyticsUser(session.user.id);
+        identifySentryUser(session.user.id);
+        identifiedId.current = session.user.id;
       }
       setState((prev) => {
         // On cold start auth-js recovers a stored session and emits
@@ -52,6 +69,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   return <SessionContext.Provider value={state}>{children}</SessionContext.Provider>;
+}
+
+function resetIdentity() {
+  resetAnalyticsUser();
+  identifySentryUser(null);
 }
 
 function useSessionState(): SessionState {

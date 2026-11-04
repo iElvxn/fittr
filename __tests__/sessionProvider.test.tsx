@@ -10,8 +10,12 @@ jest.mock('@/lib/supabase', () => ({
     },
   },
 }));
+jest.mock('@/lib/observability/sentry', () => ({ identifySentryUser: jest.fn() }));
+jest.mock('@/lib/analytics/posthog', () => ({ identifyAnalyticsUser: jest.fn(), resetAnalyticsUser: jest.fn() }));
 
 import { supabase } from '@/lib/supabase';
+import { identifySentryUser } from '@/lib/observability/sentry';
+import { identifyAnalyticsUser, resetAnalyticsUser } from '@/lib/analytics/posthog';
 import { SessionProvider, useIsNewUser, useSession } from '@/lib/auth/useSession';
 
 const onAuthStateChange = supabase.auth.onAuthStateChange as jest.Mock;
@@ -20,6 +24,7 @@ let emit: (event: string, session: unknown) => void;
 
 const NEW_USER = { id: 'user-1', created_at: '2026-01-01T00:00:00.000Z', last_sign_in_at: '2026-01-01T00:00:00.500Z' };
 const RETURNING_USER = { id: 'user-1', created_at: '2026-01-01T00:00:00.000Z', last_sign_in_at: '2026-02-01T00:00:00.000Z' };
+const OTHER_USER = { id: 'user-2', created_at: '2026-01-01T00:00:00.000Z', last_sign_in_at: '2026-02-01T00:00:00.000Z' };
 
 function Reader({ label }: { label: string }) {
   const { session, loading } = useSession();
@@ -146,5 +151,85 @@ describe('SessionProvider', () => {
     await act(async () => screen.unmount());
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  describe('crash and analytics identity', () => {
+    it('identifies the user once on sign-in', async () => {
+      await renderProvider();
+      await act(async () => emit('INITIAL_SESSION', null));
+
+      await act(async () => emit('SIGNED_IN', { user: RETURNING_USER }));
+
+      expect(identifyAnalyticsUser).toHaveBeenCalledTimes(1);
+      expect(identifyAnalyticsUser).toHaveBeenCalledWith('user-1');
+      expect(identifySentryUser).toHaveBeenCalledTimes(1);
+      expect(identifySentryUser).toHaveBeenCalledWith('user-1');
+      expect(resetAnalyticsUser).not.toHaveBeenCalled();
+    });
+
+    it('identifies once across the cold-start SIGNED_IN + INITIAL_SESSION pair', async () => {
+      await renderProvider();
+
+      await act(async () => emit('SIGNED_IN', { user: RETURNING_USER }));
+      await act(async () => emit('INITIAL_SESSION', { user: RETURNING_USER }));
+
+      expect(identifyAnalyticsUser).toHaveBeenCalledTimes(1);
+      expect(identifySentryUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not identify again on a token refresh or user update', async () => {
+      await renderProvider();
+      await act(async () => emit('INITIAL_SESSION', { user: RETURNING_USER }));
+
+      await act(async () => emit('TOKEN_REFRESHED', { user: RETURNING_USER }));
+      await act(async () => emit('USER_UPDATED', { user: RETURNING_USER }));
+
+      expect(identifyAnalyticsUser).toHaveBeenCalledTimes(1);
+      expect(identifySentryUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing for a signed-out cold start', async () => {
+      await renderProvider();
+
+      await act(async () => emit('INITIAL_SESSION', null));
+
+      expect(identifyAnalyticsUser).not.toHaveBeenCalled();
+      expect(identifySentryUser).not.toHaveBeenCalled();
+    });
+
+    it('resets both on SIGNED_OUT, including a remote sign-out', async () => {
+      await renderProvider();
+      await act(async () => emit('INITIAL_SESSION', { user: RETURNING_USER }));
+
+      await act(async () => emit('SIGNED_OUT', null));
+
+      expect(resetAnalyticsUser).toHaveBeenCalledTimes(1);
+      expect(identifySentryUser).toHaveBeenLastCalledWith(null);
+    });
+
+    it("never lets the second account's events carry the first account's id", async () => {
+      await renderProvider();
+      await act(async () => emit('INITIAL_SESSION', { user: RETURNING_USER }));
+      await act(async () => emit('SIGNED_OUT', null));
+
+      await act(async () => emit('SIGNED_IN', { user: OTHER_USER }));
+
+      expect((identifyAnalyticsUser as jest.Mock).mock.calls).toEqual([['user-1'], ['user-2']]);
+      expect(resetAnalyticsUser).toHaveBeenCalledTimes(1);
+      expect(identifySentryUser).toHaveBeenLastCalledWith('user-2');
+    });
+
+    it('resets before identifying when the id changes without a SIGNED_OUT', async () => {
+      await renderProvider();
+      await act(async () => emit('INITIAL_SESSION', { user: RETURNING_USER }));
+
+      await act(async () => emit('SIGNED_IN', { user: OTHER_USER }));
+
+      expect(resetAnalyticsUser).toHaveBeenCalledTimes(1);
+      expect((resetAnalyticsUser as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+        (identifyAnalyticsUser as jest.Mock).mock.invocationCallOrder[1],
+      );
+      expect((identifySentryUser as jest.Mock).mock.calls).toEqual([['user-1'], [null], ['user-2']]);
+    });
   });
 });

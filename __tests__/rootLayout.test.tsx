@@ -8,6 +8,7 @@ jest.mock('expo-splash-screen', () => ({
   preventAutoHideAsync: jest.fn(() => Promise.resolve()),
   hideAsync: jest.fn(() => Promise.resolve()),
 }));
+const mockNavigationRef = { current: null };
 jest.mock('expo-router', () => {
   const { Text } = jest.requireActual('react-native');
   const StackMock = () => <Text>Guarded stack</Text>;
@@ -16,6 +17,7 @@ jest.mock('expo-router', () => {
   return {
     Stack: StackMock,
     ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
+    useNavigationContainerRef: () => mockNavigationRef,
   };
 });
 jest.mock('@/lib/theme/navigationTheme', () => ({ navigationLightTheme: {}, navigationDarkTheme: {} }));
@@ -25,9 +27,15 @@ jest.mock('react-native-gesture-handler', () => ({
 jest.mock('posthog-react-native', () => ({
   PostHogProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
-jest.mock('@/lib/analytics/posthog', () => ({ posthog: {} }));
+jest.mock('@/lib/analytics/posthog', () => ({
+  posthog: {},
+  identifyAnalyticsUser: jest.fn(),
+  resetAnalyticsUser: jest.fn(),
+}));
 jest.mock('@/lib/observability/sentry', () => ({
   initSentry: jest.fn(),
+  navigationIntegration: { registerNavigationContainer: jest.fn() },
+  identifySentryUser: jest.fn(),
   Sentry: { wrap: (component: unknown) => component },
 }));
 jest.mock('@/lib/supabase', () => ({ supabase: { auth: { onAuthStateChange: jest.fn() } } }));
@@ -35,6 +43,7 @@ jest.mock('@/lib/supabase', () => ({ supabase: { auth: { onAuthStateChange: jest
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { supabase } from '@/lib/supabase';
+import { navigationIntegration } from '@/lib/observability/sentry';
 // Relative on purpose: Jest resolves `@/app/...` index-like paths to `app.json`.
 import RootLayout from '../app/_layout';
 
@@ -80,5 +89,13 @@ describe('RootLayout', () => {
 
     expect(screen.queryByText('Guarded stack')).toBeNull();
     expect(SplashScreen.hideAsync).not.toHaveBeenCalled();
+  });
+
+  it("registers the router's navigation container with Sentry, so traces split per screen", async () => {
+    (useFonts as jest.Mock).mockReturnValue([true, null]);
+
+    await render(<RootLayout />);
+
+    expect(navigationIntegration.registerNavigationContainer).toHaveBeenCalledWith(mockNavigationRef);
   });
 });

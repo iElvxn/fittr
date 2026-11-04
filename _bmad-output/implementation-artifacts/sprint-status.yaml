@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-10-2026 22:05
-last_updated: 10-23-2026 20:50
+last_updated: 11-03-2026 12:00
 project: fittr
 project_key: NOKEY
 tracking_system: file-system
@@ -77,7 +77,7 @@ development_status:
   6-2-small-webp-fit-cover-thumbnails: done
   6-12-webp-item-cutouts: done
   6-3-one-shared-auth-session: done
-  6-4-production-crash-and-analytics-wiring: backlog
+  6-4-production-crash-and-analytics-wiring: review
   6-5-react-query-set-up-for-react-native: backlog
   6-6-count-wears-on-the-server: backlog
   6-7-turn-on-the-react-compiler: backlog
@@ -95,6 +95,9 @@ action_items:
     owner: "dev"
     status: in-progress
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+    note: "Story 6.4 wired identify/reset, source maps and EAS Update keyless; the
+      env rename and the one-real-event-per-dashboard check move to Story 6.11,
+      once Sentry and PostHog accounts exist."
   - id: "epic-1-retro-item-2-fix-email-confirmation-onboarding-deadend"
     epic: 1
     action: "Fix email sign-up: branch on returned session, show a check-your-email

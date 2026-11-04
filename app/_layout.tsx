@@ -1,9 +1,10 @@
 import '../global.css';
 
+import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { ThemeProvider } from 'expo-router';
+import { ThemeProvider, useNavigationContainerRef } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PostHogProvider } from 'posthog-react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -11,7 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { appFonts } from '@/lib/theme/fonts';
 import { navigationLightTheme, navigationDarkTheme } from '@/lib/theme/navigationTheme';
-import { initSentry, Sentry } from '@/lib/observability/sentry';
+import { initSentry, navigationIntegration, Sentry } from '@/lib/observability/sentry';
 import { posthog } from '@/lib/analytics/posthog';
 import { SessionProvider } from '@/lib/auth/useSession';
 import { RootNavigator } from '@/components/navigation/RootStack';
@@ -27,6 +28,11 @@ const queryClient = new QueryClient();
 function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(appFonts);
   const scheme = useColorScheme();
+  const navigationRef = useNavigationContainerRef();
+
+  useEffect(() => {
+    navigationIntegration.registerNavigationContainer(navigationRef);
+  }, [navigationRef]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

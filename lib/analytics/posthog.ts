@@ -9,8 +9,10 @@ const host = process.env.EXPO_PUBLIC_POSTHOG_HOST;
 /**
  * Singleton PostHog client, wired against placeholder env vars until real
  * values are supplied. Constructed unconditionally so the provider/hooks
- * always have a client, but `trackSignedUp` below is a no-op until a real
- * API key exists, so nothing is sent to a placeholder project.
+ * always have a client, but it is opted out until a real API key exists, so
+ * nothing is sent to a placeholder project. Identity calls skip the client
+ * entirely without a key: `reset()` wipes every persisted property,
+ * including the opt-out flag, which would quietly opt the client back in.
  */
 export const posthog = new PostHog(apiKey || 'phc_placeholder_until_configured', {
   host: host || 'https://us.i.posthog.com',
@@ -18,6 +20,18 @@ export const posthog = new PostHog(apiKey || 'phc_placeholder_until_configured',
 
 if (!apiKey) {
   void posthog.optOut();
+}
+
+/** Ties events to the Supabase user id, merging the pre-login anonymous events (sign-up, onboarding) into that person. */
+export function identifyAnalyticsUser(id: string) {
+  if (!apiKey) return;
+  posthog.identify(id);
+}
+
+/** On sign-out, so the next account's events never carry this user's id. */
+export function resetAnalyticsUser() {
+  if (!apiKey) return;
+  posthog.reset();
 }
 
 export type SignUpMethod = 'apple' | 'google' | 'email';
