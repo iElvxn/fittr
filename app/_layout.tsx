@@ -5,7 +5,7 @@ import { useColorScheme } from 'react-native';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider, useNavigationContainerRef } from 'expo-router';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { PostHogProvider } from 'posthog-react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,16 +14,18 @@ import { appFonts } from '@/lib/theme/fonts';
 import { navigationLightTheme, navigationDarkTheme } from '@/lib/theme/navigationTheme';
 import { initSentry, navigationIntegration, Sentry } from '@/lib/observability/sentry';
 import { posthog } from '@/lib/analytics/posthog';
+import { createQueryClient, registerQueryManagers } from '@/lib/query/queryClient';
 import { SessionProvider } from '@/lib/auth/useSession';
 import { RootNavigator } from '@/components/navigation/RootStack';
 
 initSentry();
+registerQueryManagers();
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // no-op — splash may already be hidden (e.g. fast refresh)
 });
 
-const queryClient = new QueryClient();
+const queryClient = createQueryClient();
 
 function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(appFonts);

@@ -51,9 +51,11 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => mockParams,
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
+jest.mock('@/lib/query/useRefreshOnFocus', () => ({ useRefreshOnFocus: jest.fn() }));
 
 import Planner from '@/app/(tabs)/planner';
 import { router, useFocusEffect } from 'expo-router';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { planFit, unplanDay, useMonthWears, usePlannedFits, usePlannedMonth, useWeekWears } from '@/lib/planner/plannedFits';
@@ -543,7 +545,7 @@ describe('Planner tab', () => {
       expect(router.push).toHaveBeenCalledWith('/new-fit');
     });
 
-    it("refetches the Fits, plans, wears, wear counts and today's wears when the tab regains focus", async () => {
+    it('leaves focus refreshes to useRefreshOnFocus, refetching nothing by hand', async () => {
       const refetchFits = jest.fn();
       const refetchPlans = jest.fn();
       const refetchWears = jest.fn();
@@ -559,11 +561,12 @@ describe('Planner tab', () => {
       const onFocus = (useFocusEffect as jest.Mock).mock.calls.at(-1)[0];
       onFocus();
 
-      expect(refetchFits).toHaveBeenCalled();
-      expect(refetchPlans).toHaveBeenCalled();
-      expect(refetchWears).toHaveBeenCalled();
-      expect(refetchCounts).toHaveBeenCalled();
-      expect(refetchTodayWorn).toHaveBeenCalled();
+      expect(useRefreshOnFocus).toHaveBeenCalled();
+      expect(refetchFits).not.toHaveBeenCalled();
+      expect(refetchPlans).not.toHaveBeenCalled();
+      expect(refetchWears).not.toHaveBeenCalled();
+      expect(refetchCounts).not.toHaveBeenCalled();
+      expect(refetchTodayWorn).not.toHaveBeenCalled();
     });
 
     it('fails open and reports when the wear counts read fails', async () => {
@@ -1602,31 +1605,21 @@ describe('Planner tab', () => {
         expect(screen.getByText('August 2026')).toBeTruthy();
       });
 
-      it('does not refetch the month on focus while the week is showing', async () => {
+      // `useRefreshOnFocus` refetches only active queries, so the month's
+      // reads stay off while the week shows (see useRefreshOnFocus.test.tsx).
+      it('refetches the month by hand on focus in neither view', async () => {
         const refetchPlans = jest.fn();
         const refetchWears = jest.fn();
         mockMonthPlans([], { refetch: refetchPlans });
         mockMonthWears([], { refetch: refetchWears });
         const { user } = await openMonth();
-        await user.press(screen.getByRole('button', { name: 'Week' }));
 
+        await focusTab();
+        await user.press(screen.getByRole('button', { name: 'Week' }));
         await focusTab();
 
         expect(refetchPlans).not.toHaveBeenCalled();
         expect(refetchWears).not.toHaveBeenCalled();
-      });
-
-      it('refetches the month plans and wears when the tab regains focus', async () => {
-        const refetchPlans = jest.fn();
-        const refetchWears = jest.fn();
-        mockMonthPlans([], { refetch: refetchPlans });
-        mockMonthWears([], { refetch: refetchWears });
-        await openMonth();
-
-        await focusTab();
-
-        expect(refetchPlans).toHaveBeenCalled();
-        expect(refetchWears).toHaveBeenCalled();
       });
     });
 

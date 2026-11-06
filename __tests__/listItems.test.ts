@@ -1,6 +1,8 @@
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 
-import { filterByCategory, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
+import { QueryClient } from '@tanstack/react-query';
+
+import { filterByCategory, invalidateWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 
 function item(overrides: Partial<WardrobeItemRow>): WardrobeItemRow {
   return {
@@ -34,5 +36,25 @@ describe('filterByCategory', () => {
 
   it('returns an empty array when no item matches the selected category', () => {
     expect(filterByCategory(items, 'outerwear')).toEqual([]);
+  });
+});
+
+describe('invalidateWardrobeItems', () => {
+  it("invalidates the user's wardrobe list", async () => {
+    const queryClient = new QueryClient();
+    const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    await invalidateWardrobeItems(queryClient, 'user-1');
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['wardrobeItems', 'user-1'], refetchType: 'active' });
+  });
+
+  it('can mark the list stale without fetching', async () => {
+    const queryClient = new QueryClient();
+    const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
+
+    await invalidateWardrobeItems(queryClient, 'user-1', 'none');
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['wardrobeItems', 'user-1'], refetchType: 'none' });
   });
 });

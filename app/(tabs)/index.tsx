@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState, Pressable, ScrollView, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -34,6 +34,7 @@ import { useWornTodayToggle } from '@/lib/fits/useWornTodayToggle';
 import { todayPlannedStatus } from '@/lib/fits/wearStatus';
 import type { WearRef } from '@/lib/fits/wearRef';
 import { Sentry } from '@/lib/observability/sentry';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 
 const PROFILE_TOUCH_TARGET = 48;
 const AVATAR_SIZE = 38;
@@ -64,8 +65,8 @@ export default function Home() {
   const { today, syncToday } = useToday();
   // Story 5.7: bumped each time Home comes back into view -- a tab focus, or
   // a return from the background -- so the big tile opens on today's photo
-  // again. Not bumped by `refresh()` alone: an inactive -> active change
-  // (Control Center, a Face ID prompt) leaves the page where the user left it.
+  // again. Not bumped by an inactive -> active change (Control Center, a
+  // Face ID prompt), which leaves the page where the user left it.
   const [focusCount, setFocusCount] = useState(0);
   const weekStart = weekStartOf(today);
   const days = useMemo(() => weekDays(weekStart, today), [weekStart, today]);
@@ -77,27 +78,15 @@ export default function Home() {
   const todayWornQuery = useTodayWornFitIds(userId, today);
   const wearDatesQuery = useWearDates(userId);
 
-  // Tabs stay mounted, so a plan made in the Planner or a wear from Fit
-  // detail only shows up if every read refetches when the tab regains focus
-  // or the app resumes. A new day needs no refetch of its own: today's worn
-  // set is keyed by date, so it's a new query that loads.
-  function refresh() {
-    syncToday();
-    fitsQuery.refetch();
-    plansQuery.refetch();
-    countsQuery.refetch();
-    todayWornQuery.refetch();
-    wearDatesQuery.refetch();
-  }
-  const refreshRef = useRef(refresh);
-  useEffect(() => {
-    refreshRef.current = refresh;
-  });
+  // Tabs stay mounted, so reads that went stale refetch on focus here and on
+  // resume through `focusManager`. A new day needs no refetch of its own:
+  // today's worn set is keyed by date, so it's a new query that loads.
+  useRefreshOnFocus();
   useFocusEffect(
     useCallback(() => {
       setFocusCount((count) => count + 1);
-      refreshRef.current();
-    }, []),
+      syncToday();
+    }, [syncToday]),
   );
   useEffect(() => {
     // Whether the app went to the background since it was last active.
@@ -105,12 +94,9 @@ export default function Home() {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'background') {
         backgrounded = true;
-      } else if (state === 'active') {
-        if (backgrounded) {
-          backgrounded = false;
-          setFocusCount((count) => count + 1);
-        }
-        refreshRef.current();
+      } else if (state === 'active' && backgrounded) {
+        backgrounded = false;
+        setFocusCount((count) => count + 1);
       }
     });
     return () => subscription.remove();

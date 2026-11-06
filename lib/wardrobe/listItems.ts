@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
 import type { WardrobeItemCategory } from './addItem';
@@ -45,6 +45,19 @@ export function useWardrobeItems(userId: string | undefined) {
     },
     enabled: Boolean(userId),
   });
+}
+
+/**
+ * Refreshes the Wardrobe grid after items are added. A failed refetch
+ * doesn't reject: it's left to the screen's own error handling to show.
+ * `'none'` only marks the list stale, for the next focus to fetch.
+ */
+export function invalidateWardrobeItems(
+  queryClient: QueryClient,
+  userId: string,
+  refetchType: 'active' | 'none' = 'active',
+): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: ['wardrobeItems', userId], refetchType });
 }
 
 /**

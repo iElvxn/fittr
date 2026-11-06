@@ -13,21 +13,18 @@ const mockNavigation = { setParams: jest.fn() };
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: jest.fn(() => ({})),
-  // A no-op mock (rather than one that runs the effect immediately) keeps
-  // this focus-triggered refetch decoupled from the button/pull-to-refresh
-  // tests below; its own behavior gets one dedicated test that invokes the
-  // captured callback directly.
-  useFocusEffect: jest.fn(),
   useNavigation: jest.fn(() => mockNavigation),
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
+jest.mock('@/lib/query/useRefreshOnFocus', () => ({ useRefreshOnFocus: jest.fn() }));
 
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Wardrobe from '@/app/(tabs)/wardrobe';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems, type WardrobeItemRow } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { Sentry } from '@/lib/observability/sentry';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 import { typeScale } from '@/lib/theme/fonts';
 
 function item(overrides: Partial<WardrobeItemRow> = {}): WardrobeItemRow {
@@ -329,6 +326,19 @@ describe('Wardrobe', () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  it('keeps the grid when a refresh fails with items already loaded', async () => {
+    mockWardrobeItems({
+      data: [item({ id: 'a', name: 'Silk shirt' })],
+      isError: true,
+      error: new TypeError('Network request failed'),
+    });
+
+    await render(<Wardrobe />);
+
+    expect(screen.queryByText('No connection — nothing was lost. Try again.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
   it('refetches when the user pulls to refresh', async () => {
     const refetch = jest.fn();
     mockWardrobeItems({ data: [item({ id: 'a' })], refetch });
@@ -340,16 +350,12 @@ describe('Wardrobe', () => {
     expect(refetch).toHaveBeenCalled();
   });
 
-  it('refetches when the screen regains focus', async () => {
-    const refetch = jest.fn();
-    mockWardrobeItems({ data: [item({ id: 'a' })], refetch });
+  it('refreshes stale reads on focus through useRefreshOnFocus', async () => {
+    mockWardrobeItems({ data: [item({ id: 'a' })] });
 
     await render(<Wardrobe />);
 
-    const onFocus = (useFocusEffect as jest.Mock).mock.calls[0][0];
-    onFocus();
-
-    expect(refetch).toHaveBeenCalled();
+    expect(useRefreshOnFocus).toHaveBeenCalled();
   });
 
   it('shows the generic error message (not the connection banner) for a non-network error', async () => {

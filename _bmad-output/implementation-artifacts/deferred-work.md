@@ -270,3 +270,13 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-4-production-crash-and-analytics-wiring.md`
   summary: Set Sentry's `environment` per build (e.g. from `Updates.channel`) so preview builds stop reporting as `production`.
   evidence: `initSentry` sets no `environment`, and the SDK defaults to `production` outside `__DEV__`, so internal preview crashes mix with store crashes; pre-existing, now easy with `expo-updates` installed.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-react-query-set-up-for-react-native.md`
+  summary: Decide whether `onlineManager` should also follow `isInternetReachable`, so a reconnect refetch waits for working traffic (medium, unverified).
+  evidence: `lib/query/queryClient.ts` follows `isConnected` only and no-connection errors never retry, so a too-early refetch stays failed until a tap or focus. To settle it, check on a device how `expo-network` reports captive Wi-Fi and network switches.
+
+## Deferred from: code review of spec-6-5-react-query-set-up-for-react-native.md (2026-11-05)
+
+- `rollbackOrphanedFit` (`lib/fits/saveFit.ts:96`) soft-deletes the Fit even in edit mode, so a failed `fit_items` upsert on an edit followed by Cancel removes an existing Fit. Pre-existing.
+- `saveBatch` rollback (`lib/wardrobe/addItem.ts:153`) hard-deletes `wardrobe_items`, which has no DELETE policy, so rows survive after their files are removed and show as broken tiles. Pre-existing.
+- Wardrobe binds `refreshing` to `isRefetching` (`app/(tabs)/wardrobe.tsx:288`), so the spinner shows on background refetches; `fits.tsx` guards this with `isPullRefreshing`. Pre-existing.
+- `registerQueryManagers` has no test for a rejected launch reading or for the `AppState` listener teardown.

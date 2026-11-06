@@ -274,6 +274,25 @@ describe('Fit detail', () => {
     expect(router.back).toHaveBeenCalled();
   });
 
+  // The delete is soft: it hides the Fit and clears its wear photos, so the
+  // Fits list, the wear reads and each item's Fits strip change.
+  it('refreshes the Fits, every wear read and the item Fits strips after a delete', async () => {
+    (deleteFit as jest.Mock).mockResolvedValue(undefined);
+    mockActionSheetChoice(0);
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    await renderFitDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete Fit' }));
+
+    await waitFor(() => expect(router.back).toHaveBeenCalled());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fits', 'user-1'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['itemFits'] });
+    for (const key of ['wornFitIds', 'todayWornFitIds', 'fitWearsRange', 'wearDates', 'fitWearPhotos']) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: [key, 'user-1'] });
+    }
+  });
+
   it('confirms a plain delete with no photo line when the Fit has no wear photos', async () => {
     mockActionSheetChoice(1);
     await renderFitDetail();
@@ -430,6 +449,19 @@ describe('Fit detail', () => {
     const user = userEvent.setup();
     await user.press(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it('keeps the Fit on screen when a refresh fails with the list already loaded', async () => {
+    const loaded = (useFits as jest.Mock)();
+    (useFits as jest.Mock).mockReturnValue({
+      ...loaded,
+      isError: true,
+      error: new TypeError('Network request failed'),
+    });
+    await renderFitDetail();
+
+    expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete Fit' })).toBeTruthy();
   });
 
   it('shows a generic message and reports an unexpected list-load failure', async () => {

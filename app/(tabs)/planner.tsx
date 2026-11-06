@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, useColorScheme, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -51,6 +51,7 @@ import { dayFitStatus, todayPlannedStatus } from '@/lib/fits/wearStatus';
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { colors } from '@/lib/theme/colors';
 import { Sentry } from '@/lib/observability/sentry';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 
 const ITALIC_SERIF = 'Newsreader_400Regular_Italic';
 const WEEK_BUTTON_SIZE = 44;
@@ -164,28 +165,14 @@ export default function Planner() {
   const countsQuery = useFitWearCounts(userId);
   const todayWornQuery = useTodayWornFitIds(userId, today);
 
-  // Same reasoning as `fits.tsx`: tabs stay mounted, so a plan made on
-  // another device (or a Fit worn from Fit detail) only shows up if every
-  // read refetches when the tab regains focus. `refetch` ignores `enabled`,
-  // so the month is refetched only while it's the view on screen.
-  const isMonthRef = useRef(isMonth);
-  useEffect(() => {
-    isMonthRef.current = isMonth;
-  }, [isMonth]);
+  // Tabs stay mounted, so a plan made on another device only shows up once
+  // its read refetches on focus. Disabled reads stay off, so the month
+  // refetches only while it's the selected view.
+  useRefreshOnFocus();
   useFocusEffect(
     useCallback(() => {
       syncToday();
-      fitsQuery.refetch();
-      plansQuery.refetch();
-      wearsQuery.refetch();
-      countsQuery.refetch();
-      todayWornQuery.refetch();
-      if (isMonthRef.current) {
-        monthPlansQuery.refetch();
-        monthWearsQuery.refetch();
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch is stable; re-running per focus, not per identity change.
-    }, []),
+    }, [syncToday]),
   );
 
   // Only the view on screen can block it or be reported.

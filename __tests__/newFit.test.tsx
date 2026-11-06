@@ -139,6 +139,26 @@ describe('New Fit -- Save flow', () => {
     expect(useFitBuilderStore.getState().items).toEqual([]);
   });
 
+  it("refreshes every item's Fits strip on a successful save", async () => {
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
+    (insertFit as jest.Mock).mockResolvedValue(undefined);
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await renderNewFit();
+    const user = userEvent.setup();
+    await user.press(screen.getByText('Skip for now'));
+    await act(async () => {
+      useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    });
+
+    await user.press(screen.getByRole('button', { name: 'Save Fit' }));
+    await screen.findByDisplayValue('Fit 12');
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalled());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['itemFits'] });
+  });
+
   it('shows the block-and-keep message and keeps the sheet open when the save fails with no connection', async () => {
     (uploadCover as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
 
@@ -156,6 +176,29 @@ describe('New Fit -- Save flow', () => {
     await waitFor(() => expect(screen.getByText(NO_CONNECTION_MESSAGE)).toBeTruthy());
     expect(screen.getByDisplayValue('Fit 12')).toBeTruthy();
     expect(router.dismissTo).not.toHaveBeenCalled();
+  });
+
+  it('marks the Fit reads stale, without fetching, after a failed save', async () => {
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
+    (insertFit as jest.Mock).mockRejectedValue(new FitError('no_connection', NO_CONNECTION_MESSAGE));
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    await renderNewFit();
+    const user = userEvent.setup();
+    await user.press(screen.getByText('Skip for now'));
+    await act(async () => {
+      useFitBuilderStore.getState().addItem('wardrobe-item-1', 'top');
+    });
+
+    await user.press(screen.getByRole('button', { name: 'Save Fit' }));
+    await screen.findByDisplayValue('Fit 12');
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.getByText(NO_CONNECTION_MESSAGE)).toBeTruthy());
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fits', 'user-1'], refetchType: 'none' });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitItems', expect.any(String)], refetchType: 'none' });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['itemFits'], refetchType: 'none' });
   });
 });
 

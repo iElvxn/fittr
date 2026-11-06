@@ -50,9 +50,11 @@ jest.mock('expo-router', () => ({
   useFocusEffect: jest.fn(),
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
+jest.mock('@/lib/query/useRefreshOnFocus', () => ({ useRefreshOnFocus: jest.fn() }));
 
 import Home from '@/app/(tabs)/index';
 import { router, useFocusEffect } from 'expo-router';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 import { useSession } from '@/lib/auth/useSession';
 import { useProfile } from '@/lib/profile/useProfile';
 import { useAvatarUrl } from '@/lib/profile/avatarUrl';
@@ -201,8 +203,9 @@ describe('Home tab', () => {
       expect(usePlannedFits).toHaveBeenLastCalledWith('user-1', MON);
     });
 
-    it('moves to the new day and refetches the wear reads when the app returns to the foreground', async () => {
-      const listener = AppState.addEventListener as jest.Mock;
+    // A resume needs no refetch of its own: the new date is a new query key,
+    // and `focusManager` refetches whatever else went stale.
+    it('moves to the new day, refetching nothing by hand, when the app returns to the foreground', async () => {
       const refetchToday = jest.fn();
       const refetchDates = jest.fn();
       mockTodayWorn([], { refetch: refetchToday });
@@ -210,14 +213,16 @@ describe('Home tab', () => {
       await renderHome();
 
       mockToday = '2025-09-29';
-      const onChange = listener.mock.calls.at(-1)?.[1] as (state: string) => void;
-      await act(async () => onChange('active'));
+      const listeners = (AppState.addEventListener as jest.Mock).mock.calls
+        .filter(([event]) => event === 'change')
+        .map(([, listener]) => listener as (state: string) => void);
+      await act(async () => listeners.forEach((listener) => listener('active')));
 
       expect(screen.getByText('Monday, Sep 29')).toBeTruthy();
       expect(usePlannedFits).toHaveBeenLastCalledWith('user-1', '2025-09-29');
       expect(useTodayWornFitIds).toHaveBeenLastCalledWith('user-1', '2025-09-29');
-      expect(refetchToday).toHaveBeenCalled();
-      expect(refetchDates).toHaveBeenCalled();
+      expect(refetchToday).not.toHaveBeenCalled();
+      expect(refetchDates).not.toHaveBeenCalled();
     });
 
     it("reads today's wears under today's date", async () => {
@@ -1378,7 +1383,7 @@ describe('Home tab', () => {
       expect(screen.queryByText(UNKNOWN_ERROR_MESSAGE)).toBeNull();
     });
 
-    it('refetches every read when the tab regains focus', async () => {
+    it('leaves focus refreshes to useRefreshOnFocus, refetching nothing by hand', async () => {
       const refetches = { fits: jest.fn(), plans: jest.fn(), counts: jest.fn(), today: jest.fn(), dates: jest.fn() };
       mockFits({ refetch: refetches.fits });
       mockPlans([], { refetch: refetches.plans });
@@ -1389,8 +1394,9 @@ describe('Home tab', () => {
       await renderHome();
       await focus();
 
+      expect(useRefreshOnFocus).toHaveBeenCalled();
       for (const refetch of Object.values(refetches)) {
-        expect(refetch).toHaveBeenCalled();
+        expect(refetch).not.toHaveBeenCalled();
       }
     });
   });

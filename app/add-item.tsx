@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useNavigation, type NativeStackNavigationProp } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { CameraView } from 'expo-camera';
 
 import { Text } from '@/components/ui/Text';
@@ -15,6 +16,7 @@ import { pickFromLibrary } from '@/lib/wardrobe/capture';
 import { ensureCameraPermission, capturePhoto, type CameraRef } from '@/lib/wardrobe/rapidCamera';
 import { processWardrobePhoto } from '@/lib/wardrobe/processImage';
 import { saveBatch } from '@/lib/wardrobe/addItem';
+import { invalidateWardrobeItems } from '@/lib/wardrobe/listItems';
 import { WardrobeItemError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/wardrobe/errors';
 import { trackItemAdded } from '@/lib/analytics/posthog';
 import { Sentry } from '@/lib/observability/sentry';
@@ -30,6 +32,7 @@ type ScreenMode = 'choosing' | 'camera' | 'reviewing' | 'permission-error';
 export default function AddItem() {
   const { session } = useSession();
   const userId = session?.user.id;
+  const queryClient = useQueryClient();
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const insets = useSafeAreaInsets();
 
@@ -247,8 +250,15 @@ export default function AddItem() {
 
       const batchSize = items.length;
       items.forEach((item) => trackItemAdded(item.source, item.category, batchSize));
+      // `router.dismissTo` returns to the already-mounted Wardrobe tab, so the
+      // grid wouldn't refetch by itself. Not awaited: the save is done.
+      void invalidateWardrobeItems(queryClient, userId);
       router.dismissTo({ pathname: '/(tabs)/wardrobe', params: { itemAdded: '1' } });
     } catch (error) {
+      // `saveBatch` rolls back best-effort, so a failed batch can still leave
+      // rows behind. Stale only: a fetch now could fail too, and replace a
+      // healthy grid with the error state while this screen is still open.
+      void invalidateWardrobeItems(queryClient, userId, 'none');
       if (error instanceof WardrobeItemError && error.kind === 'no_connection') {
         setConnectionError(true);
       } else {
