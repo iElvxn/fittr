@@ -77,7 +77,7 @@ development_status:
   6-2-small-webp-fit-cover-thumbnails: done
   6-12-webp-item-cutouts: done
   6-3-one-shared-auth-session: done
-  6-4-production-crash-and-analytics-wiring: review
+  6-4-production-crash-and-analytics-wiring: done
   6-5-react-query-set-up-for-react-native: backlog
   6-6-count-wears-on-the-server: backlog
   6-7-turn-on-the-react-compiler: backlog
