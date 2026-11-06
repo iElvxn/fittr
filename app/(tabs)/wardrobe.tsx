@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useColorScheme, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import {
   router,
-  useFocusEffect,
   useLocalSearchParams,
   useNavigation,
   type Href,
@@ -31,6 +30,7 @@ import { isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } fro
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { colors } from '@/lib/theme/colors';
 import { Sentry } from '@/lib/observability/sentry';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 
 const ACK_DURATION_MS = 2500;
 const GRID_COLUMNS = 3;
@@ -86,16 +86,7 @@ export default function Wardrobe() {
 
   const { data: items, isLoading, isError, error, refetch, isRefetching } = useWardrobeItems(userId);
 
-  // `router.dismissTo` (used when Save succeeds in add-item.tsx) returns to
-  // this already-mounted tab rather than remounting it, so TanStack Query's
-  // mount-time refetch never fires on its own -- without this, the "added"
-  // ack can show while the grid still reflects the pre-save state.
-  useFocusEffect(
-    useCallback(() => {
-      refetch();
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch is stable; re-running per focus, not per identity change.
-    }, []),
-  );
+  useRefreshOnFocus();
 
   useEffect(() => {
     if (isError && !isNoConnectionError(error)) {
@@ -132,7 +123,10 @@ export default function Wardrobe() {
   const columnWidth = (width - GUTTER * 2 - COLUMN_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
   const itemCount = items?.length ?? 0;
   const gridExtraData = useMemo(() => ({ thumbnailUrls, columnWidth }), [thumbnailUrls, columnWidth]);
-  const isReady = Boolean(userId) && !isLoading && !isError;
+  // A failed refresh keeps the data already on screen, same as Home and the
+  // Planner: only a first load with nothing to show blocks.
+  const isBlocked = isError && !items;
+  const isReady = Boolean(userId) && !isLoading && !isBlocked;
 
   function showEverything() {
     setQuery('');
@@ -198,7 +192,7 @@ export default function Wardrobe() {
     );
   }
 
-  if (isError) {
+  if (isBlocked) {
     const message = isNoConnectionError(error) ? NO_CONNECTION_MESSAGE : UNKNOWN_ERROR_MESSAGE;
     return renderScreen(
       <View className="px-gutter pt-6">

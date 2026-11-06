@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { FlatList, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   router,
-  useFocusEffect,
   useLocalSearchParams,
   useNavigation,
   type Href,
@@ -26,6 +25,7 @@ import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MES
 import { useTabBarClearance } from '@/lib/theme/tabBar';
 import { colors } from '@/lib/theme/colors';
 import { Sentry } from '@/lib/observability/sentry';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 
 const FILTER_EMPTY_COPY: Record<Exclude<FitsFilter, 'all'>, { title: string; body: string }> = {
   favorites: {
@@ -90,7 +90,7 @@ export default function Fits() {
   } = useFitWearCounts(userId);
   const [filter, setFilter] = useState<FitsFilter>('all');
 
-  // Tracks only a pull the user made, not the focus refetch below, so the
+  // Tracks only a pull the user made, not a focus refetch, so the
   // spinner doesn't flash every time the tab regains focus.
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   async function handlePullRefresh() {
@@ -115,16 +115,7 @@ export default function Fits() {
     }
   }
 
-  // Same reasoning as `wardrobe.tsx`'s own `useFocusEffect`: `router.dismissTo`
-  // (used on a successful save/edit in `new-fit.tsx`) returns to this
-  // already-mounted tab rather than remounting it, so a mount-time refetch
-  // never fires on its own.
-  useFocusEffect(
-    useCallback(() => {
-      refetch();
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch is stable; re-running per focus, not per identity change.
-    }, []),
-  );
+  useRefreshOnFocus();
 
   useEffect(() => {
     if (isError && !isNoConnectionError(error)) {
@@ -155,7 +146,10 @@ export default function Fits() {
   const { data: thumbnailUrls } = useThumbnailUrls(coverThumbPaths);
   const columnWidth = (width - GUTTER * 2 - COLUMN_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
   const fitCount = fits?.length ?? 0;
-  const isReady = Boolean(userId) && !isLoading && !isWornLoading && !isError;
+  // A failed refresh keeps the data already on screen, same as Home and the
+  // Planner: only a first load with nothing to show blocks.
+  const isBlocked = isError && !fits;
+  const isReady = Boolean(userId) && !isLoading && !isWornLoading && !isBlocked;
   const gridExtraData = useMemo(() => ({ wearCounts, thumbnailUrls, columnWidth }), [wearCounts, thumbnailUrls, columnWidth]);
 
   // Client-side filtering. A failed wear-count read leaves `wearCounts`
@@ -220,7 +214,7 @@ export default function Fits() {
     );
   }
 
-  if (isError) {
+  if (isBlocked) {
     const message = isNoConnectionError(error) ? NO_CONNECTION_MESSAGE : UNKNOWN_ERROR_MESSAGE;
     return renderScreen(
       <View className="px-gutter pt-6">

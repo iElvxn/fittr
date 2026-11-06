@@ -24,6 +24,7 @@ import { useFits } from '@/lib/fits/listFits';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { countFitWearPhotos, deleteFit } from '@/lib/fits/deleteFit';
 import { getFitItems } from '@/lib/fits/getFitItems';
+import { invalidateWearQueries } from '@/lib/fits/markFitWorn';
 import { toggleFitFavorite } from '@/lib/fits/toggleFavorite';
 import { useTodayWornFitIds } from '@/lib/fits/wornFitIds';
 import { useFitWearPhotos } from '@/lib/fits/fitWearPhotos';
@@ -240,6 +241,10 @@ export default function FitDetail() {
       // delete, which would misrepresent an already-successful,
       // non-reversible delete as failed.
       queryClient.invalidateQueries({ queryKey: ['fits', userId] }).catch(() => {});
+      // The delete also clears the Fit's wear photos, and the Fit leaves each
+      // of its items' Fits strips.
+      invalidateWearQueries(queryClient, userId as string).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ['itemFits'] }).catch(() => {});
       router.back();
     } catch (error) {
       if (error instanceof FitError && error.kind === 'no_connection') {
@@ -365,7 +370,8 @@ export default function FitDetail() {
     );
   }
 
-  if (isListError) {
+  // A failed refresh keeps the Fit on screen, same as Home and the Planner.
+  if (isListError && !fits) {
     const message = isNoConnectionError(listError) ? NO_CONNECTION_MESSAGE : UNKNOWN_ERROR_MESSAGE;
     return (
       <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">

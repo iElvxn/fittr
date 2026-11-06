@@ -6,10 +6,9 @@ jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn(), storage: { fro
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: jest.fn(),
-  // No-op mock, same as fits.test.tsx -- the focus refetch is invoked by hand where tested.
-  useFocusEffect: jest.fn(),
 }));
 jest.mock('@/lib/auth/useSession', () => ({ useSession: jest.fn() }));
+jest.mock('@/lib/query/useRefreshOnFocus', () => ({ useRefreshOnFocus: jest.fn() }));
 jest.mock('@/lib/wardrobe/listItems', () => ({ useWardrobeItems: jest.fn() }));
 jest.mock('@/lib/wardrobe/thumbnailUrls', () => ({ useThumbnailUrls: jest.fn() }));
 jest.mock('@/lib/wardrobe/updateItem', () => ({ updateWardrobeItem: jest.fn() }));
@@ -23,13 +22,14 @@ jest.mock('@/lib/fits/listFits', () => ({
 jest.mock('@/lib/wardrobe/itemFits', () => ({ useItemFitIds: jest.fn() }));
 
 import ItemDetail from '@/app/item/[id]';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '@/lib/auth/useSession';
 import { useWardrobeItems } from '@/lib/wardrobe/listItems';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { updateWardrobeItem } from '@/lib/wardrobe/updateItem';
 import { deleteWardrobeItem } from '@/lib/wardrobe/deleteItem';
 import { Sentry } from '@/lib/observability/sentry';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { useItemFitIds } from '@/lib/wardrobe/itemFits';
 import { FitError } from '@/lib/fits/errors';
@@ -266,15 +266,11 @@ describe('Item detail', () => {
     expect(image.props.source).toEqual([{ uri: 'https://signed.example/fit-a-thumb.webp', cacheKey: thumb }]);
   });
 
-  it('refetches the Fits that use the piece on screen focus', async () => {
-    const refetch = jest.fn();
-    mockItemFitIds({ data: [], refetch });
+  it('refreshes the Fits that use the piece on focus through useRefreshOnFocus', async () => {
+    mockItemFitIds({ data: [] });
     await renderItemDetail();
 
-    const onFocus = (useFocusEffect as jest.Mock).mock.calls.at(-1)[0];
-    onFocus();
-
-    expect(refetch).toHaveBeenCalled();
+    expect(useRefreshOnFocus).toHaveBeenCalled();
   });
 
   it('hides the Fits section and reports to Sentry when the Fits list fails to load', async () => {
@@ -391,6 +387,20 @@ describe('Item detail', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
   });
 
+  // Fit detail's item list shows each item's name, category and thumbnail.
+  it("refreshes the grid and every Fit's item list after an edit", async () => {
+    (updateWardrobeItem as jest.Mock).mockResolvedValue(undefined);
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    await renderItemDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Edit item' }));
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitItems'] }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['wardrobeItems', 'user-1'] });
+  });
+
   it('shows a connection error and keeps the in-progress edit selected when saving fails offline', async () => {
     (updateWardrobeItem as jest.Mock).mockRejectedValue(new WardrobeItemError('no_connection', NO_CONNECTION_MESSAGE));
     await renderItemDetail();
@@ -445,6 +455,19 @@ describe('Item detail', () => {
     expect(router.back).toHaveBeenCalled();
   });
 
+  it("refreshes the grid and every Fit's item list after a delete", async () => {
+    (deleteWardrobeItem as jest.Mock).mockResolvedValue(undefined);
+    mockActionSheetChoice(0);
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    await renderItemDetail();
+
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Delete item' }));
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fitItems'] }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['wardrobeItems', 'user-1'] });
+  });
+
   it('does nothing when delete is cancelled in the action sheet', async () => {
     mockActionSheetChoice(1);
     await renderItemDetail();
@@ -496,6 +519,19 @@ describe('Item detail', () => {
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     expect(screen.getByTestId('item-detail-skeleton', { includeHiddenElements: true })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit item' })).toBeNull();
+  });
+
+  it('keeps the item on screen when a refresh fails with the list already loaded', async () => {
+    const loaded = (useWardrobeItems as jest.Mock)();
+    (useWardrobeItems as jest.Mock).mockReturnValue({
+      ...loaded,
+      isError: true,
+      error: new TypeError('Network request failed'),
+    });
+    await renderItemDetail();
+
+    expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit item' })).toBeTruthy();
   });
 
   it('shows a connection error with retry when the wardrobe list fails to load', async () => {

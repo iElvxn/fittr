@@ -21,21 +21,20 @@ const mockNavigation = { setParams: jest.fn() };
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: jest.fn(() => ({})),
-  // No-op mock, same reasoning as `wardrobeGrid.test.tsx`'s -- decouples the
-  // focus-triggered refetch from the rest of these tests.
-  useFocusEffect: jest.fn(),
   useNavigation: jest.fn(() => mockNavigation),
 }));
 jest.mock('@/lib/observability/sentry', () => ({ Sentry: { captureException: jest.fn() } }));
+jest.mock('@/lib/query/useRefreshOnFocus', () => ({ useRefreshOnFocus: jest.fn() }));
 
 import Fits from '@/app/(tabs)/fits';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '@/lib/auth/useSession';
 import { useFits, type FitRow } from '@/lib/fits/listFits';
 import { useFitWearCounts } from '@/lib/fits/wornFitIds';
 import { useThumbnailUrls } from '@/lib/wardrobe/thumbnailUrls';
 import { FitError, NO_CONNECTION_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 
 // Midday UTC, so the local calendar date is the 21st in any test timezone.
 const SAVED_AT = '2026-09-21T12:00:00.000Z';
@@ -217,6 +216,15 @@ describe('Fits tab', () => {
     });
   });
 
+  it('keeps the grid when a refresh fails with Fits already loaded', async () => {
+    mockFits({ data: [fit()], isError: true, error: new TypeError('Network request failed') });
+
+    await renderFits();
+
+    expect(screen.queryByText('No connection — nothing was lost. Try again.')).toBeNull();
+    expect(screen.getByText('1 Fit')).toBeTruthy();
+  });
+
   it('shows a connection error with retry when the list fails to load', async () => {
     const refetch = jest.fn();
     mockFits({ data: undefined, isError: true, error: new TypeError('Network request failed'), refetch });
@@ -322,16 +330,12 @@ describe('Fits tab', () => {
     expect(router.push).toHaveBeenCalledWith('/new-fit');
   });
 
-  it('refetches when the screen regains focus', async () => {
-    const refetch = jest.fn();
-    mockFits({ data: [fit()], refetch });
+  it('refreshes stale reads on focus through useRefreshOnFocus', async () => {
+    mockFits({ data: [fit()] });
 
     await renderFits();
 
-    const onFocus = (useFocusEffect as jest.Mock).mock.calls[0][0];
-    onFocus();
-
-    expect(refetch).toHaveBeenCalled();
+    expect(useRefreshOnFocus).toHaveBeenCalled();
   });
 
   it('shows a generic message and reports an unexpected list-load failure', async () => {

@@ -39,13 +39,22 @@ jest.mock('@/lib/observability/sentry', () => ({
   Sentry: { wrap: (component: unknown) => component },
 }));
 jest.mock('@/lib/supabase', () => ({ supabase: { auth: { onAuthStateChange: jest.fn() } } }));
+jest.mock('@/lib/query/queryClient', () => {
+  const { QueryClient } = jest.requireActual('@tanstack/react-query');
+  return { createQueryClient: jest.fn(() => new QueryClient()), registerQueryManagers: jest.fn() };
+});
 
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { supabase } from '@/lib/supabase';
 import { navigationIntegration } from '@/lib/observability/sentry';
+import { createQueryClient, registerQueryManagers } from '@/lib/query/queryClient';
 // Relative on purpose: Jest resolves `@/app/...` index-like paths to `app.json`.
 import RootLayout from '../app/_layout';
+
+// Read before any `beforeEach` clears them: both calls run once, at import.
+const createQueryClientCalls = (createQueryClient as jest.Mock).mock.calls.length;
+const registerQueryManagersCalls = (registerQueryManagers as jest.Mock).mock.calls.length;
 
 let emit: (event: string, session: unknown) => void;
 
@@ -97,5 +106,10 @@ describe('RootLayout', () => {
     await render(<RootLayout />);
 
     expect(navigationIntegration.registerNavigationContainer).toHaveBeenCalledWith(mockNavigationRef);
+  });
+
+  it('builds its client from the factory and registers the managers once, at import', () => {
+    expect(createQueryClientCalls).toBe(1);
+    expect(registerQueryManagersCalls).toBe(1);
   });
 });

@@ -71,7 +71,8 @@ export async function unmarkFitWornToday(userId: string, fitId: string): Promise
 
 /**
  * Every read that reflects a wear, invalidated together after any wear
- * write (Home's Mark worn, Fit detail's Wear today): the My Fits counts and
+ * write (Home's Mark worn, Fit detail's Wear today) and a Fit delete, which
+ * clears that Fit's wear photos: the My Fits counts and
  * Worn filter, today's worn state, the Planner's week "Worn" captions, the
  * wear streak and Fit detail's "Worn" photo strip. Resolves once every
  * refetch has landed.

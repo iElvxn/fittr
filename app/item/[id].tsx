@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActionSheetIOS, ActivityIndicator, ScrollView, TextInput, View, useColorScheme } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Text } from '@/components/ui/Text';
@@ -32,6 +32,7 @@ import {
 } from '@/lib/wardrobe/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import { colors } from '@/lib/theme/colors';
+import { useRefreshOnFocus } from '@/lib/query/useRefreshOnFocus';
 
 /** Same fixed 4:5 as Fit detail's collage frame; the cutout is contained, never cropped. */
 const PHOTO_ASPECT_RATIO = 4 / 5;
@@ -143,20 +144,10 @@ export default function ItemDetail() {
     data: itemFitIds,
     isError: isItemFitsError,
     error: itemFitsError,
-    refetch: refetchItemFitIds,
   } = useItemFitIds(item?.id);
   const { data: fits, isError: isFitsError, error: fitsError } = useFits(userId);
 
-  // Opening a Fit from the strip and editing it (adding/removing this piece)
-  // returns to this still-mounted screen, so refetch on every focus.
-  useFocusEffect(
-    useCallback(() => {
-      if (item?.id) {
-        refetchItemFitIds();
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch is stable; re-running per focus, not per identity change.
-    }, [item?.id]),
-  );
+  useRefreshOnFocus();
 
   useEffect(() => {
     if (isFitsError && !isFitsNoConnectionError(fitsError)) {
@@ -226,6 +217,9 @@ export default function ItemDetail() {
         notes: editNotes,
       });
       await queryClient.invalidateQueries({ queryKey: ['wardrobeItems', userId] });
+      // Not awaited: Fit detail's item list (each item's name, category and
+      // thumbnail) is a screen away, so this write needn't wait on it.
+      void queryClient.invalidateQueries({ queryKey: ['fitItems'] });
       setIsEditing(false);
     } catch (error) {
       if (error instanceof WardrobeItemError && error.kind === 'no_connection') {
@@ -247,6 +241,9 @@ export default function ItemDetail() {
     try {
       await deleteWardrobeItem(item.id);
       await queryClient.invalidateQueries({ queryKey: ['wardrobeItems', userId] });
+      // Not awaited: Fit detail's item list (each item's name, category and
+      // thumbnail) is a screen away, so this write needn't wait on it.
+      void queryClient.invalidateQueries({ queryKey: ['fitItems'] });
       router.back();
     } catch (error) {
       if (error instanceof WardrobeItemError && error.kind === 'no_connection') {
@@ -281,7 +278,8 @@ export default function ItemDetail() {
     );
   }
 
-  if (isListError) {
+  // A failed refresh keeps the item on screen, same as Home and the Planner.
+  if (isListError && !items) {
     const message = isNoConnectionError(listError) ? NO_CONNECTION_MESSAGE : UNKNOWN_ERROR_MESSAGE;
     return (
       <View className="flex-1 bg-surface-base dark:bg-surface-baseDark">

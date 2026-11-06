@@ -305,16 +305,19 @@ export default function NewFit() {
         placements,
       );
       // Both the Fits tab list and (in edit mode) the Fit detail screen read
-      // through `useFits`'s cache -- without this, a just-created or
-      // just-edited Fit wouldn't show up until some unrelated refetch.
+      // through `useFits`'s cache, and `router.dismissTo` below returns to an
+      // already-mounted screen -- without this, a just-created or just-edited
+      // Fit wouldn't show up until some unrelated refetch.
       await queryClient.invalidateQueries({ queryKey: ['fits', userId] });
       // `app/fit/[id].tsx`'s zero-item empty state (Story 3.4) reads a
-      // separate `['fitItems', fitId]` cache -- that screen has no
-      // focus-refetch of its own either, so without this an edit that empties
-      // (or re-fills) a Fit wouldn't be reflected there until some unrelated
-      // refetch. Always the current `pendingSave.fitId`, valid for both a
+      // separate `['fitItems', fitId]` cache -- without this an edit that
+      // empties (or re-fills) a Fit wouldn't be reflected there until something
+      // else refetched it. Always the current `pendingSave.fitId`, valid for both a
       // fresh save and an edit re-save.
       await queryClient.invalidateQueries({ queryKey: ['fitItems', pendingSave.fitId] });
+      // Item detail's "In N Fits" strip, for any item added or removed. Not
+      // awaited: that screen is a step away, so the save needn't wait on it.
+      void queryClient.invalidateQueries({ queryKey: ['itemFits'] });
       const savedFitId = pendingSave.fitId;
       setPendingSave(null);
       reset();
@@ -328,6 +331,13 @@ export default function NewFit() {
         console.error('[new-fit] save failed:', error);
         Sentry.captureException(error);
       }
+      // A failed save may already have written part of the Fit, and no tab
+      // refetches on focus unless its reads are stale. Stale only, no fetch:
+      // this screen reads `useFits`, so refetching a rolled-back edit would
+      // swap the sheet for "not found" and lose its retry.
+      void queryClient.invalidateQueries({ queryKey: ['fits', userId], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['fitItems', pendingSave.fitId], refetchType: 'none' });
+      void queryClient.invalidateQueries({ queryKey: ['itemFits'], refetchType: 'none' });
       // Block-and-keep for every failure here, not only classified
       // no-connection ones: the sheet's collage/name stay intact and the
       // same retry action applies regardless of cause.
