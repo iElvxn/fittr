@@ -30,16 +30,17 @@ export const FIT_COVER_THUMB_LONG_EDGE = 800;
  * not a fixed `cover.png`) -- overwriting the same path in place made a
  * re-saved cover indistinguishable, URL-wise, from the one before it, which
  * neither `expo-image`'s cache nor Storage's own CDN would treat as changed
- * content. `ts` is minted once per save attempt by the caller and kept
- * across a retry, so a retried upload lands on (and `upsert: true`
+ * content. `ts` is minted once each time the sheet opens and kept across a
+ * retry there, so a retried upload lands on (and `upsert: true`
  * overwrites) its own earlier partial upload instead of leaving a second
  * pair behind. `insertFit` best-effort deletes the previous pair once this
  * new one is confirmed committed.
  *
- * Cover + thumbnail are one unit: both upload in parallel and, on any
- * failure, both are removed. The rollback waits for both uploads to settle
- * first -- removing while the sibling is still in flight would let that
- * object land afterwards, orphaned.
+ * Cover + thumbnail are one unit, uploaded in parallel. A failure waits for
+ * both to settle, so a retry never races an upload still in flight. Nothing
+ * is removed on failure: a retry in the sheet reuses these paths, and an earlier attempt
+ * may have committed them, so deleting could leave a saved Fit pointing at
+ * missing files. An orphaned pair is harmless.
  */
 export async function uploadCover(
   userId: string,
@@ -57,7 +58,6 @@ export async function uploadCover(
   ]);
   const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (failure) {
-    await rollbackCover(coverPath, thumbPath);
     throw failure.reason;
   }
 
@@ -82,36 +82,20 @@ async function uploadOne(path: string, localUri: string, contentType: string): P
   }
 }
 
-async function rollbackCover(coverPath: string, thumbPath: string): Promise<void> {
-  await Promise.resolve(supabase.storage.from('wardrobe').remove([coverPath, thumbPath])).catch(() => {});
-}
-
 /**
- * `fits` has no DELETE policy (soft delete only, like every other table in
- * this schema except `fit_items` itself -- see `0004_fits.sql`), so an
- * orphaned `fits` row left behind by a failed `fit_items` insert is rolled
- * back with the same soft-delete UPDATE the edit/delete flow will use later,
- * not a hard delete that RLS would just silently no-op.
- */
-async function rollbackOrphanedFit(fitId: string): Promise<void> {
-  await Promise.resolve(supabase.from('fits').update({ deleted_at: new Date().toISOString() }).eq('id', fitId)).catch(
-    () => {},
-  );
-}
-
-/**
- * Upserts the `fits` row, then the `fit_items` rows for every placement.
- * `onConflict: 'id'` on both -- same idempotent-retry reasoning as
- * `insertWardrobeItem`, since `fitId` and each placement's own `id` stay
- * fixed across a retry after a no-connection failure. `previousCoverPath`
- * and `previousThumbPath` (the Fit's cover pair before this save, `null` for
- * a brand-new Fit or a pre-thumbnail Fit) are best-effort deleted once every
- * write below has fully committed -- never
- * awaited into the failure path, since a cleanup failure must not undo or
- * mis-report an otherwise-successful save.
+ * Saves the Fit and replaces its placements in one transaction, through the
+ * `save_fit` database function (0017_save_fit.sql): a failed save changes
+ * nothing in the database. The owner comes from the session, and `fitId` and
+ * each placement's own `id` stay fixed across a retry, so resending is safe.
+ *
+ * Cover files stay put on any failure: a lost response or a gateway error
+ * doesn't say whether the save committed. `previousCoverPath` and
+ * `previousThumbPath` (the Fit's cover pair before this save, `null` for a
+ * brand-new Fit or a pre-thumbnail Fit) are best-effort deleted once the save
+ * has committed -- never awaited into the failure path, since a cleanup
+ * failure must not undo or mis-report an otherwise-successful save.
  */
 export async function insertFit(
-  userId: string,
   fitId: string,
   name: string,
   coverPath: string,
@@ -121,81 +105,34 @@ export async function insertFit(
   canvasBackgroundColor: string | null,
   items: FitItemPlacement[],
 ): Promise<void> {
-  const { error: fitError } = await supabase.from('fits').upsert(
-    {
-      id: fitId,
-      user_id: userId,
-      name,
-      cover_path: coverPath,
-      cover_thumb_path: thumbPath,
-      canvas_background_color: canvasBackgroundColor,
-      // Explicit, not left to the column default: a retry after
-      // `rollbackOrphanedFit` soft-deleted this same row on an earlier
-      // attempt must clear that back out, since `upsert` only overwrites
-      // columns present in this payload.
-      deleted_at: null,
-    },
-    { onConflict: 'id' },
-  );
-
-  if (fitError) {
-    await rollbackCover(coverPath, thumbPath);
-    if (isNoConnectionError(fitError)) {
-      throw new FitError('no_connection', NO_CONNECTION_MESSAGE);
-    }
-    throw fitError;
-  }
-
-  const rows = items.map((item) => ({
-    id: item.id,
-    fit_id: fitId,
-    item_id: item.wardrobeItemId,
-    x: item.x,
-    y: item.y,
-    scale: item.scale,
-    rotation: item.rotation,
-    z_index: item.zIndex,
-  }));
-
-  const { error: itemsError } = await supabase.from('fit_items').upsert(rows, { onConflict: 'id' });
-
-  if (itemsError) {
-    await rollbackCover(coverPath, thumbPath);
-    await rollbackOrphanedFit(fitId);
-    if (isNoConnectionError(itemsError)) {
-      throw new FitError('no_connection', NO_CONNECTION_MESSAGE);
-    }
-    throw itemsError;
-  }
-
-  await deleteOrphanedFitItems(fitId, rows.map((row) => row.id));
-
-  const stalePaths = [previousCoverPath, previousThumbPath].filter(
-    (path): path is string => Boolean(path) && path !== coverPath && path !== thumbPath,
-  );
-  if (stalePaths.length > 0) {
-    await Promise.resolve(supabase.storage.from('wardrobe').remove(stalePaths)).catch(() => {});
-  }
-}
-
-/**
- * Re-saving an edited Fit reuses the same `fitId`, so the upsert above
- * updates/inserts the current placements but never removes a row for an
- * item the user took off the canvas -- that row is deleted here, scoped to
- * this `fitId` so it can never touch another Fit's placements. Ids are our
- * own client-generated uuids (never containing PostgREST-reserved
- * characters), so they're safe to inline unescaped, same trust boundary as
- * `id.eq.<uuid>` filters elsewhere in this codebase.
- */
-async function deleteOrphanedFitItems(fitId: string, currentItemIds: string[]): Promise<void> {
-  const query = supabase.from('fit_items').delete().eq('fit_id', fitId);
-  const { error } =
-    currentItemIds.length > 0 ? await query.not('id', 'in', `(${currentItemIds.join(',')})`) : await query;
+  const { error } = await supabase.rpc('save_fit', {
+    p_fit_id: fitId,
+    p_name: name,
+    p_cover_path: coverPath,
+    p_cover_thumb_path: thumbPath,
+    p_canvas_background_color: canvasBackgroundColor,
+    p_items: items.map((item) => ({
+      id: item.id,
+      item_id: item.wardrobeItemId,
+      x: item.x,
+      y: item.y,
+      scale: item.scale,
+      rotation: item.rotation,
+      z_index: item.zIndex,
+    })),
+  });
 
   if (error) {
     if (isNoConnectionError(error)) {
       throw new FitError('no_connection', NO_CONNECTION_MESSAGE);
     }
     throw error;
+  }
+
+  const stalePaths = [previousCoverPath, previousThumbPath].filter(
+    (path): path is string => Boolean(path) && path !== coverPath && path !== thumbPath,
+  );
+  if (stalePaths.length > 0) {
+    await Promise.resolve(supabase.storage.from('wardrobe').remove(stalePaths)).catch(() => {});
   }
 }

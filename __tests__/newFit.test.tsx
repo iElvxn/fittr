@@ -46,6 +46,7 @@ import { getFitItems } from '@/lib/fits/getFitItems';
 import { useFits } from '@/lib/fits/listFits';
 import { useWardrobeItems } from '@/lib/wardrobe/listItems';
 import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
+import { Sentry } from '@/lib/observability/sentry';
 import { useFitBuilderStore } from '@/stores/fitBuilder';
 
 let queryClient: QueryClient;
@@ -55,12 +56,16 @@ const UPLOADED_PAIR = {
   thumbPath: 'user-1/fits/fit-1/cover-1700000000000_thumb.webp',
 };
 
-function renderNewFit() {
-  return render(
+function newFitTree() {
+  return (
     <QueryClientProvider client={queryClient}>
       <NewFit />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function renderNewFit() {
+  return render(newFitTree());
 }
 
 beforeEach(() => {
@@ -261,7 +266,6 @@ describe('New Fit -- cover thumbnail (Story 6.2)', () => {
     expect(retry).toEqual(first);
     expect(resizeLongEdge).toHaveBeenCalledTimes(1);
     expect(insertFit).toHaveBeenCalledWith(
-      'user-1',
       first[1],
       'Fit 12',
       UPLOADED_PAIR.coverPath,
@@ -272,6 +276,51 @@ describe('New Fit -- cover thumbnail (Story 6.2)', () => {
       expect.any(Array),
     );
     nowSpy.mockRestore();
+  });
+
+  // The first attempt may have committed with its response lost, so a new id
+  // here would leave a duplicate Fit.
+  it('keeps the same Fit id when the sheet is closed and Save tapped again', async () => {
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
+    (insertFit as jest.Mock)
+      .mockRejectedValueOnce(new FitError('no_connection', NO_CONNECTION_MESSAGE))
+      .mockResolvedValueOnce(undefined);
+
+    const user = await openSaveSheet();
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByText(NO_CONNECTION_MESSAGE)).toBeTruthy());
+
+    await user.press(screen.getByRole('button', { name: 'Dismiss' }));
+    await user.press(screen.getByRole('button', { name: 'Save Fit' }));
+    await screen.findByDisplayValue('Fit 12');
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalled());
+    const [first, second] = (insertFit as jest.Mock).mock.calls;
+    expect(second[0]).toBe(first[0]);
+  });
+
+  it('shows "No connection" for a raw network error the save never classified', async () => {
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
+    (insertFit as jest.Mock).mockRejectedValue(new TypeError('Network request failed'));
+
+    const user = await openSaveSheet();
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.getByText(NO_CONNECTION_MESSAGE)).toBeTruthy());
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('shows the generic message, not "No connection", for any other failure', async () => {
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
+    (insertFit as jest.Mock).mockRejectedValue({ message: 'fit not saved', code: 'P0002' });
+
+    const user = await openSaveSheet();
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.getByText(UNKNOWN_ERROR_MESSAGE)).toBeTruthy());
+    expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
+    expect(screen.getByDisplayValue('Fit 12')).toBeTruthy();
   });
 });
 
@@ -425,7 +474,6 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
 
     await waitFor(() =>
       expect(insertFit).toHaveBeenCalledWith(
-        'user-1',
         'fit-1',
         'Weekend Look',
         UPLOADED_PAIR.coverPath,
@@ -463,5 +511,34 @@ describe('New Fit -- edit mode (Story 3.3)', () => {
 
     await waitFor(() => expect(screen.getByText(NO_CONNECTION_MESSAGE)).toBeTruthy());
     expect(router.dismissTo).not.toHaveBeenCalled();
+  });
+
+  // A lost response can still have committed: a refetch before the retry then
+  // shows the new cover as current, and the old pair would never be deleted.
+  it('retries with the previous cover recorded when the sheet opened, not the live Fit', async () => {
+    (getFitItems as jest.Mock).mockResolvedValue([SAVED_PLACEMENT]);
+    (uploadCover as jest.Mock).mockResolvedValue(UPLOADED_PAIR);
+    (insertFit as jest.Mock)
+      .mockRejectedValueOnce(new FitError('no_connection', NO_CONNECTION_MESSAGE))
+      .mockResolvedValueOnce(undefined);
+
+    const { rerender } = await renderNewFit();
+    await waitFor(() => expect(useFitBuilderStore.getState().items).toHaveLength(1));
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Save Fit' }));
+    await screen.findByDisplayValue('Weekend Look');
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByText(NO_CONNECTION_MESSAGE)).toBeTruthy());
+
+    (useFits as jest.Mock).mockReturnValue({
+      data: [{ ...EDITING_FIT, cover_path: UPLOADED_PAIR.coverPath, cover_thumb_path: UPLOADED_PAIR.thumbPath }],
+    });
+    await rerender(newFitTree());
+    await user.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalled());
+    const retry = (insertFit as jest.Mock).mock.calls[1];
+    expect(retry[4]).toBe(EDITING_FIT.cover_path);
+    expect(retry[5]).toBe(EDITING_FIT.cover_thumb_path);
   });
 });

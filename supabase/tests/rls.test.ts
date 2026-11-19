@@ -1,5 +1,20 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+import { insertFit } from '../../lib/fits/saveFit';
+
+// `insertFit` runs for real against the `save_fit` block's signed-in client,
+// so its payload is proven against the function, not just against a mock.
+// Virtual: this plain-Node project has no `@/` alias and no RN modules.
+let mockSupabaseClient: SupabaseClient;
+jest.mock('expo-file-system', () => ({ File: jest.fn() }));
+jest.mock('@/lib/supabase', () => ({
+  get supabase() {
+    return mockSupabaseClient;
+  },
+}), { virtual: true });
+jest.mock('@/lib/storageCache', () => ({ WRITE_ONCE_CACHE_CONTROL: '31536000' }), { virtual: true });
+jest.mock('@/lib/auth/errors', () => ({ isNoConnectionError: () => false }), { virtual: true });
+
 /**
  * `crypto.randomUUID()` would need Node's types, but this project's
  * tsconfig deliberately scopes `types` to `jest` only -- keeping Node
@@ -478,7 +493,7 @@ describeIfConfigured('wardrobe_items RLS: cross-user isolation', () => {
  * ownership is checked through a join to `fits` -- so it gets its own test
  * covering SELECT, the impersonated INSERT its `WITH CHECK` subquery must
  * reject, and DELETE (the one hard-delete-capable policy in this schema,
- * exercised by `saveFit.ts`'s rollback path).
+ * exercised by `save_fit`, which removes placements taken off the canvas).
  */
 describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
   jest.setTimeout(30000);
@@ -769,6 +784,343 @@ describeIfConfigured('fits/fit_items RLS: cross-user isolation', () => {
       if (user1Id) await admin.auth.admin.deleteUser(user1Id);
       if (user2Id) await admin.auth.admin.deleteUser(user2Id);
     }
+  });
+});
+
+/**
+ * `save_fit` (0017_save_fit.sql): one transaction for a Fit and its
+ * placements. Runs through signed-in clients like the app, so RLS and the
+ * check constraints are the real ones. Error codes are asserted, not just
+ * `error !== null`: a missing function fails too (`PGRST202`), and a check
+ * constraint could otherwise pass for the wrong reason.
+ */
+describeIfConfigured('save_fit: atomic Fit save', () => {
+  jest.setTimeout(60000);
+
+  const password = 'Test-password-123!';
+  // Made in `beforeAll`: a skipped `describe` still runs its body, and
+  // `createClient` throws without credentials.
+  let admin: SupabaseClient;
+  let client1: SupabaseClient;
+  let client2: SupabaseClient;
+  let user1Id: string;
+  let user2Id: string;
+  let item1Id: string;
+  let item2Id: string;
+
+  async function createUserWithItem(client: SupabaseClient, label: string) {
+    const email = `rls-save-fit-${label}-${Date.now()}@mailinator.com`;
+    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    expect(created.error).toBeNull();
+    const userId = created.data.user!.id;
+
+    const signIn = await client.auth.signInWithPassword({ email, password });
+    expect(signIn.error).toBeNull();
+
+    const itemId = randomUUID();
+    const itemInsert = await client.from('wardrobe_items').insert({
+      id: itemId,
+      user_id: userId,
+      category: 'top',
+      cutout_path: `${userId}/items/${itemId}/cutout.png`,
+      thumb_path: `${userId}/items/${itemId}/thumb.webp`,
+    });
+    expect(itemInsert.error).toBeNull();
+    return { userId, itemId };
+  }
+
+  function placement(itemId: string, id = randomUUID()) {
+    return { id, item_id: itemId, x: 0.5, y: 0.5, scale: 1, rotation: 0, z_index: 1 };
+  }
+
+  /** Arguments for one save; the cover paths are always in `userId`'s own folder. */
+  function args(userId: string, fitId: string, name: string, items: unknown, version = 1, color: string | null = null) {
+    return {
+      p_fit_id: fitId,
+      p_name: name,
+      p_cover_path: `${userId}/fits/${fitId}/cover-${version}.png`,
+      p_cover_thumb_path: `${userId}/fits/${fitId}/cover-${version}_thumb.webp`,
+      p_canvas_background_color: color,
+      p_items: items,
+    };
+  }
+
+  /** A saved Fit for user 1, read back through the admin client. */
+  async function savedFit(items: unknown[]) {
+    const fitId = randomUUID();
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Original', items));
+    expect(error).toBeNull();
+    return fitId;
+  }
+
+  async function fitRow(fitId: string) {
+    const { data } = await admin.from('fits').select('*').eq('id', fitId).maybeSingle();
+    return data;
+  }
+
+  async function placementIds(fitId: string) {
+    const { data } = await admin.from('fit_items').select('id').eq('fit_id', fitId);
+    return (data ?? []).map((row) => row.id).sort();
+  }
+
+  beforeAll(async () => {
+    admin = createClient(supabaseUrl!, supabaseSecretKey!);
+    client1 = createClient(supabaseUrl!, supabasePublishableKey!);
+    client2 = createClient(supabaseUrl!, supabasePublishableKey!);
+    ({ userId: user1Id, itemId: item1Id } = await createUserWithItem(client1, '1'));
+    ({ userId: user2Id, itemId: item2Id } = await createUserWithItem(client2, '2'));
+  });
+
+  afterAll(async () => {
+    // Fits, placements and items all cascade from the user.
+    if (user1Id) await admin.auth.admin.deleteUser(user1Id);
+    if (user2Id) await admin.auth.admin.deleteUser(user2Id);
+  });
+
+  it('saves a new Fit and its placements together, owned by the caller', async () => {
+    const item = placement(item1Id);
+    const fitId = randomUUID();
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'New Fit', [item]));
+
+    expect(error).toBeNull();
+    const row = await fitRow(fitId);
+    expect(row?.user_id).toBe(user1Id);
+    expect(row?.name).toBe('New Fit');
+    expect(row?.deleted_at).toBeNull();
+    expect(await placementIds(fitId)).toEqual([item.id]);
+  });
+
+  it('replaces the placements on an edit, keeping the Fit', async () => {
+    const kept = placement(item1Id);
+    const removed = placement(item1Id);
+    const fitId = await savedFit([kept, removed]);
+    const added = placement(item1Id);
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Edited', [kept, added], 2));
+
+    expect(error).toBeNull();
+    const row = await fitRow(fitId);
+    expect(row?.name).toBe('Edited');
+    expect(row?.cover_path).toBe(`${user1Id}/fits/${fitId}/cover-2.png`);
+    expect(await placementIds(fitId)).toEqual([kept.id, added.id].sort());
+  });
+
+  it('stores every field of an edit, and leaves the rest of the Fit alone', async () => {
+    const item = placement(item1Id);
+    const fitId = randomUUID();
+    expect((await client1.rpc('save_fit', args(user1Id, fitId, 'Original', [item], 1, '#F6DADA'))).error).toBeNull();
+    await admin.from('fits').update({ is_favorite: true }).eq('id', fitId);
+    const before = await fitRow(fitId);
+
+    // The everyday edit: an item dragged, scaled, rotated and reordered.
+    const moved = { ...item, item_id: item2Id, x: 0.25, y: 0.75, scale: 1.5, rotation: 30, z_index: 7 };
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Original', [moved], 2));
+
+    expect(error).toBeNull();
+    const row = await fitRow(fitId);
+    expect(row?.cover_thumb_path).toBe(`${user1Id}/fits/${fitId}/cover-2_thumb.webp`);
+    expect(row?.canvas_background_color).toBeNull();
+    expect(row?.is_favorite).toBe(true);
+    expect(row?.user_id).toBe(user1Id);
+    expect(row?.created_at).toBe(before?.created_at);
+    const { data } = await admin.from('fit_items').select('*').eq('id', item.id).single();
+    expect(data).toEqual({ ...moved, fit_id: fitId });
+  });
+
+  it('saves the background color it is given', async () => {
+    const fitId = randomUUID();
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Colored', [], 1, '#F6DADA'));
+
+    expect(error).toBeNull();
+    expect((await fitRow(fitId))?.canvas_background_color).toBe('#F6DADA');
+  });
+
+  // Proves the app's real payload against the real function: a renamed
+  // argument or key would pass every mocked test and typecheck.
+  it("saves through the app's own insertFit", async () => {
+    mockSupabaseClient = client1;
+    const fitId = randomUUID();
+    const items = [
+      { id: randomUUID(), wardrobeItemId: item1Id, x: 0.25, y: 0.75, scale: 1.5, rotation: 30, zIndex: 7 },
+    ];
+
+    await insertFit(
+      fitId,
+      'Through the app',
+      `${user1Id}/fits/${fitId}/cover-1.png`,
+      `${user1Id}/fits/${fitId}/cover-1_thumb.webp`,
+      null,
+      null,
+      '#F6DADA',
+      items,
+    );
+
+    const row = await fitRow(fitId);
+    expect(row?.name).toBe('Through the app');
+    expect(row?.canvas_background_color).toBe('#F6DADA');
+    const { data } = await admin.from('fit_items').select('*').eq('fit_id', fitId).single();
+    expect(data).toMatchObject({ id: items[0].id, item_id: item1Id, x: 0.25, y: 0.75, scale: 1.5, rotation: 30, z_index: 7 });
+  });
+
+  it('removes every placement for an empty array', async () => {
+    const fitId = await savedFit([placement(item1Id)]);
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Emptied', []));
+
+    expect(error).toBeNull();
+    expect(await placementIds(fitId)).toEqual([]);
+  });
+
+  it.each([
+    ['null', null],
+    ['an object', {}],
+  ])('rejects %s for the items, changing nothing', async (_label, items) => {
+    const item = placement(item1Id);
+    const fitId = await savedFit([item]);
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Changed', items, 2));
+
+    expect(error?.code).toBe('22023');
+    expect((await fitRow(fitId))?.name).toBe('Original');
+    expect(await placementIds(fitId)).toEqual([item.id]);
+  });
+
+  // The bug this function fixes: a failed placement write on an edit used to
+  // leave the new name and cover behind and soft-delete the Fit.
+  it('changes nothing when a placement fails on an edit', async () => {
+    const item = placement(item1Id);
+    const fitId = await savedFit([item]);
+    const before = await fitRow(fitId);
+
+    const { error } = await client1.rpc(
+      'save_fit',
+      args(user1Id, fitId, 'Changed', [placement(randomUUID())], 2),
+    );
+
+    expect(error?.code).toBe('23503');
+    const row = await fitRow(fitId);
+    expect(row?.name).toBe('Original');
+    expect(row?.cover_path).toBe(before?.cover_path);
+    expect(row?.cover_thumb_path).toBe(before?.cover_thumb_path);
+    expect(row?.deleted_at).toBeNull();
+    expect(await placementIds(fitId)).toEqual([item.id]);
+  });
+
+  it('is safe to send twice, as a retry after a lost response does', async () => {
+    const item = placement(item1Id);
+    const fitId = randomUUID();
+    const save = args(user1Id, fitId, 'Retried', [item]);
+
+    expect((await client1.rpc('save_fit', save)).error).toBeNull();
+    expect((await client1.rpc('save_fit', save)).error).toBeNull();
+
+    const { data } = await admin.from('fits').select('id').eq('id', fitId);
+    expect(data).toHaveLength(1);
+    expect(await placementIds(fitId)).toEqual([item.id]);
+  });
+
+  it("won't move a placement from another of the caller's Fits", async () => {
+    const item = placement(item1Id);
+    const otherFitId = await savedFit([item]);
+    const fitId = randomUUID();
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Thief', [item]));
+
+    expect(error?.code).toBe('P0002');
+    expect(await fitRow(fitId)).toBeNull();
+    expect(await placementIds(otherFitId)).toEqual([item.id]);
+  });
+
+  // This check runs last, after the `fits` update and the placement delete.
+  it('rolls back an edit of an existing Fit when a placement belongs to another Fit', async () => {
+    const taken = placement(item1Id);
+    const otherFitId = await savedFit([taken]);
+    const item = placement(item1Id);
+    const fitId = await savedFit([item]);
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Changed', [taken], 2));
+
+    expect(error?.code).toBe('P0002');
+    const row = await fitRow(fitId);
+    expect(row?.name).toBe('Original');
+    expect(row?.cover_path).toBe(`${user1Id}/fits/${fitId}/cover-1.png`);
+    expect(await placementIds(fitId)).toEqual([item.id]);
+    expect(await placementIds(otherFitId)).toEqual([taken.id]);
+  });
+
+  it("rejects a second user saving over the first user's soft-deleted Fit", async () => {
+    const item = placement(item1Id);
+    const fitId = await savedFit([item]);
+    await admin.from('fits').update({ deleted_at: new Date().toISOString() }).eq('id', fitId);
+
+    const { error } = await client2.rpc('save_fit', args(user2Id, fitId, 'Stolen', [placement(item2Id)]));
+
+    expect(error?.code).toBe('P0002');
+    const row = await fitRow(fitId);
+    expect(row?.user_id).toBe(user1Id);
+    expect(row?.deleted_at).not.toBeNull();
+    expect(await placementIds(fitId)).toEqual([item.id]);
+  });
+
+  it("rejects a second user saving over the first user's Fit", async () => {
+    const item = placement(item1Id);
+    const fitId = await savedFit([item]);
+
+    // Paths in user 2's own folder, so the check constraints pass and only
+    // RLS can reject this.
+    const { error } = await client2.rpc('save_fit', args(user2Id, fitId, 'Stolen', [placement(item2Id)]));
+
+    expect(error?.code).toBe('42501');
+    const row = await fitRow(fitId);
+    expect(row?.name).toBe('Original');
+    expect(row?.user_id).toBe(user1Id);
+    expect(await placementIds(fitId)).toEqual([item.id]);
+  });
+
+  it("rejects a second user taking the first user's placement into their own Fit", async () => {
+    const item = placement(item1Id);
+    const fitId = await savedFit([item]);
+    const stolenFitId = randomUUID();
+
+    const { error } = await client2.rpc(
+      'save_fit',
+      args(user2Id, stolenFitId, 'Stolen', [{ ...placement(item2Id), id: item.id }]),
+    );
+
+    expect(error?.code).toBe('P0002');
+    expect(await placementIds(fitId)).toEqual([item.id]);
+    expect(await fitRow(stolenFitId)).toBeNull();
+    const { data } = await admin.from('fit_items').select('item_id').eq('id', item.id).maybeSingle();
+    expect(data?.item_id).toBe(item1Id);
+  });
+
+  it('never brings back a soft-deleted Fit', async () => {
+    const item = placement(item1Id);
+    const fitId = await savedFit([item]);
+    const deletedAt = new Date().toISOString();
+    await admin.from('fits').update({ deleted_at: deletedAt }).eq('id', fitId);
+
+    const { error } = await client1.rpc('save_fit', args(user1Id, fitId, 'Back', [placement(item1Id)], 2));
+
+    expect(error?.code).toBe('P0002');
+    const row = await fitRow(fitId);
+    expect(row?.deleted_at).not.toBeNull();
+    expect(row?.name).toBe('Original');
+    expect(await placementIds(fitId)).toEqual([item.id]);
+  });
+
+  it('rejects a signed-out caller', async () => {
+    const anon = createClient(supabaseUrl!, supabasePublishableKey!);
+    const fitId = randomUUID();
+
+    const { error } = await anon.rpc('save_fit', args(user1Id, fitId, 'Anon', [placement(item1Id)]));
+
+    // RLS gives the same code, so the message proves the grant did this.
+    expect(error?.code).toBe('42501');
+    expect(error?.message).toContain('permission denied for function save_fit');
+    expect(await fitRow(fitId)).toBeNull();
   });
 });
 

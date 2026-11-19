@@ -81,6 +81,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
   summary: `lib/fits/saveFit.ts`'s rollback helpers swallow their own Storage/DB errors via `.catch(() => {})` with no Sentry logging, so a failed rollback (orphaned Storage object or stuck soft-delete) is undetectable.
   evidence: Code-review finding (edge-case-hunter). Verified this is the exact pattern already shipped in `lib/wardrobe/addItem.ts`'s own rollback calls (`uploadItem`, `saveBatch`), which this story's spec explicitly required mirroring -- not introduced by this story, and fixing it here alone would leave `addItem.ts` inconsistent. Needs a follow-up covering both files together.
+  note: The Fit row rollback is gone (`spec-atomic-fit-save.md`). `saveFit.ts` now only swallows the best-effort previous-cover delete.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-3-edit-and-delete-a-fit.md`
   summary: A saved placement whose wardrobe item was deleted seeds onto the edit canvas as a silent `'top'`-category fallback with no visible indication anything is missing.
@@ -224,6 +225,7 @@
 - source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
   summary: Saving a Fit (`lib/fits/saveFit.ts`) is several requests with client-side rollback, not one transaction, so a failure part-way can leave an orphaned row or file.
   evidence: Performance review of 2026-09-27, and the independent plan review found the rollback weaker than it looks: the `wardrobe` bucket had no DELETE policy, so file rollbacks did nothing until Story 6.1 adds one. A transactional save needs an RPC function, which Story 6.6 rules out for its own scope; it's a separate design decision.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-6-count-wears-on-the-server.md`
   summary: `getWearDates` (`lib/fits/wearStreak.ts:12`) downloads every wear's `worn_on` for the streak, so the download grows with every wear.
@@ -232,6 +234,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
   summary: Editing a Fit whose `fit_items` write fails soft-deletes the existing Fit (`rollbackOrphanedFit` in `lib/fits/saveFit.ts`), so an abandoned edit makes the Fit vanish.
   evidence: Story 6.1 review (triage #14). `app/new-fit.tsx:270` reuses `insertFit` for edits with the same `fitId`; the rollback was written for a brand-new row. A retry restores it (`deleted_at: null`). With 0014 applied, `rollbackCover` now also really deletes the new cover the soft-deleted row points at. Fix: only soft-delete when the row was new, or restore the previous `cover_path` on an edit. Related to the transactional-save entry above.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
   summary: Private images stay in expo-image's memory and disk cache after sign-out; nothing calls `Image.clearDiskCache`/`clearMemoryCache`.
@@ -259,6 +262,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-2-small-webp-fit-cover-thumbnails.md`
   summary: `insertFit` rolls back the uploaded cover pair on any `fits`/`fit_items` error, including a lost response after the row actually committed, so an abandoned save can leave a live row pointing at deleted files (and on edit, soft-delete the existing Fit).
   evidence: Pre-existing rollback design in `lib/fits/saveFit.ts`; a same-`ts` retry now restores the exact paths, but an abandon does not. Severity unverified as medium. Settle by simulating a committed upsert with a dropped response. Triage #5.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
   summary: Epic 1 retro item 4 (`handleSignOut` ignores `signOut()`'s error) must now be built against the shared session: Profile no longer navigates after sign-out, and Welcome plus the Query-cache clear both come from `SessionProvider`'s `SIGNED_OUT` event.
@@ -276,7 +280,20 @@
 
 ## Deferred from: code review of spec-6-5-react-query-set-up-for-react-native.md (2026-11-05)
 
-- `rollbackOrphanedFit` (`lib/fits/saveFit.ts:96`) soft-deletes the Fit even in edit mode, so a failed `fit_items` upsert on an edit followed by Cancel removes an existing Fit. Pre-existing.
+- `rollbackOrphanedFit` (`lib/fits/saveFit.ts:96`) soft-deletes the Fit even in edit mode, so a failed `fit_items` upsert on an edit followed by Cancel removes an existing Fit. Pre-existing. Resolved by `spec-atomic-fit-save.md`.
 - `saveBatch` rollback (`lib/wardrobe/addItem.ts:153`) hard-deletes `wardrobe_items`, which has no DELETE policy, so rows survive after their files are removed and show as broken tiles. Pre-existing.
 - Wardrobe binds `refreshing` to `isRefetching` (`app/(tabs)/wardrobe.tsx:288`), so the spinner shows on background refetches; `fits.tsx` guards this with `isPullRefreshing`. Pre-existing.
 - `registerQueryManagers` has no test for a rejected launch reading or for the `AppState` listener teardown.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: A user can reference another user's `wardrobe_items.id` in their own `fit_items`, because the policies check only Fit ownership and foreign keys ignore RLS.
+  evidence: Confirmed in a local Postgres run of the repo's migrations during spec review. No data is exposed today: the `getFitItems` join returns null under `wardrobe_items_select_own`. Any future service-role or definer join over `fit_items` would expose the item. The fix is an RLS change, which the spec excludes.
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: Failed Fit saves leave orphaned cover files in Storage, and nothing sweeps them.
+  evidence: The spec keeps files on every failure because a lost request can't prove the row wasn't committed. A sweep comparing the bucket with `fits.cover_path` would reclaim them.
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: Saving a Fit that was deleted on another device shows the generic error and retries forever, instead of "This Fit is no longer available".
+  evidence: `save_fit` returns `P0002` and the failed-save invalidations use `refetchType: 'none'`, so `fitNotFound` never fires. Refetching `['fits', userId]` on `P0002` would reach it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: Nothing automated confirms a migration is on production before an OTA update ships.
+  evidence: CI runs against the dev project only, and migrations are applied by hand. An update that depends on `save_fit` would fail every save on a project without it.
