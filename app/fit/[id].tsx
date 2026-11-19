@@ -280,7 +280,10 @@ export default function FitDetail() {
           throw new Error('Cover URL could not be re-signed for sharing');
         }
       }
-      await shareFitCover(fit.id, url);
+      // A default cover is transparent and shown here on `surface-raised`, so
+      // it's shared on that color: what you see is what you send.
+      const surfaceRaised = scheme === 'dark' ? colors.dark.surfaceRaised : colors.light.surfaceRaised;
+      await shareFitCover(fit.id, url, fit.canvas_background_color ? null : surfaceRaised);
     } catch (error) {
       if ((error instanceof FitError && error.kind === 'no_connection') || isNoConnectionError(error)) {
         setErrorMessage(NO_CONNECTION_MESSAGE);

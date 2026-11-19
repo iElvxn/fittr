@@ -1,5 +1,6 @@
 import { Share } from 'react-native';
 import { File, Paths } from 'expo-file-system';
+import { ImageFormat, Skia } from '@shopify/react-native-skia';
 
 import { FitError, isNoConnectionError, NO_CONNECTION_MESSAGE } from './errors';
 
@@ -32,8 +33,14 @@ function isDownloadConnectionError(error: unknown): boolean {
  * URL as the image item Photos/Messages/AirDrop expect.
  * `downloadFileAsync` rejects on a non-2xx and creates no file, so the
  * sheet can never receive a partial/placeholder image.
+ *
+ * `fillColor` is painted behind the cover before sharing. A default-background
+ * Fit's cover is transparent, and the app it's shared to picks the background:
+ * a dark one would hide dark clothing. A cover that is already solid (a chosen
+ * color, or a Fit saved before covers were transparent) looks the same after
+ * filling. `null` shares the download as-is.
  */
-export async function shareFitCover(fitId: string, coverUrl: string): Promise<void> {
+export async function shareFitCover(fitId: string, coverUrl: string, fillColor: string | null): Promise<void> {
   if (!SAFE_FIT_ID.test(fitId)) {
     throw new Error(`Refusing to share Fit with unsafe id: ${JSON.stringify(fitId)}`);
   }
@@ -49,6 +56,9 @@ export async function shareFitCover(fitId: string, coverUrl: string): Promise<vo
   }
 
   try {
+    if (fillColor) {
+      await fillBackground(file, fillColor);
+    }
     // Resolves on both share and dismiss -- a dismissed sheet is a normal outcome, not an error.
     await Share.share({ url: file.uri });
   } finally {
@@ -60,4 +70,20 @@ export async function shareFitCover(fitId: string, coverUrl: string): Promise<vo
       // ignore
     }
   }
+}
+
+/** Replaces `file` with its image drawn over `color`, same size, as PNG. Throws rather than share a blank image. */
+async function fillBackground(file: File, color: string): Promise<void> {
+  const image = Skia.Image.MakeImageFromEncoded(Skia.Data.fromBytes(await file.bytes()));
+  if (!image) {
+    throw new Error('Fit cover could not be decoded for sharing');
+  }
+  const surface = Skia.Surface.Make(image.width(), image.height());
+  if (!surface) {
+    throw new Error('Fit cover could not be filled for sharing');
+  }
+  const canvas = surface.getCanvas();
+  canvas.drawColor(Skia.Color(color));
+  canvas.drawImage(image, 0, 0);
+  file.write(surface.makeImageSnapshot().encodeToBytes(ImageFormat.PNG));
 }

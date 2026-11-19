@@ -1,4 +1,7 @@
+import * as ReactNative from 'react-native';
 import { ActionSheetIOS, AppState } from 'react-native';
+
+import { colors } from '@/lib/theme/colors';
 import type { ReactElement } from 'react';
 import { act, render, screen, userEvent, waitFor, within } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -1007,9 +1010,45 @@ describe('Fit detail', () => {
       const user = userEvent.setup();
       await user.press(screen.getByRole('button', { name: 'Share Fit' }));
 
-      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL));
+      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL, colors.light.surfaceRaised));
       expect(screen.queryByText(NO_CONNECTION_MESSAGE)).toBeNull();
       expect(screen.queryByText(UNKNOWN_ERROR_MESSAGE)).toBeNull();
+    });
+
+    // What you see is what you send: the detail screen shows a default
+    // cover on `surface-raised`, so that's the color it's shared on.
+    it('shares a default-background Fit on the dark surface in dark mode', async () => {
+      const scheme = jest.spyOn(ReactNative, 'useColorScheme').mockReturnValue('dark');
+      (shareFitCover as jest.Mock).mockResolvedValue(undefined);
+      try {
+        await renderFitDetail();
+        await screen.findByTestId('fit-items-list');
+
+        const user = userEvent.setup();
+        await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+        await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL, colors.dark.surfaceRaised));
+      } finally {
+        scheme.mockRestore();
+      }
+    });
+
+    it('shares a Fit with a chosen background without a fill', async () => {
+      (useFits as jest.Mock).mockReturnValue({
+        data: [makeFit({ canvas_background_color: '#F6DADA' })],
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: jest.fn(),
+      });
+      (shareFitCover as jest.Mock).mockResolvedValue(undefined);
+      await renderFitDetail();
+      await screen.findByTestId('fit-items-list');
+
+      const user = userEvent.setup();
+      await user.press(screen.getByRole('button', { name: 'Share Fit' }));
+
+      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL, null));
     });
 
     it('shows the no-connection message and does not report to Sentry when the download fails offline', async () => {
@@ -1079,7 +1118,7 @@ describe('Fit detail', () => {
       const user = userEvent.setup();
       await user.press(screen.getByRole('button', { name: 'Share Fit' }));
 
-      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', 'https://signed.example/fresh-cover.png'));
+      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', 'https://signed.example/fresh-cover.png', colors.light.surfaceRaised));
       expect(refetch).toHaveBeenCalledTimes(1);
     });
 
@@ -1093,7 +1132,7 @@ describe('Fit detail', () => {
       const user = userEvent.setup();
       await user.press(screen.getByRole('button', { name: 'Share Fit' }));
 
-      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL));
+      await waitFor(() => expect(shareFitCover).toHaveBeenCalledWith('fit-1', SIGNED_COVER_URL, colors.light.surfaceRaised));
       expect(refetch).not.toHaveBeenCalled();
     });
 

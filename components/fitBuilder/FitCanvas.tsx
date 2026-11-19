@@ -59,7 +59,11 @@ type Props = {
  * `addItem` call once something is picked. The card's own backdrop reflects
  * the store's `canvasBackgroundColor` -- one of a curated set of pastel
  * colors, or `null` for the theme default -- which the caller lets the user
- * change via `CanvasBackgroundSheet` (see `app/new-fit.tsx`).
+ * change via `CanvasBackgroundSheet` (see `app/new-fit.tsx`). While
+ * `capturing`, the theme default is dropped: the saved cover is transparent,
+ * so every screen draws the current theme's color behind it, in light or dark
+ * mode. A chosen color stays in the cover. The shadow is dropped too: with no
+ * background, iOS would cast it from each item and the capture could keep it.
  *
  * Forwards `ref` to the canvas card itself (not this wrapper) so
  * `app/new-fit.tsx` can pass it straight to `react-native-view-shot`'s
@@ -135,9 +139,9 @@ export const FitCanvas = forwardRef<View, Props>(function FitCanvas(
         ref={ref}
         testID="fit-canvas"
         className={`flex-1 overflow-hidden rounded-lg ${
-          canvasBackgroundColor ? '' : 'bg-surface-raised dark:bg-surface-raisedDark'
+          canvasBackgroundColor || capturing ? '' : 'bg-surface-raised dark:bg-surface-raisedDark'
         }`}
-        style={[CANVAS_SHADOW, canvasBackgroundColor ? { backgroundColor: canvasBackgroundColor } : null]}
+        style={[capturing ? null : CANVAS_SHADOW, canvasBackgroundColor ? { backgroundColor: canvasBackgroundColor } : null]}
         onLayout={handleLayout}
       >
         {/*

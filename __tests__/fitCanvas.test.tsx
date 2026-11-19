@@ -380,4 +380,50 @@ describe('FitCanvas custom background color', () => {
     const flattened = Array.isArray(canvasStyle) ? Object.assign({}, ...canvasStyle) : canvasStyle;
     expect(flattened.backgroundColor).toBe('#F6DADA');
   });
+
+  // A default-background cover must carry no color, so each screen can draw
+  // the current theme's color behind it.
+  it('drops the theme background while capturing a default-background Fit', async () => {
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} capturing />);
+    layout();
+
+    expect(screen.getByTestId('fit-canvas').props.className).not.toMatch(/bg-surface-raised/);
+  });
+
+  // With no background, iOS casts the card's shadow from its contents: every
+  // item would get a halo, and the capture could keep it.
+  it('drops the card shadow while capturing', async () => {
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} capturing />);
+    layout();
+
+    const canvasStyle = screen.getByTestId('fit-canvas').props.style;
+    const flattened = Array.isArray(canvasStyle) ? Object.assign({}, ...canvasStyle) : canvasStyle;
+    expect(flattened?.shadowOpacity).toBeUndefined();
+  });
+
+  it('keeps the card shadow on screen when not capturing', async () => {
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    const canvasStyle = screen.getByTestId('fit-canvas').props.style;
+    const flattened = Array.isArray(canvasStyle) ? Object.assign({}, ...canvasStyle) : canvasStyle;
+    expect(flattened.shadowOpacity).toBe(0.08);
+  });
+
+  it('keeps the theme background on screen when not capturing', async () => {
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} />);
+    layout();
+
+    expect(screen.getByTestId('fit-canvas').props.className).toMatch(/bg-surface-raised dark:bg-surface-raisedDark/);
+  });
+
+  it('keeps a chosen background while capturing', async () => {
+    useFitBuilderStore.setState({ canvasBackgroundColor: '#F6DADA' });
+    await render(<FitCanvas cutoutUrls={{}} wardrobeItemCutoutPaths={{}} onSlotPress={jest.fn()} capturing />);
+    layout();
+
+    const canvasStyle = screen.getByTestId('fit-canvas').props.style;
+    const flattened = Array.isArray(canvasStyle) ? Object.assign({}, ...canvasStyle) : canvasStyle;
+    expect(flattened.backgroundColor).toBe('#F6DADA');
+  });
 });
