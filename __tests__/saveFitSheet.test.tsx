@@ -1,4 +1,4 @@
-import { render, screen, userEvent } from '@testing-library/react-native';
+import { render, screen, userEvent, within } from '@testing-library/react-native';
 
 import { SaveFitSheet } from '@/components/fitBuilder/SaveFitSheet';
 
@@ -17,6 +17,16 @@ describe('SaveFitSheet', () => {
     await render(<SaveFitSheet {...BASE_PROPS} visible={false} />);
 
     expect(screen.queryByText('Save Fit')).toBeNull();
+  });
+
+  // A default-background cover is transparent, so the preview draws the same
+  // `surface-raised` well every other cover screen does.
+  it('shows the preview on the raised surface, like every other cover', async () => {
+    await render(<SaveFitSheet {...BASE_PROPS} />);
+
+    const well = screen.getByTestId('save-fit-collage-well');
+    expect(well.props.className).toMatch(/bg-surface-raised dark:bg-surface-raisedDark/);
+    expect(within(well).getByTestId('save-fit-collage')).toBeTruthy();
   });
 
   it('pre-fills the name field with the generated default', async () => {

@@ -71,13 +71,21 @@ export function SaveFitSheet({ visible, collageUri, defaultName, saving, errorMe
           <Text variant="title" className="mb-4 text-ink-primary dark:text-ink-primaryDark">
             Save Fit
           </Text>
-          <Image
-            testID="save-fit-collage"
-            source={{ uri: collageUri }}
-            style={{ width: '100%', aspectRatio: 1, borderRadius: 8 }}
-            contentFit="cover"
-            accessibilityLabel="Fit preview"
-          />
+          {/* A default-background cover is transparent: this well draws the
+              theme color behind it, as every other cover screen does. */}
+          <View
+            testID="save-fit-collage-well"
+            className="w-full overflow-hidden bg-surface-raised dark:bg-surface-raisedDark"
+            style={{ aspectRatio: 1, borderRadius: 8 }}
+          >
+            <Image
+              testID="save-fit-collage"
+              source={{ uri: collageUri }}
+              style={{ width: '100%', height: '100%' }}
+              contentFit="cover"
+              accessibilityLabel="Fit preview"
+            />
+          </View>
           <TextInput
             value={name}
             onChangeText={setName}

@@ -297,3 +297,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
   summary: Nothing automated confirms a migration is on production before an OTA update ships.
   evidence: CI runs against the dev project only, and migrations are applied by hand. An update that depends on `save_fit` would fail every save on a project without it.
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: The Fit canvas briefly loses its color and shadow on screen while Save captures it.
+  evidence: `FitCanvas` drops both while `capturing`, for two frames plus the capture. Capturing an inner wrapper with no background would avoid it.
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: No test covers switching theme while the Fit detail screen is open, before sharing.
+  evidence: The fill is read in the share handler at render, which is correct today; wrapping the handler in `useCallback` or `useMemo` could freeze it silently.
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: A cover Skia cannot decode for sharing reports a plain error with no context.
+  evidence: `fillBackground` in `lib/fits/shareFit.ts` throws without the byte length or file type.
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: The Save sheet preview crops a non-square cover, so it can differ from the saved tile.
+  evidence: `SaveFitSheet` uses `contentFit="cover"` in a square well; tiles use `contain`. Predates this change.
