@@ -29,7 +29,7 @@ import { getFitItems } from '@/lib/fits/getFitItems';
 import { useFits } from '@/lib/fits/listFits';
 import { uploadCover, insertFit, FIT_COVER_THUMB_LONG_EDGE, type FitItemPlacement } from '@/lib/fits/saveFit';
 import { resizeLongEdge } from '@/lib/wardrobe/processImage';
-import { FitError, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
+import { FitError, isOffline, NO_CONNECTION_MESSAGE, UNKNOWN_ERROR_MESSAGE } from '@/lib/fits/errors';
 import { Sentry } from '@/lib/observability/sentry';
 import type { TemplateId } from '@/lib/fitBuilder/templates';
 import type { WardrobeItemCategory } from '@/lib/wardrobe/addItem';
@@ -51,6 +51,9 @@ type PendingSave = {
   /** Local WebP thumbnail of `collageUri`, made at capture so a retry reuses the same file. */
   thumbUri: string;
   defaultName: string;
+  /** The cover pair to delete after this save, recorded here because a refetch before a retry could show the new pair as current. */
+  previousCoverPath: string | null;
+  previousThumbPath: string | null;
 };
 
 /**
@@ -98,7 +101,10 @@ export default function NewFit() {
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [opening, setOpening] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [connectionError, setConnectionError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // One id for as long as this screen is open: a save whose response was lost
+  // may have committed, so saving again must update that Fit, not add another.
+  const [newFitId] = useState(() => Crypto.randomUUID());
   const [captureError, setCaptureError] = useState(false);
   const [capturingCollage, setCapturingCollage] = useState(false);
 
@@ -127,7 +133,7 @@ export default function NewFit() {
   // soft-deleted -- without this check, `getFitItems` would still seed from
   // its (undeleted) `fit_items` rows, since that table's own RLS policy
   // checks only `fits.user_id`, not `fits.deleted_at`, and a re-save would
-  // silently resurrect it via `insertFit`'s `deleted_at: null` upsert.
+  // only fail: `save_fit` rejects a soft-deleted Fit.
   const fitNotFound = isEditMode && !fitsLoading && !editingFit;
 
   /**
@@ -214,9 +220,10 @@ export default function NewFit() {
   }
 
   /**
-   * Captures the canvas and opens the Save sheet. `fitId` is minted here (not
-   * inside the sheet) so it stays fixed across a retry -- `saveFit`'s upsert
-   * calls key off it for idempotency. The default-name fetch is best-effort:
+   * Captures the canvas and opens the Save sheet. `ts` is minted here (not
+   * inside the sheet) so it stays fixed across a retry in the sheet, and `fitId` stays
+   * fixed for the whole screen -- `save_fit` keys off it for idempotency. The
+   * default-name fetch is best-effort:
    * a failure there shouldn't block the sheet from opening, since the user
    * can still type their own name -- the real no-connection retry UX is the
    * actual save below.
@@ -252,13 +259,15 @@ export default function NewFit() {
           Sentry.captureException(error);
         }
       }
-      setConnectionError(false);
+      setSaveError(null);
       setPendingSave({
-        fitId: isEditMode && fitId ? fitId : Crypto.randomUUID(),
+        fitId: isEditMode && fitId ? fitId : newFitId,
         ts: Date.now(),
         collageUri,
         thumbUri: thumb.uri,
         defaultName,
+        previousCoverPath: editingFit?.cover_path ?? null,
+        previousThumbPath: editingFit?.cover_thumb_path ?? null,
       });
     } catch (error) {
       console.error('[new-fit] collage capture failed:', error);
@@ -275,7 +284,7 @@ export default function NewFit() {
       return;
     }
     setSaving(true);
-    setConnectionError(false);
+    setSaveError(null);
     try {
       const { coverPath, thumbPath } = await uploadCover(
         userId,
@@ -294,13 +303,12 @@ export default function NewFit() {
         zIndex: item.zIndex,
       }));
       await insertFit(
-        userId,
         pendingSave.fitId,
         name,
         coverPath,
         thumbPath,
-        editingFit?.cover_path ?? null,
-        editingFit?.cover_thumb_path ?? null,
+        pendingSave.previousCoverPath,
+        pendingSave.previousThumbPath,
         canvasBackgroundColor,
         placements,
       );
@@ -327,21 +335,21 @@ export default function NewFit() {
         router.dismissTo({ pathname: '/(tabs)/fits', params: { fitSaved: '1' } });
       }
     } catch (error) {
-      if (!(error instanceof FitError && error.kind === 'no_connection')) {
+      if (!isOffline(error)) {
         console.error('[new-fit] save failed:', error);
         Sentry.captureException(error);
       }
-      // A failed save may already have written part of the Fit, and no tab
-      // refetches on focus unless its reads are stale. Stale only, no fetch:
-      // this screen reads `useFits`, so refetching a rolled-back edit would
-      // swap the sheet for "not found" and lose its retry.
+      // `save_fit` is one transaction, so a failed save wrote nothing -- unless
+      // the connection dropped after it committed, and no tab refetches on
+      // focus unless its reads are stale. Stale only, no fetch: offline, a
+      // fetch here would fail too and replace healthy screens with an error.
       void queryClient.invalidateQueries({ queryKey: ['fits', userId], refetchType: 'none' });
       void queryClient.invalidateQueries({ queryKey: ['fitItems', pendingSave.fitId], refetchType: 'none' });
       void queryClient.invalidateQueries({ queryKey: ['itemFits'], refetchType: 'none' });
       // Block-and-keep for every failure here, not only classified
       // no-connection ones: the sheet's collage/name stay intact and the
-      // same retry action applies regardless of cause.
-      setConnectionError(true);
+      // same retry action is offered whatever the cause.
+      setSaveError(isOffline(error) ? NO_CONNECTION_MESSAGE : UNKNOWN_ERROR_MESSAGE);
     } finally {
       setSaving(false);
     }
@@ -500,7 +508,7 @@ export default function NewFit() {
               collageUri={pendingSave.collageUri}
               defaultName={pendingSave.defaultName}
               saving={saving}
-              connectionError={connectionError}
+              errorMessage={saveError}
               onSave={handleConfirmSave}
               onClose={() => setPendingSave(null)}
             />

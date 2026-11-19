@@ -7,7 +7,7 @@ const BASE_PROPS = {
   collageUri: 'file://collage.png',
   defaultName: 'Fit 12',
   saving: false,
-  connectionError: false,
+  errorMessage: null,
   onSave: jest.fn(),
   onClose: jest.fn(),
 };
@@ -59,10 +59,10 @@ describe('SaveFitSheet', () => {
     expect(onSave).toHaveBeenCalledWith('Fit 12');
   });
 
-  it('shows the connection-error notice and keeps the sheet open on failure', async () => {
-    await render(<SaveFitSheet {...BASE_PROPS} connectionError />);
+  it('shows the error it is given and keeps the sheet open on failure', async () => {
+    await render(<SaveFitSheet {...BASE_PROPS} errorMessage="Something went wrong. Please try again." />);
 
-    expect(screen.getByText('No connection — nothing was lost. Try again.')).toBeTruthy();
+    expect(screen.getByText('Something went wrong. Please try again.')).toBeTruthy();
     expect(screen.getByDisplayValue('Fit 12')).toBeTruthy();
   });
 

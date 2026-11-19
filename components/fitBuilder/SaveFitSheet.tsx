@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { ConnectionErrorNotice } from '@/components/ConnectionErrorNotice';
-import { NO_CONNECTION_MESSAGE } from '@/lib/fits/errors';
 
 type Props = {
   visible: boolean;
@@ -14,7 +13,7 @@ type Props = {
   /** Generated "Fit {n}" name, pre-filled and used as the fallback for a blank edit. */
   defaultName: string;
   saving: boolean;
-  connectionError: boolean;
+  errorMessage: string | null;
   onSave: (name: string) => void;
   onClose: () => void;
 };
@@ -26,7 +25,7 @@ type Props = {
  * default -- accepting it as-is, or clearing it entirely, both save under
  * that same default, since a Fit's name is never actually blank.
  */
-export function SaveFitSheet({ visible, collageUri, defaultName, saving, connectionError, onSave, onClose }: Props) {
+export function SaveFitSheet({ visible, collageUri, defaultName, saving, errorMessage, onSave, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(defaultName);
 
@@ -40,7 +39,7 @@ export function SaveFitSheet({ visible, collageUri, defaultName, saving, connect
 
   // Dismissing mid-save would orphan the in-flight `uploadCover`/`insertFit`
   // call: its eventual success would silently navigate the user away with no
-  // action from them, and a failure would set `connectionError` on a sheet
+  // action from them, and a failure would set `errorMessage` on a sheet
   // that's already gone, so the block-and-keep retry state is never seen.
   // `onRequestClose` stays a real (no-op) function rather than `undefined`
   // while saving -- Android only intercepts the hardware back button when
@@ -86,9 +85,9 @@ export function SaveFitSheet({ visible, collageUri, defaultName, saving, connect
             accessibilityLabel="Fit name"
             className="mb-3 mt-4 rounded-sm border border-border-hairline px-4 py-3 font-[Montserrat_400Regular] text-ink-primary dark:border-border-hairlineDark dark:text-ink-primaryDark"
           />
-          {connectionError ? (
+          {errorMessage ? (
             <View className="mb-3">
-              <ConnectionErrorNotice message={NO_CONNECTION_MESSAGE} />
+              <ConnectionErrorNotice message={errorMessage} />
             </View>
           ) : null}
           <Button
