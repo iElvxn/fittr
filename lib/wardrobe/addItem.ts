@@ -110,25 +110,24 @@ function itemStoragePaths(userId: string, itemId: string): [string, string] {
 }
 
 /**
- * Batch save attempts every item in order and makes a best-effort rollback
- * on failure (per the story's UX doc: "batch stays in the queue, unsaved,
- * with a clear retry"). Items save sequentially so a failure partway through
- * only ever leaves already-committed items to roll back -- never a
- * half-uploaded one, since `uploadItem` itself is already atomic per item.
- * On failure: the failing item's own Storage objects are cleaned up
- * unconditionally -- a no-op if `uploadItem` already failed and cleaned
- * itself up, or a real cleanup if its upload succeeded but the insert didn't
- * -- then every earlier item in this attempt is rolled back (Storage + row),
- * and the original error is rethrown so the caller can show the standard
- * retry UI. This rollback is best-effort, not guaranteed: if the triggering
- * failure was a genuine connectivity loss, the rollback's own network calls
- * can fail the same way and are silently swallowed (see the calls below).
- * A later successful retry is always safe regardless, since every item's
- * `itemId` upserts rather than duplicates.
+ * Saves items one at a time, in order, and stops at the first failure.
+ * Each wardrobe item is independent, so an item whose files and row both
+ * landed is kept -- never rolled back -- and reported through `onItemSaved`
+ * as it lands, so the caller can mark it saved and retry only the rest.
+ * (A rollback is a set of network calls that fail exactly when the
+ * connection is gone, and `wardrobe_items` has no DELETE policy anyway.)
+ *
+ * On failure, only the failing item's own Storage objects are removed: a
+ * no-op if `uploadItem` already cleaned itself up, or a real cleanup if its
+ * upload succeeded but the insert didn't -- it has no row, so nothing shows
+ * either way. The original error is rethrown for the caller's retry UI. A
+ * retry is always safe, since every item's `itemId` upserts.
  */
-export async function saveBatch(userId: string, items: BatchSaveItem[]): Promise<void> {
-  const saved: string[] = [];
-
+export async function saveBatch(
+  userId: string,
+  items: BatchSaveItem[],
+  onItemSaved?: (itemId: string) => void,
+): Promise<void> {
   for (const item of items) {
     try {
       const { cutoutPath, thumbPath } = await uploadItem(userId, item.itemId, item.cutoutUri, item.thumbUri);
@@ -141,20 +140,13 @@ export async function saveBatch(userId: string, items: BatchSaveItem[]): Promise
         cutoutPath,
         thumbPath,
       });
-      saved.push(item.itemId);
     } catch (error) {
       await supabase.storage.from('wardrobe').remove(itemStoragePaths(userId, item.itemId)).catch(() => {});
-      await Promise.all(
-        saved.map(async (itemId) => {
-          await supabase.storage.from('wardrobe').remove(itemStoragePaths(userId, itemId)).catch(() => {});
-          // The query builder is thenable but not a real Promise (no native
-          // `.catch`) -- `Promise.resolve(...)` normalizes it so a failed
-          // best-effort rollback delete can't mask the original error above.
-          await Promise.resolve(supabase.from('wardrobe_items').delete().eq('id', itemId)).catch(() => {});
-        }),
-      );
       throw error;
     }
+    // Outside the try: a throwing callback is the caller's bug, and must not
+    // trigger cleanup of an item that did save.
+    onItemSaved?.(item.itemId);
   }
 }
 

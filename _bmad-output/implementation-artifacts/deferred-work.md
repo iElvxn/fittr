@@ -281,7 +281,7 @@
 ## Deferred from: code review of spec-6-5-react-query-set-up-for-react-native.md (2026-11-05)
 
 - `rollbackOrphanedFit` (`lib/fits/saveFit.ts:96`) soft-deletes the Fit even in edit mode, so a failed `fit_items` upsert on an edit followed by Cancel removes an existing Fit. Pre-existing. Resolved by `spec-atomic-fit-save.md`.
-- `saveBatch` rollback (`lib/wardrobe/addItem.ts:153`) hard-deletes `wardrobe_items`, which has no DELETE policy, so rows survive after their files are removed and show as broken tiles. Pre-existing.
+- `saveBatch` rollback (`lib/wardrobe/addItem.ts:153`) hard-deletes `wardrobe_items`, which has no DELETE policy, so rows survive after their files are removed and show as broken tiles. Pre-existing. Resolved by `spec-batch-save-keep-saved-items.md`: saved items are kept, not rolled back.
 - Wardrobe binds `refreshing` to `isRefetching` (`app/(tabs)/wardrobe.tsx:288`), so the spinner shows on background refetches; `fits.tsx` guards this with `isPullRefreshing`. Pre-existing.
 - `registerQueryManagers` has no test for a rejected launch reading or for the `AppState` listener teardown.
 
@@ -309,3 +309,11 @@
 - source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
   summary: The Save sheet preview crops a non-square cover, so it can differ from the saved tile.
   evidence: `SaveFitSheet` uses `contentFit="cover"` in a square well; tiles use `contain`. Predates this change.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
+  summary: The add-item queue stays editable while a batch save is in flight -- Remove, Cancel and row fields all work, but `saveBatch` saves a snapshot, so a removed item still saves, an edit doesn't reach the stored item (yet shows on its locked Saved row), and Cancel unmounts mid-save.
+  evidence: Review pass 1 (edge-case-hunter, blind-hunter). Pre-existing: the baseline also passed a snapshot to `saveBatch` with Cancel and Remove live. Fix is to lock the queue (rows, Remove, Cancel) while `submitting`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
+  summary: If an item's `wardrobe_items` upsert commits but its response is lost, `saveBatch`'s catch removes that item's Storage files while its row exists -- a broken tile if the user cancels instead of retrying.
+  evidence: Review pass 1 (edge-case-hunter). Pre-existing: the failing-item cleanup in `lib/wardrobe/addItem.ts` is unchanged from baseline. A retry heals it (re-upload + upsert). Fix options: skip file cleanup on ambiguous (network) failures, or check for the row before removing.

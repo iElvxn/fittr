@@ -134,7 +134,19 @@ describe('saveBatch', () => {
     expect(deleteEq).not.toHaveBeenCalled();
   });
 
-  it('rolls back every already-saved item when a later one fails, and cleans the failing item\'s own storage', async () => {
+  it('reports each saved item through onItemSaved, in order', async () => {
+    const upload = jest.fn().mockResolvedValue({ error: null });
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    (supabase.storage.from as jest.Mock).mockReturnValue({ upload, remove: jest.fn() });
+    (supabase.from as jest.Mock).mockReturnValue({ upsert });
+    const onItemSaved = jest.fn();
+
+    await saveBatch('user-1', [ITEM_1, ITEM_2], onItemSaved);
+
+    expect(onItemSaved.mock.calls).toEqual([['item-1'], ['item-2']]);
+  });
+
+  it('keeps already-saved items when a later one fails, and cleans only the failing item\'s own storage', async () => {
     const upload = jest.fn().mockResolvedValue({ error: null });
     const remove = jest.fn().mockResolvedValue({ error: null });
     const upsert = jest.fn().mockImplementation((row: { id: string }) => {
@@ -143,18 +155,38 @@ describe('saveBatch', () => {
       }
       return Promise.resolve({ error: null });
     });
-    const deleteEq = jest.fn().mockResolvedValue({ error: null });
+    const deleteFn = jest.fn();
     (supabase.storage.from as jest.Mock).mockReturnValue({ upload, remove });
-    (supabase.from as jest.Mock).mockReturnValue({ upsert, delete: jest.fn().mockReturnValue({ eq: deleteEq }) });
+    (supabase.from as jest.Mock).mockReturnValue({ upsert, delete: deleteFn });
+    const onItemSaved = jest.fn();
 
-    await expect(saveBatch('user-1', [ITEM_1, ITEM_2])).rejects.toThrow('boom');
+    await expect(saveBatch('user-1', [ITEM_1, ITEM_2], onItemSaved)).rejects.toThrow('boom');
 
-    // item-1 fully committed (upload + insert succeeded) then rolled back: storage removed + row deleted.
-    expect(remove).toHaveBeenCalledWith([pathsFor('item-1').cutout, pathsFor('item-1').thumb]);
-    expect(deleteEq).toHaveBeenCalledTimes(1);
-    expect(deleteEq).toHaveBeenCalledWith('id', 'item-1');
-    // item-2's own uploaded storage (its insert failed after its upload succeeded) is also cleaned, with no row to delete.
+    // item-1 is complete (files + row), so it stays: no file removal, no row delete.
+    expect(onItemSaved.mock.calls).toEqual([['item-1']]);
+    expect(remove).not.toHaveBeenCalledWith([pathsFor('item-1').cutout, pathsFor('item-1').thumb]);
+    expect(deleteFn).not.toHaveBeenCalled();
+    // item-2 uploaded but its insert failed: its files are cleaned so no orphan pair is left.
+    expect(remove).toHaveBeenCalledTimes(1);
     expect(remove).toHaveBeenCalledWith([pathsFor('item-2').cutout, pathsFor('item-2').thumb]);
+  });
+
+  it('does not clean up an item whose save landed when onItemSaved throws', async () => {
+    const upload = jest.fn().mockResolvedValue({ error: null });
+    const remove = jest.fn().mockResolvedValue({ error: null });
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    const deleteFn = jest.fn();
+    (supabase.storage.from as jest.Mock).mockReturnValue({ upload, remove });
+    (supabase.from as jest.Mock).mockReturnValue({ upsert, delete: deleteFn });
+    const onItemSaved = jest.fn(() => {
+      throw new Error('callback failed');
+    });
+
+    await expect(saveBatch('user-1', [ITEM_1, ITEM_2], onItemSaved)).rejects.toThrow('callback failed');
+
+    // item-1's files and row both landed; a caller bug must not delete them.
+    expect(remove).not.toHaveBeenCalled();
+    expect(deleteFn).not.toHaveBeenCalled();
   });
 
   it('never uploads items after the one that failed', async () => {

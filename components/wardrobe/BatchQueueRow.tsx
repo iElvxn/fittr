@@ -93,6 +93,31 @@ export function BatchQueueRow({
     );
   }
 
+  // Already in the wardrobe after a batch save that failed on a later item:
+  // locked, so the queue can't drift from what's stored. No remove, retake
+  // or editor -- changes go through Item detail like any saved item.
+  if (item.saved) {
+    return (
+      <View className="mb-4 flex-row items-center rounded-md bg-surface-raised p-5 dark:bg-surface-raisedDark">
+        {item.cutoutUri ? (
+          <Image
+            testID="batch-row-cutout"
+            accessibilityLabel="Captured item"
+            source={{ uri: item.cutoutUri }}
+            style={{ width: THUMB_SIZE, height: THUMB_SIZE }}
+            contentFit="contain"
+          />
+        ) : null}
+        <Text variant="title" className="ml-4 flex-1 text-ink-primary dark:text-ink-primaryDark">
+          {label}
+        </Text>
+        <Text variant="meta" accessibilityLabel="Saved" className="text-ink-secondary dark:text-ink-secondaryDark">
+          ✓ Saved
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View className="mb-4 rounded-md bg-surface-raised p-5 dark:bg-surface-raisedDark">
       <View className="flex-row items-center justify-between">

@@ -48,6 +48,7 @@ export default function AddItem() {
   const setItemBrand = useWardrobeCaptureStore((state) => state.setItemBrand);
   const setItemNotes = useWardrobeCaptureStore((state) => state.setItemNotes);
   const toggleExpanded = useWardrobeCaptureStore((state) => state.toggleExpanded);
+  const markItemSaved = useWardrobeCaptureStore((state) => state.markItemSaved);
   const reset = useWardrobeCaptureStore((state) => state.reset);
 
   const [mode, setMode] = useState<ScreenMode>('choosing');
@@ -66,6 +67,11 @@ export default function AddItem() {
   const capturingRef = useRef(false);
 
   const allReady = items.length > 0 && items.every((item) => item.status === 'ready');
+  // Items already in the wardrobe after a batch save that failed partway.
+  const savedCount = items.filter((item) => item.saved).length;
+  const savedPrefix = savedCount > 0 ? `Saved ${savedCount} of ${items.length}. ` : '';
+  /** `batch_size` for analytics: the queue's size at the first Save tap, so a retry of the rest still reports the full batch. */
+  const batchSizeRef = useRef<number | null>(null);
 
   // A photo's background removal can take real time; if the user backs out
   // while one is still in flight, its eventual `setItemProcessed`/
@@ -192,7 +198,7 @@ export default function AddItem() {
 
   async function handleRetake(id: string) {
     const item = items.find((candidate) => candidate.id === id);
-    if (!item) {
+    if (!item || item.saved) {
       return;
     }
     if (item.source === 'library') {
@@ -210,10 +216,14 @@ export default function AddItem() {
   }
 
   function handleRemove(id: string) {
-    // Removing the batch's last item leaves nothing to review -- treat it
-    // the same as the "nothing captured" case rather than showing an empty
-    // queue screen with a permanently-disabled Save button.
-    if (items.length <= 1) {
+    const unsaved = items.filter((item) => !item.saved);
+    if (!unsaved.some((item) => item.id === id)) {
+      return;
+    }
+    // Removing the last unsaved item leaves nothing to save -- treat it the
+    // same as the "nothing captured" case rather than showing a queue whose
+    // Save button has nothing left to do. Any saved items stay saved.
+    if (unsaved.length <= 1) {
       router.back();
       return;
     }
@@ -233,10 +243,14 @@ export default function AddItem() {
     setConnectionError(false);
     setFieldError(null);
 
+    const batchSize = (batchSizeRef.current ??= items.length);
+    const unsaved = items.filter((item) => !item.saved);
+    const queueItemByItemId = new Map(unsaved.map((item) => [item.itemId as string, item]));
+
     try {
       await saveBatch(
         userId,
-        items.map((item) => ({
+        unsaved.map((item) => ({
           itemId: item.itemId as string,
           cutoutUri: item.cutoutUri as string,
           thumbUri: item.thumbUri as string,
@@ -246,18 +260,24 @@ export default function AddItem() {
           brand: item.brand,
           notes: item.notes,
         })),
+        (itemId) => {
+          const item = queueItemByItemId.get(itemId);
+          if (!item) {
+            return;
+          }
+          markItemSaved(item.id);
+          trackItemAdded(item.source, item.category, batchSize);
+        },
       );
 
-      const batchSize = items.length;
-      items.forEach((item) => trackItemAdded(item.source, item.category, batchSize));
       // `router.dismissTo` returns to the already-mounted Wardrobe tab, so the
       // grid wouldn't refetch by itself. Not awaited: the save is done.
       void invalidateWardrobeItems(queryClient, userId);
       router.dismissTo({ pathname: '/(tabs)/wardrobe', params: { itemAdded: '1' } });
     } catch (error) {
-      // `saveBatch` rolls back best-effort, so a failed batch can still leave
-      // rows behind. Stale only: a fetch now could fail too, and replace a
-      // healthy grid with the error state while this screen is still open.
+      // Items before the failing one are saved and kept. Stale only: a fetch
+      // now could fail too, and replace a healthy grid with the error state
+      // while this screen is still open.
       void invalidateWardrobeItems(queryClient, userId, 'none');
       if (error instanceof WardrobeItemError && error.kind === 'no_connection') {
         setConnectionError(true);
@@ -395,15 +415,26 @@ export default function AddItem() {
       <View className="px-gutter pb-10 pt-4">
         {connectionError ? (
           <View className="mb-4">
-            <ConnectionErrorNotice message={NO_CONNECTION_MESSAGE} />
+            <ConnectionErrorNotice
+              message={
+                savedCount > 0 ? `${savedPrefix}No connection — the rest are still here. Try again.` : NO_CONNECTION_MESSAGE
+              }
+            />
           </View>
         ) : null}
         {fieldError ? (
           <Text variant="meta" className="mb-4 text-destructive dark:text-destructiveDark">
+            {savedPrefix}
             {fieldError}
           </Text>
         ) : null}
-        <Button title="Save all" variant="primary" loading={submitting} disabled={!allReady} onPress={handleSaveAll} />
+        <Button
+          title={savedCount > 0 ? 'Save remaining' : 'Save all'}
+          variant="primary"
+          loading={submitting}
+          disabled={!allReady}
+          onPress={handleSaveAll}
+        />
       </View>
     </KeyboardAvoidingView>
   );
