@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-10-2026 22:05
-last_updated: 11-06-2026 11:15
+last_updated: 11-23-2026 12:00
 project: fittr
 project_key: NOKEY
 tracking_system: file-system
@@ -48,29 +48,31 @@ development_status:
   2-4-view-edit-and-delete-an-item: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
-  3-1-build-a-fit-on-the-canvas: review
-  3-2-preview-name-and-save-a-fit: review
-  3-3-edit-and-delete-a-fit: review
-  3-4-fit-behavior-when-a-wardrobe-item-is-deleted: review
+  epic-3: done
+  3-1-build-a-fit-on-the-canvas: done
+  3-2-preview-name-and-save-a-fit: done
+  3-3-edit-and-delete-a-fit: done
+  3-4-fit-behavior-when-a-wardrobe-item-is-deleted: done
   epic-3-retrospective: optional
 
   epic-4: in-progress
-  4-1-browse-and-filter-my-fits: review
-  4-2-favorite-a-fit-and-mark-it-worn: review
-  4-3-share-a-fit: review
+  4-1-browse-and-filter-my-fits: done
+  4-2-favorite-a-fit-and-mark-it-worn: done
+  4-3-share-a-fit: done
   4-4-see-your-wear-streak: done
+  4-5-see-wear-stats-and-spot-underused-items: backlog
+  4-6-recap-card-and-streak-milestone-rewards: backlog
   epic-4-retrospective: optional
 
-  epic-5: in-progress
+  epic-5: done
   5-1-plan-fits-for-the-week: done
   5-2-see-and-act-on-today-s-planned-fit-from-home: done
   5-3-see-a-month-of-plans-at-a-glance: done
   5-4-attach-a-photo-of-the-outfit-actually-worn: done
-  5-5-see-a-fit-s-wear-photos-on-fit-detail: review
+  5-5-see-a-fit-s-wear-photos-on-fit-detail: done
   5-6-see-and-act-on-a-day-s-fit-from-the-planner: done
   5-7-swipe-between-today-s-photo-and-the-fit-on-home: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   epic-6: in-progress
   6-1-cache-storage-images-by-path: done
@@ -150,3 +152,33 @@ action_items:
     owner: "dev"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-5-retro-item-1-day-rollover-and-shared-toggle"
+    epic: 5
+    action: "Fix the day rollover (date-keyed today read, pass the screen date into
+      wear writes, refetch on resume in the Planner and Fit detail, with tests) and
+      move Fit detail onto useWornTodayToggle."
+    owner: "dev"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
+    note: "Done in 73b88f2 (spec-e5-retro-1-day-rollover-and-shared-toggle.md)."
+  - id: "epic-5-retro-item-2-device-checks"
+    epic: 5
+    action: "Run the Epic 5 device checks in epic-5-device-checklist.md and record
+      the results."
+    owner: "Elvin"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
+  - id: "epic-5-retro-item-3-epic6-scope"
+    epic: 5
+    action: "Carry Epic 5 gaps into Epic 6: wear-photos bucket in Story 6.2 account
+      deletion, wear-photo budget checks and unbounded wear reads in 6.3/6.4."
+    owner: "Elvin"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
+  - id: "epic-5-retro-item-4-reconcile-docs"
+    epic: 5
+    action: "Reconcile epics.md 5.1 AC, specs 5.2/5.6 worn-button styling, and stale
+      lines in epic-5-context.md with the as-built app."
+    owner: "Elvin"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
