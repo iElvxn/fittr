@@ -1,6 +1,6 @@
 # Deferred work
 
-Findings and ideas deferred from story reviews. New entries go at the end of the matching section, in this shape:
+Findings and ideas deferred from story reviews. New entries go at the end of the file, under "New (not yet triaged)" (the BMad workflows append there), in this shape:
 
 ```markdown
 - source_spec: `<spec path>`
@@ -8,7 +8,7 @@ Findings and ideas deferred from story reviews. New entries go at the end of the
   evidence: <why it is real, or what would settle it>
 ```
 
-Add `planned_in: Story X.Y` when a story takes an entry on, and `resolved_by: <spec, migration or PR>` when it is fixed; then move the entry to Resolved.
+Add `planned_in: Story X.Y` when a story takes an entry on, and `resolved_by: <spec, migration or PR>` when it is fixed. When triaging, move new entries into the matching section.
 
 ## Before the AI Stylist
 
@@ -408,3 +408,5 @@ Kept for history.
   summary: Fit detail left open across midnight keeps yesterday's `todayWornFitIds`, so the worn toggle (and now the Worn strip's Add tile) acts on yesterday's wear.
   evidence: the `['todayWornFitIds', userId]` key has no date and Fit detail has no day-rollover refresh like Home's AppState listener; unverified whether a focus refetch covers it in practice — settle by leaving Fit detail open past midnight on a device.
   resolved_by: `_bmad-output/implementation-artifacts/spec-e5-retro-1-day-rollover-and-shared-toggle.md`
+
+## New (not yet triaged)
