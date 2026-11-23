@@ -55,11 +55,13 @@ development_status:
   3-4-fit-behavior-when-a-wardrobe-item-is-deleted: done
   epic-3-retrospective: optional
 
-  epic-4: done
+  epic-4: in-progress
   4-1-browse-and-filter-my-fits: done
   4-2-favorite-a-fit-and-mark-it-worn: done
   4-3-share-a-fit: done
   4-4-see-your-wear-streak: done
+  4-5-see-wear-stats-and-spot-underused-items: backlog
+  4-6-recap-card-and-streak-milestone-rewards: backlog
   epic-4-retrospective: optional
 
   epic-5: done

@@ -49,6 +49,11 @@ FR31: Deleting an item, a Fit, or an account removes the corresponding database 
 FR32: The system reads and writes directly against Supabase (Postgres + Storage) over the network; there is no offline mode or local-first storage in Phase 1.
 FR33: The system records funnel analytics events (signup, item added, Fit created, Fit worn, Fit planned, etc.) and crash reports from first launch.
 FR34: Users can see their current consecutive-day wear streak, computed from existing Fit-worn records; no new logging mechanism and no reminder notifications (added mid-breakdown per SPEC.md CAP-11).
+FR35: Users can optionally record a price paid for a wardrobe item (extends FR9's optional metadata; added post-breakdown per the 2026-09-21 engagement/retention brainstorm).
+FR36: Users can see an item's or Fit's wear count, and cost-per-wear when a price is set, computed from existing wear records — no new tracking mechanism.
+FR37: Users can see wardrobe items unworn for 60+ days flagged and filterable as "cold spots" in the Wardrobe grid.
+FR38: Users can view a weekly/monthly recap of their most-worn item, favorite color, and longest streak in that period.
+FR39: Users unlock a cosmetic reward when their wear streak reaches a milestone (7/30/100 days); the reward stays unlocked even if the streak later breaks.
 
 Excluded from this Phase 1 breakdown (present in Fittr MVP Requirements.md but marked as non-goals in SPEC.md): social posting/feed, likes, comments, follows, saves, discover, notifications, username-based search, AI-based category detection, outfit recommendations/AI stylist, weather-aware recommendations, commerce/marketplace, Android/web.
 
@@ -114,6 +119,11 @@ FR31: Epic 6 - Account deletion cascades (rows + storage)
 FR32: Epic 1 - Direct Supabase reads/writes (architecture decision, applied by every epic)
 FR33: Epic 1 - Analytics/crash reporting wired (event instrumentation completed per-epic)
 FR34: Epic 4 - Wear streak counter (derived from FR25's fit_wears data)
+FR35: Epic 4 - Optional item price
+FR36: Epic 4 - Wear count / cost-per-wear display
+FR37: Epic 4 - Cold-spot flag/filter for unworn items
+FR38: Epic 4 - Weekly/monthly recap card
+FR39: Epic 4 - Streak milestone reward unlocks
 
 ### NFR Coverage
 
@@ -136,8 +146,8 @@ Users can start a Fit from a template or a blank canvas, add wardrobe items from
 **FRs covered:** FR16, FR17, FR18, FR19, FR20, FR21, FR22
 
 ### Epic 4: My Fits & Sharing
-Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, and export a Fit's collage to the iOS share sheet.
-**FRs covered:** FR23, FR24, FR25, FR29, FR34
+Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, export a Fit's collage to the iOS share sheet, see wear stats and cost-per-wear, spot underused wardrobe items, get a periodic recap, and unlock rewards for streak milestones.
+**FRs covered:** FR23, FR24, FR25, FR29, FR34, FR35, FR36, FR37, FR38, FR39
 
 ### Epic 5: Planner
 Users can assign a saved Fit to a day on a weekly calendar, view/replace/remove that assignment, and see today's planned Fit on Home, with the option to mark it worn directly from there. They can also see a whole month of plans and wears at a glance, and attach a real-life photo of how an outfit actually looked on a day they wore it.
@@ -403,7 +413,7 @@ So that I don't lose an outfit just because I got rid of one piece.
 
 ## Epic 4: My Fits & Sharing
 
-Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, and export a Fit's collage to the iOS share sheet.
+Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, export a Fit's collage to the iOS share sheet, see wear stats and cost-per-wear, spot underused wardrobe items, get a periodic recap, and unlock rewards for streak milestones.
 
 ### Story 4.1: Browse and Filter My Fits
 
@@ -480,6 +490,58 @@ So that I have a reason to keep coming back.
 **Then** it still reflects the last completed streak rather than showing 0 prematurely (streak breaks only once a day passes with nothing logged)
 
 **And** no notifications or reminders are sent for the streak — it's a passive display only, consistent with the no-notifications non-goal
+
+### Story 4.5: See Wear Stats and Spot Underused Items
+
+As a user,
+I want to see how many times I've worn an item or Fit, and what it's cost me per wear,
+So that I get a satisfying read on my wardrobe's actual use, and know what's sitting idle.
+
+**Acceptance Criteria:**
+
+**Given** an item's detail view
+**When** I open it
+**Then** I see how many times it's appeared in a Fit marked worn, computed from existing `fit_wears` rows, with no new tracking mechanism
+
+**Given** an item I've optionally priced
+**When** I view its detail
+**Then** I see a cost-per-wear value (price ÷ wear count); an unpriced item shows wear count only
+
+**Given** a Fit's detail view
+**When** I open it
+**Then** I see that Fit's own wear count, drawn from the same `fit_wears` rows used by Story 4.2 and 4.4
+
+**Given** the Wardrobe grid
+**When** an item hasn't appeared in a worn Fit for 60+ days (or ever)
+**Then** it's visually flagged as a "cold spot" and can be filtered to, alongside the existing category filters (Story 2.3)
+
+*Implementation note: adds an optional `price` column to `wardrobe_items` (nullable, no backfill required); wear count and cost-per-wear are computed at read time from `fit_wears`, not stored or duplicated. No new table.*
+
+### Story 4.6: Recap Card and Streak Milestone Rewards
+
+As a user,
+I want a periodic recap of my wardrobe habits and a reward for keeping my wear streak alive,
+So that I have something to look forward to beyond the daily check-in.
+
+**Acceptance Criteria:**
+
+**Given** I've worn at least one Fit in the past week or month
+**When** I open Home or Profile
+**Then** I see a recap card: most-worn item, favorite color (most common `wardrobe_items.color` among items in worn Fits), and my longest streak in that period — all derived from existing `fit_wears`/`wardrobe_items` data
+
+**Given** no wears recorded in the period
+**When** I view the recap
+**Then** it shows an empty state pointing at planning a Fit, not a broken or zeroed-out card
+
+**Given** my current wear streak (Story 4.4) reaches 7, 30, or 100 days
+**When** the milestone is hit
+**Then** I unlock a cosmetic reward (a canvas theme or Fit template) and see a one-time celebratory moment
+
+**Given** a reward I've already unlocked
+**When** I revisit the canvas or template picker
+**Then** it remains available regardless of whether my current streak later breaks
+
+*Implementation note: adds a `streak_milestones_unlocked` array column to `profiles`, RLS already scoped via the existing `id = auth.uid()` policy (NFR5). No new table; reuses Story 4.4's streak computation rather than introducing a second streak mechanism.*
 
 ## Epic 5: Planner
 
@@ -902,9 +964,9 @@ So that launch criteria are met before real users arrive.
 
 ## Validation Summary
 
-- **FR coverage:** all 34 FRs traced to a specific story's acceptance criteria; none uncovered.
+- **FR coverage:** all 39 FRs traced to a specific story's acceptance criteria; none uncovered. (FR35-FR39 added 2026-09-21, post-breakdown, from an engagement/retention brainstorm — see `_bmad-output/brainstorming/brainstorm-fittr-engagement-monetization-2026-09-21/.memlog.md`.)
 - **NFR coverage:** all 10 NFRs traced to a specific story or epic-level implementation note.
-- **Table creation:** each of the six tables (`profiles`, `wardrobe_items`, `fits`/`fit_items`, `fit_wears`, `planned_fits`) is created only in the first story that needs it, each with RLS stated explicitly (fixed during this validation pass — the first draft stated RLS only for `profiles`).
+- **Table creation:** each of the six tables (`profiles`, `wardrobe_items`, `fits`/`fit_items`, `fit_wears`, `planned_fits`) is created only in the first story that needs it, each with RLS stated explicitly (fixed during this validation pass — the first draft stated RLS only for `profiles`). Stories 4.5-4.6 add columns to existing tables (`wardrobe_items.price`, `profiles.streak_milestones_unlocked`) rather than new tables.
 - **No starter template:** none specified; Story 1.1 bootstraps the project as part of delivering account creation, not as a separate infra-only story.
 - **Forward dependencies:** none block story completion. Stories 2.4 and 3.2 note that a feature (Create Fit With This, appearing in My Fits) is *enabled* by a later epic, but neither story requires that later epic to exist to be built or tested — same pattern approved for epic-level sequencing.
 - **Epic independence:** Epics 2-5 each deliver complete, standalone domain value and depend only on earlier epics' outputs; Epic 6 is a closing launch-readiness epic and, as such, is expected to depend on everything before it.
