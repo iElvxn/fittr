@@ -317,3 +317,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
   summary: If an item's `wardrobe_items` upsert commits but its response is lost, `saveBatch`'s catch removes that item's Storage files while its row exists -- a broken tile if the user cancels instead of retrying.
   evidence: Review pass 1 (edge-case-hunter). Pre-existing: the failing-item cleanup in `lib/wardrobe/addItem.ts` is unchanged from baseline. A retry heals it (re-upload + upsert). Fix options: skip file cleanup on ambiguous (network) failures, or check for the row before removing.
+
+- source_spec: `_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md`
+  summary: Run the date-heavy suites (planner, week, streak) under a second, positive-offset time zone (e.g. `TZ=Asia/Tokyo`) in CI.
+  evidence: `jest.config.js` pins `America/Los_Angeles` (`f4e0c0a`), so off-by-one-day bugs east of UTC or in midnight-DST zones ship untested. The user chose not to track it as a sprint action item (Epic 5 retro, finding 16).

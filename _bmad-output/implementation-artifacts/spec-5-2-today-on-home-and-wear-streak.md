@@ -101,6 +101,10 @@ context:
 **Manual checks:**
 - On a device, in light and dark mode: plan today in the Planner, see it on Home, mark worn and undo, and watch the streak and the Planner's "Worn" follow; with nothing planned, plan today from Home.
 
+## Spec Change Log
+
+- **2026-09-27, Epic 5 retrospective (after merge).** Commit `6811ac9` reversed the worn button's styling after device feedback that the worn state was hard to read: "Mark worn" is now outlined, and "Worn today" is solid ink with a filled check (`components/fits/WornTodayButton.tsx`). The Intent's "outlined 'Worn today'" is superseded; the frozen text is left as approved.
+
 ## Review Triage Log
 
 | # | Source | Finding | Verdict | Route | Evidence |

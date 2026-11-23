@@ -70,7 +70,7 @@ development_status:
   5-5-see-a-fit-s-wear-photos-on-fit-detail: done
   5-6-see-and-act-on-a-day-s-fit-from-the-planner: done
   5-7-swipe-between-today-s-photo-and-the-fit-on-home: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   epic-6: in-progress
   6-1-cache-storage-images-by-path: done
@@ -150,3 +150,33 @@ action_items:
     owner: "dev"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-09-14.md"
+  - id: "epic-5-retro-item-1-day-rollover-and-shared-toggle"
+    epic: 5
+    action: "Fix the day rollover (date-keyed today read, pass the screen date into
+      wear writes, refetch on resume in the Planner and Fit detail, with tests) and
+      move Fit detail onto useWornTodayToggle."
+    owner: "dev"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
+    note: "Done in 73b88f2 (spec-e5-retro-1-day-rollover-and-shared-toggle.md)."
+  - id: "epic-5-retro-item-2-device-checks"
+    epic: 5
+    action: "Run the Epic 5 device checks in epic-5-device-checklist.md and record
+      the results."
+    owner: "Elvin"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
+  - id: "epic-5-retro-item-3-epic6-scope"
+    epic: 5
+    action: "Carry Epic 5 gaps into Epic 6: wear-photos bucket in Story 6.2 account
+      deletion, wear-photo budget checks and unbounded wear reads in 6.3/6.4."
+    owner: "Elvin"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
+  - id: "epic-5-retro-item-4-reconcile-docs"
+    epic: 5
+    action: "Reconcile epics.md 5.1 AC, specs 5.2/5.6 worn-button styling, and stale
+      lines in epic-5-context.md with the as-built app."
+    owner: "Elvin"
+    status: done
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md"
