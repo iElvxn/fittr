@@ -34,6 +34,7 @@ describe('addCaptured', () => {
         brand: '',
         notes: '',
         expanded: false,
+        saved: false,
       }),
     ]);
   });
@@ -163,6 +164,20 @@ describe('removeItem', () => {
     getState().removeItem(id);
 
     expect(getState().items).toEqual([]);
+  });
+});
+
+describe('markItemSaved', () => {
+  it('flags only the matching item as saved, leaving its other fields intact', () => {
+    const id1 = getState().addCaptured('camera', 'file://photo-1.jpg');
+    const id2 = getState().addCaptured('camera', 'file://photo-2.jpg');
+    getState().setItemProcessed(id1, { cutoutUri: 'file://cutout-1.png', thumbUri: 'file://thumb-1.webp', colorHex: '#112233' });
+
+    getState().markItemSaved(id1);
+
+    const [item1, item2] = getState().items;
+    expect(item1).toMatchObject({ id: id1, saved: true, status: 'ready', cutoutUri: 'file://cutout-1.png' });
+    expect(item2).toMatchObject({ id: id2, saved: false });
   });
 });
 

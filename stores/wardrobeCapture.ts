@@ -32,6 +32,12 @@ export type BatchItem = {
 
   /** Whether this row's category/color/fields are shown, or collapsed to just its thumbnail + status. */
   expanded: boolean;
+  /**
+   * True once this item's files and row are both stored. Set by a batch
+   * save that later failed partway: the item stays saved (never rolled
+   * back), its row locks, and a retry sends only the unsaved items.
+   */
+  saved: boolean;
 };
 
 type WardrobeCaptureState = {
@@ -48,6 +54,7 @@ type WardrobeCaptureState = {
   setItemBrand: (id: string, brand: string) => void;
   setItemNotes: (id: string, notes: string) => void;
   toggleExpanded: (id: string) => void;
+  markItemSaved: (id: string) => void;
   reset: () => void;
 };
 
@@ -87,6 +94,7 @@ export const useWardrobeCaptureStore = create<WardrobeCaptureState>((set) => ({
           brand: '',
           notes: '',
           expanded: false,
+          saved: false,
         },
       ],
     }));
@@ -149,6 +157,8 @@ export const useWardrobeCaptureStore = create<WardrobeCaptureState>((set) => ({
 
   toggleExpanded: (id) =>
     set((state) => ({ items: mapItem(state.items, id, (item) => ({ ...item, expanded: !item.expanded })) })),
+
+  markItemSaved: (id) => set((state) => ({ items: mapItem(state.items, id, (item) => ({ ...item, saved: true })) })),
 
   reset: () => set({ items: [] }),
 }));

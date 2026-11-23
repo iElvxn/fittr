@@ -21,6 +21,7 @@ function makeItem(overrides: Partial<BatchItem> = {}): BatchItem {
     brand: '',
     notes: '',
     expanded: false,
+    saved: false,
     ...overrides,
   };
 }
@@ -200,5 +201,34 @@ describe('BatchQueueRow, ready status, expanded', () => {
     await user.press(screen.getByRole('button', { name: 'Retake' }));
 
     expect(onRetake).toHaveBeenCalledWith('row-1');
+  });
+});
+
+describe('BatchQueueRow, saved', () => {
+  const savedItem = makeItem({ status: 'ready', cutoutUri: 'file://cutout-1.png', category: 'shoes', saved: true });
+
+  it('shows the cutout, its category and a Saved mark', async () => {
+    await render(<BatchQueueRow item={savedItem} {...baseProps} />);
+
+    expect(screen.getByTestId('batch-row-cutout')).toBeTruthy();
+    expect(screen.getByText('Shoes')).toBeTruthy();
+    expect(screen.getByLabelText('Saved')).toBeTruthy();
+  });
+
+  it('is locked: no remove, no expand toggle, no chevron', async () => {
+    await render(<BatchQueueRow item={savedItem} {...baseProps} />);
+
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /expand|collapse/i })).toBeNull();
+    expect(screen.queryByText('▾')).toBeNull();
+  });
+
+  it('hides the editor and Retake even if the row was expanded when it saved', async () => {
+    await render(<BatchQueueRow item={{ ...savedItem, expanded: true }} {...baseProps} />);
+
+    expect(screen.queryByRole('button', { name: 'Top' })).toBeNull();
+    expect(screen.queryByLabelText('Item name')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retake' })).toBeNull();
+    expect(screen.queryByText('▴')).toBeNull();
   });
 });
