@@ -18,12 +18,12 @@ Fix these before the Stylist adds server-side reads, migrations and Edge Functio
   summary: A user can reference another user's `wardrobe_items.id` in their own `fit_items`, because the policies check only Fit ownership and foreign keys ignore RLS.
   evidence: Confirmed in a local Postgres run of the repo's migrations during spec review. No data is exposed today: the `getFitItems` join returns null under `wardrobe_items_select_own`. Any future service-role or definer join over `fit_items` would expose the item. The fix is an RLS change, which the spec excludes.
   note: Independent review, 2026-11-23, confirmed it against `0004_fits.sql:111-129`: the insert and update policies check only Fit ownership, and `save_fit` (`security invoker`, `0017`) adds no item check, so both write paths accept a foreign `item_id`. The Stylist makes it real: `fit_profiles` labelling and the nightly taste summary (`spec-ai-stylist/personalization.md`) run without a user JWT, so they would sign the other user's item image and write an LLM description the attacker can read. Fix: add `and exists (select 1 from wardrobe_items where id = fit_items.item_id and user_id = (select auth.uid()))` to both policies' `with check` (the `planned_fits_insert_own` pattern, `0012`); `save_fit` inherits it. Red RLS tests first, and check for existing foreign references.
-  planned_in: first story of the AI Stylist epic (not yet created), together with the `fit_wears` entry below.
+  planned_in: Story 7.1 (Close the Fit Ownership Gaps), the first story of the AI Stylist work, together with the `fit_wears` entry below.
 
 - source_spec: none (independent RLS review, 2026-11-23)
   summary: A user can log a wear against another user's Fit, because `fit_wears_insert_own` checks only `user_id = auth.uid()`, not that the user owns `fit_id`.
   evidence: `supabase/migrations/0008_fit_wears.sql:36-39`. Harmless today: wears are read back by `user_id` only, so the other user never sees them, and Fit ids are unguessable uuids. Same class as the `fit_items` entry above, and any service-role read of a Fit's wears (e.g. the Stylist's personalization) would count the planted rows. Fix: add `and exists (select 1 from fits where fits.id = fit_wears.fit_id and fits.user_id = (select auth.uid()))` to its `with check`.
-  planned_in: first story of the AI Stylist epic (not yet created), together with the `fit_items` entry above.
+  planned_in: Story 7.1 (Close the Fit Ownership Gaps), the first story of the AI Stylist work, together with the `fit_items` entry above.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
   summary: Nothing automated confirms a migration is on production before an OTA update ships.

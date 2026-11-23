@@ -57,6 +57,8 @@ FR39: Users unlock a cosmetic reward when their wear streak reaches a milestone 
 
 Excluded from this Phase 1 breakdown (present in Fittr MVP Requirements.md but marked as non-goals in SPEC.md): social posting/feed, likes, comments, follows, saves, discover, notifications, username-based search, AI-based category detection, outfit recommendations/AI stylist, weather-aware recommendations, commerce/marketplace, Android/web.
 
+*Update 2026-11-23:* the AI Stylist (including weather-aware suggestions and a daily-suggestion notification) and subscriptions are now part of launch, as Epics 7–12. Their requirements live in `_bmad-output/specs/spec-ai-stylist/SPEC.md` (CAP-1 to CAP-12) and its companions, not in the FR list above.
+
 ### NonFunctional Requirements
 
 NFR1: Minimum supported OS is iOS 17.0, required by the on-device background-removal module.
@@ -146,7 +148,7 @@ Users can start a Fit from a template or a blank canvas, add wardrobe items from
 **FRs covered:** FR16, FR17, FR18, FR19, FR20, FR21, FR22
 
 ### Epic 4: My Fits & Sharing
-Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, export a Fit's collage to the iOS share sheet, see wear stats and cost-per-wear, spot underused wardrobe items, get a periodic recap, and unlock rewards for streak milestones.
+Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, export a Fit's collage to the iOS share sheet, see wear stats and cost-per-wear, spot underused wardrobe items, get a periodic recap, and unlock rewards for streak milestones. Subscribers also get a Wardrobe Insights dashboard (Story 4.7).
 **FRs covered:** FR23, FR24, FR25, FR29, FR34, FR35, FR36, FR37, FR38, FR39
 
 ### Epic 5: Planner
@@ -155,10 +157,42 @@ Users can assign a saved Fit to a day on a weekly calendar, view/replace/remove 
 *Scope added after the PRD (user request, 2026-09-24):* Stories 5.3 (month view) and 5.4 (outfit photos) have no PRD FR of their own.
 
 ### Epic 6: Launch Readiness & Account Lifecycle
-The app is made fast, frugal and observable before real users arrive: images are cached by their storage path and Fit covers get small thumbnails, the auth session is read once, React Query is set up for React Native, wear counts come from the server, crashes and analytics are tied to real users with readable stack traces, JS fixes can ship over the air, and the React Compiler handles re-renders (Stories 6.1-6.7, added 2026-09-27 from a performance and production-readiness review). Then users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
+The app is made fast, frugal and observable before real users arrive: images are cached by their storage path and Fit covers get small thumbnails, the auth session is read once, React Query is set up for React Native, wear counts come from the server, crashes and analytics are tied to real users with readable stack traces, JS fixes can ship over the air, and the React Compiler handles re-renders (Stories 6.1-6.7, added 2026-09-27 from a performance and production-readiness review). Then users can delete their account and have every row and stored image actually removed; onboarding guides a new user to a starter closet, a first free Stylist result and the paywall (updated 2026-11-23); every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
 **FRs covered:** FR4, FR30, FR31
 **NFRs covered:** NFR6, NFR7, NFR8
 *Scope added after the PRD (performance and production-readiness review, 2026-09-27):* Stories 6.1-6.7 harden what Epics 1-5 built and have no PRD FR of their own. Stories 6.1, 6.2 and 6.6 also serve NFR6 (free-tier storage and egress).
+
+### Epic 7: Stylist v0 — Baseline
+Users get three Fits built only from their own clothes for an occasion they describe, each with a one-line reason, and can save, plan, open or dismiss each one; a quick shuffle returns instantly with no model call. Items are tagged automatically and users can correct the tags. An eval harness scores every later layer against a random baseline.
+**Covers:** Stylist CAP-1, CAP-2 (quick shuffle), CAP-4 (ID pins), CAP-7 (save/plan/open/dismiss), CAP-9 (attributes), CAP-11, CAP-12 (server-side limits)
+
+### Epic 8: Stylist v1 — Retrieval
+Suggestions come from a scored shortlist instead of the whole closet: embeddings, hard filters, slot ideals and versatility spots. Users can choose Best or Surprise me, pin items by describing them, exclude items or types, set never-rules, and are told honestly when the closet can't cover a request.
+**Covers:** Stylist CAP-2 (curate), CAP-4 (text pins), CAP-5, CAP-8, CAP-9 (embeddings)
+
+### Epic 9: Stylist v2 — Personalization
+Suggestions reflect each user's taste, learned from Fits they built, wore, planned, swapped and dismissed, plus explicit preferences; users can swap one piece or ask for more like a Fit.
+**Covers:** Stylist CAP-6, CAP-7 (swap, more like this)
+
+### Epic 10: Stylist v3 — Style Library
+Users can pick a preset style or type any style, including blends and styles with no preset, and results follow it.
+**Covers:** Stylist CAP-3
+
+### Epic 11: Stylist v4 — Visual Check and Daily Suggestion
+A vision model reviews each final outfit and swaps or drops weak pieces (kept only if its eval gate passes), and paid users get a daily suggestion on Home with an opt-in morning notification.
+**Covers:** Stylist CAP-10, plus the daily suggestion (`spec-ai-stylist/screens-and-flows.md`)
+
+### Epic 12: Subscriptions
+Users can start a free trial and subscribe (annual or monthly) to unlock the full Stylist and Wardrobe Insights, restore purchases, and see clear limits. The free tier keeps the closet (up to a cap, raised by inviting friends), the builder, the planner, streaks, recaps, sharing (with a small watermark), quick shuffle and one prompted Stylist request a week. Subscription state is trusted only from the server.
+**Covers:** Stylist CAP-12
+
+### Launch sequence (decided 2026-11-23)
+The whole Stylist and subscriptions ship in the public launch, so Epic 6's remaining stories are split around them:
+1. Stories 6.6 and 6.7
+2. Epic 7 (Story 7.1 first: the RLS ownership fixes)
+3. Epics 8–11, each gated by its eval; a layer that fails its gate ships turned off (`spec-ai-stylist/milestones.md`)
+4. Epic 12
+5. Stories 6.8, 6.9 and 6.10, then 6.11 last
 
 *Not carried into an epic:* M6 Cohort (TestFlight rollout, two-week funnel review) is a post-launch operational activity with no FRs of its own — nothing to implement, so no epic.
 
@@ -413,7 +447,7 @@ So that I don't lose an outfit just because I got rid of one piece.
 
 ## Epic 4: My Fits & Sharing
 
-Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, export a Fit's collage to the iOS share sheet, see wear stats and cost-per-wear, spot underused wardrobe items, get a periodic recap, and unlock rewards for streak milestones.
+Users can browse saved Fits in a grid filterable to All/Favorites/Worn, favorite a Fit, mark one worn, see their current wear streak, export a Fit's collage to the iOS share sheet, see wear stats and cost-per-wear, spot underused wardrobe items, get a periodic recap, and unlock rewards for streak milestones. Subscribers also get a Wardrobe Insights dashboard (Story 4.7).
 
 ### Story 4.1: Browse and Filter My Fits
 
@@ -517,6 +551,8 @@ So that I get a satisfying read on my wardrobe's actual use, and know what's sit
 
 *Implementation note: adds an optional `price` column to `wardrobe_items` (nullable, no backfill required); wear count and cost-per-wear are computed at read time from `fit_wears`, not stored or duplicated. No new table.*
 
+*Free tier (decided 2026-11-23):* everything in this story stays free, as it does at Indyx, Acloset and Whering. Once the Stylist ships, each cold spot gets a "Style it" action (Story 7.8), a contextual paywall trigger for free users past their allowance. The deeper analytics are paid and live in Story 4.7.
+
 ### Story 4.6: Recap Card and Streak Milestone Rewards
 
 As a user,
@@ -542,6 +578,14 @@ So that I have something to look forward to beyond the daily check-in.
 **Then** it remains available regardless of whether my current streak later breaks
 
 *Implementation note: adds a `streak_milestones_unlocked` array column to `profiles`, RLS already scoped via the existing `id = auth.uid()` policy (NFR5). No new table; reuses Story 4.4's streak computation rather than introducing a second streak mechanism.*
+
+### Story 4.7: Wardrobe Insights (Paid)
+
+As a subscriber,
+I want a dashboard of how I actually use my wardrobe,
+So that I can see trends and make better decisions about what I own and buy.
+
+**Outline (added 2026-11-23; ACs come with its spec):** wear trends over time, closet breakdown by category and color, the most- and least-worn pieces, and spending with total cost-per-wear when prices are set. Computed server-side from existing tables (Story 6.6's pattern, `security_invoker` views), no new tracking. Free users see the entry point and a preview, and tapping opens the paywall (Story 12.2). Build after Story 4.5 and Epic 12.
 
 ## Epic 5: Planner
 
@@ -707,7 +751,7 @@ So that I see how the outfit actually looked without losing the plan.
 
 ## Epic 6: Launch Readiness & Account Lifecycle
 
-The app is made fast, frugal and observable before real users arrive: images are cached by their storage path and Fit covers get small thumbnails, the auth session is read once, React Query is set up for React Native, wear counts come from the server, crashes and analytics are tied to real users with readable stack traces, JS fixes can ship over the air, and the React Compiler handles re-renders (Stories 6.1-6.7, added 2026-09-27 from a performance and production-readiness review). Then users can delete their account and have every row and stored image actually removed; onboarding guides a new user to their first 5 items and first Fit; every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
+The app is made fast, frugal and observable before real users arrive: images are cached by their storage path and Fit covers get small thumbnails, the auth session is read once, React Query is set up for React Native, wear counts come from the server, crashes and analytics are tied to real users with readable stack traces, JS fixes can ship over the air, and the React Compiler handles re-renders (Stories 6.1-6.7, added 2026-09-27 from a performance and production-readiness review). Then users can delete their account and have every row and stored image actually removed; onboarding guides a new user to a starter closet, a first free Stylist result and the paywall (updated 2026-11-23); every list has proper loading/empty/error states; the three Maestro end-to-end flows pass; and storage/backend usage is confirmed to fit the Supabase free tier before the cohort launches.
 
 ### Story 6.1: Cache Storage Images by Path
 
@@ -874,24 +918,33 @@ So that the app never stutters as my closet grows.
 
 *Implementation note: build last, after Story 6.5 removes most of the `react-hooks` suppressions (the compiler skips any component that has one). `experiments.reactCompiler: true` in `app.json`; the Babel plugin is already installed. Reanimated shared values move from `.value` to `.get()`/`.set()` in compiled components, or a component opts out with `'use no memo'` and a comment saying why. Spec to be written before building.*
 
-### Story 6.8: Guided Onboarding to First Fit
+### Story 6.8: Guided Onboarding to a First Stylist Result
 
 As a new user,
-I want a guided onboarding step for adding my first 5 items,
-So that I quickly get to a place where creating a Fit is useful.
+I want onboarding to get my closet started and show me what the Stylist can do,
+So that I see the app's value before I'm asked to pay.
 
 **Acceptance Criteria:**
 
 **Given** I just set up my profile (Story 1.3)
 **When** onboarding begins
-**Then** I see an "Add your first 5 items" step with a progress indicator, skippable at any time
+**Then** I see an "Add your first items" step with a progress indicator toward the Stylist's unlock threshold (at least one top, one bottom and one pair of shoes, about 8–10 items), using batch add, and I can skip it at any time
 
-**Given** I have fewer than 5 items and no Fit yet
+**Given** my closet meets the unlock threshold
+**When** I continue
+**Then** I see the photo disclosure and give consent, then get one free prompted Stylist result built from my own items
+
+**Given** I've seen my first result
+**Then** the paywall (Story 12.2) opens, with the annual plan and its free trial recommended, and closing it lands me on Home with the free tier
+
+**Given** I skipped onboarding or closed the app partway
 **When** I open Home
-**Then** I see an onboarding progress card prompting the next action
+**Then** I see an onboarding progress card for the next step, and relaunching resumes onboarding rather than skipping it
 
-**Given** I reach 5 items and create my first Fit
-**Then** the progress card disappears and an `onboarding_completed` event (with `items_added`) is recorded
+**Given** I reach the threshold and see my first result
+**Then** an `onboarding_completed` event (with `items_added`) is recorded, along with paywall-shown and trial-started events when they happen
+
+*Updated 2026-11-23: the Stylist and subscriptions are part of launch, so onboarding ends in the first free result and the paywall instead of a first Fit. Build after Epics 7 and 12. Needs a canvas mockup before its spec.*
 
 *Carry-ins (`deferred-work.md`, "Planned in a story"): sign up, sign in and onboarding gaps belong here as the first-run experience: email sign-up with "Confirm email" on has no session and dead-ends on onboarding (show a check-your-email state); confirm an email sign-up reaches onboarding, not Home; relaunching mid-onboarding should resume it, not land on Home; and add password reset by email on sign-in.*
 
@@ -907,8 +960,12 @@ So that I control my own data.
 **When** I choose Delete Account
 **Then** I see a confirmation with an explanation of what will be removed
 
+**Given** I have an active subscription
+**When** I open Delete Account
+**Then** the confirmation tells me that deleting my account doesn't cancel the subscription, and links to manage it in the App Store
+
 **Given** I confirm deletion
-**Then** every row I own across `profiles`/`wardrobe_items`/`fits`/`fit_items`/`fit_wears`/`planned_fits` is hard-deleted, every storage object under my user prefix is removed from both the `wardrobe` bucket (avatar, item cutouts, Fit covers) and the `wear-photos` bucket (Story 5.4), and finally the Supabase auth user is deleted
+**Then** every row I own across `profiles`/`wardrobe_items`/`fits`/`fit_items`/`fit_wears`/`planned_fits` and the Stylist tables (`item_attributes`, `item_attribute_overrides`, `item_style_scores`, `taste_profiles`, `fit_profiles`, `stylist_requests`, `stylist_feedback`, `entitlements`) is hard-deleted, every storage object under my user prefix is removed from both the `wardrobe` bucket (avatar, item cutouts, Fit covers) and the `wear-photos` bucket (Story 5.4), and finally the Supabase auth user is deleted
 
 **Given** deletion completes
 **Then** I'm signed out and returned to Welcome; an `account_deleted` event is recorded before deletion finishes
@@ -968,9 +1025,111 @@ So that launch criteria are met before real users arrive.
 **When** audited
 **Then** no Redis, queue, or streaming infrastructure exists, and all image storage access goes through the `ImageStore` interface
 
-**And** App Store assets (screenshots, listing copy, icon) are ready for submission
+**Given** a StoreKit sandbox account
+**When** I start a trial, subscribe, let it expire and restore purchases
+**Then** the `entitlements` row and the app's paid features follow each step, and the Stylist function denies paid requests once it lapses
+
+**Given** the Stylist Edge Functions and background jobs in production
+**Then** model and embedding spend has a daily budget alarm, the pg_cron tagging sweep is running, rate limits and the paid daily cap are verified, and every function error reaches Sentry
+
+**And** App Store assets (screenshots, listing copy, icon, subscription metadata, and a privacy label covering photos sent to the model provider) are ready for submission
 
 *Carry-ins (`deferred-work.md`, "Planned in a story"): turn on the Supabase spend cap and usage alerts; set Sentry's `environment` per build so preview crashes stop reporting as production; add `npx expo-doctor` to CI; and the streak's `getWearDates` read is one of the unbounded wear reads above.*
+
+## Epic 7: Stylist v0 — Baseline
+
+Stories in Epics 7–12 are outlines. Each gets acceptance criteria in its own spec, built against `_bmad-output/specs/spec-ai-stylist/` (the contract), with a canvas mockup first for any new screen.
+
+### Story 7.1: Close the Fit Ownership Gaps
+`fit_items` insert and update policies also require the user to own `item_id`, and `fit_wears_insert_own` requires the user to own `fit_id`. Red RLS tests first, plus a check for existing foreign references. From `deferred-work.md`, "Before the AI Stylist".
+
+### Story 7.2: Tag Items Automatically
+`item_attributes` table, `tag-item` Edge Function (attributes only), a database webhook on item insert plus a pg_cron sweep for retries, and a backfill of existing closets (CAP-9).
+
+### Story 7.3: Correct an Item's Tags
+Item detail's Details section shows the tags, with edits saved to `item_attribute_overrides`; re-tagging never overwrites a correction.
+
+### Story 7.4: Eval Harness and Random Baseline
+Fixture closets, the category-valid random baseline, judges, and one command that prints a score table (CAP-11, `evals.md`).
+
+### Story 7.5: Ask the Stylist for Fits
+The `stylist` Edge Function (auth, entitlement and rate-limit checks, full closet as text attributes, structured output, validator with retry, ID pins, `stylist_requests` log) and the request sheet and results screens, including the photo disclosure and the unlock threshold. Gate: 100% validity and pin adherence, and beats the random baseline.
+
+### Story 7.6: Act on a Suggestion
+Save, Plan, Open in builder and Dismiss, each writing a `stylist_feedback` row (CAP-7).
+
+### Story 7.7: Quick Shuffle
+The no-model fast path, p95 under 1 s; free for everyone (CAP-2, CAP-12).
+
+### Story 7.8: Stylist Entry Points
+The Home tile when nothing is planned, the Planner day sheet's "Style this day", Item detail's "Style this piece", and "Style it" on unworn items (Story 4.5's cold spots).
+
+## Epic 8: Stylist v1 — Retrieval
+
+### Story 8.1: Item Embeddings
+pgvector, embeddings added to `tag-item` and backfilled, with the HNSW index and `match_items`.
+
+### Story 8.2: Intent Parse and Shortlist
+Intent parse with slot ideals, hard filters, scoring (style text, attributes, freshness) and a recall-first shortlist with versatility spots. Gate: scores at least as well as v0 with fewer tokens per request.
+
+### Story 8.3: Best and Surprise Me
+Best and curate modes with weighted sampling and MMR; curate diversity passes.
+
+### Story 8.4: Text Pins, Exclusions and Never-Rules
+Describe a piece to pin it (ambiguous pins ask the user to choose), per-request exclusions, and persistent never-rules (CAP-4, CAP-5).
+
+### Story 8.5: Honest Coverage
+Partial and none coverage flagged with the closest option and the coverage banner (CAP-8).
+
+## Epic 9: Stylist v2 — Personalization
+
+### Story 9.1: Taste Profile
+`taste_profiles` with explicit preferences, the taste vector and the nightly taste summary; cold-start fixtures still pass.
+
+### Story 9.2: Fit Vibe Labels
+`fit_profiles` labelled by the model and embedded, run without a user JWT (needs Story 7.1).
+
+### Story 9.3: Past Fits as Examples
+Retrieved saved and worn Fits as few-shot taste examples. Gate: hit-rate lift on the held-out set, re-checked on real users after launch.
+
+### Story 9.4: Swap a Piece and More Like This
+Pick a slot to see the next-best candidates, or ask for more like a Fit; each writes feedback.
+
+## Epic 10: Stylist v3 — Style Library
+
+### Story 10.1: Style Presets
+The `styles` table and presets with reference images you have the rights to use (your own, licensed stock or generated, never scraped), plus vibe and anti-vibe vectors.
+
+### Story 10.2: Per-Item Style Scores
+`item_style_scores` computed at tagging and backfilled.
+
+### Story 10.3: Any Style, Typed
+Free-text and blended styles, cached on-the-fly style cards, and style coverage. Gate: style adherence beats the no-library ablation.
+
+## Epic 11: Stylist v4 — Visual Check and Daily Suggestion
+
+### Story 11.1: Visual Check
+Per-Fit vision review with swap or drop; ships turned on only if the outfit-score lift is worth the cost and latency (CAP-10).
+
+### Story 11.2: Today's Suggestion on Home
+One cached request per day for paid users, shown when nothing is planned, with an opt-in morning notification (`expo-notifications`).
+
+## Epic 12: Subscriptions
+
+### Story 12.1: Subscriptions and Entitlements
+The RevenueCat SDK; App Store products (annual with a 14-day free trial, and monthly; starting prices about $49.99 a year and $7.99 a month, to revisit with data); a RevenueCat webhook Edge Function writing `entitlements` (select own, no client writes); and the Stylist function checking it on the server.
+
+### Story 12.2: Paywall and Restore Purchases
+A two-plan paywall with annual recommended, showing the trial length and post-trial price, restore purchases, and terms and privacy links. It opens from onboarding and from every paid control. Paywall-shown, trial-started and subscribed events go to PostHog.
+
+### Story 12.3: Free and Paid Limits
+A closet cap of about 100 items without a subscription and a hard ceiling of 500 for everyone, both enforced by a database trigger; one free prompted request in onboarding, then one per week, counted from `stylist_requests`; quick shuffle free; and the paid fair-use daily cap. Lapsed subscribers keep items over the cap but can't add more. No credits or top-up packs at launch: cost per user is tracked, and top-ups are considered only if heavy users hurt margins.
+
+### Story 12.4: Share Watermark
+Images shared by free users carry a small, quiet "Fittr" wordmark in the redesign v2 style; subscribers share without it. Applied at export (Story 4.3's share path), never stored on the cover.
+
+### Story 12.5: Invite a Friend
+Each user has an invite link or code. When an invited friend signs up and adds their first item, the inviter permanently gets 5 bonus closet slots (Acloset's rule), up to a cap on total bonus slots. Credited server-side, once per new account, with RLS tests; the closet-cap trigger (Story 12.3) counts the bonus.
 
 ## Validation Summary
 
