@@ -850,6 +850,8 @@ So that My Fits, Home and the Planner stay fast.
 
 *Implementation note: a `fit_wear_counts` view created `with (security_invoker = true)`, readable by `authenticated` only, with RLS test coverage. Also fixes counts cut off past PostgREST's 1000-row limit. Spec: `spec-6-6-count-wears-on-the-server.md`.*
 
+*Carry-in (`deferred-work.md`, "Planned in a story"): "Worn n×" counts come from an unbounded `fit_wears` read and undercount past PostgREST's row limit; this story's server-side count fixes it.*
+
 ### Story 6.7: Turn On the React Compiler
 
 As a user,
@@ -891,6 +893,8 @@ So that I quickly get to a place where creating a Fit is useful.
 **Given** I reach 5 items and create my first Fit
 **Then** the progress card disappears and an `onboarding_completed` event (with `items_added`) is recorded
 
+*Carry-ins (`deferred-work.md`, "Planned in a story"): sign up, sign in and onboarding gaps belong here as the first-run experience: email sign-up with "Confirm email" on has no session and dead-ends on onboarding (show a check-your-email state); confirm an email sign-up reaches onboarding, not Home; relaunching mid-onboarding should resume it, not land on Home; and add password reset by email on sign-in.*
+
 ### Story 6.9: Delete Account
 
 As a user,
@@ -908,6 +912,8 @@ So that I control my own data.
 
 **Given** deletion completes
 **Then** I'm signed out and returned to Welcome; an `account_deleted` event is recorded before deletion finishes
+
+*Carry-ins (`deferred-work.md`, "Planned in a story"): remove the whole `wardrobe/{uid}/` folder (avatars are `avatar-{ts}.jpg`, so there can be several), not just one avatar. Deletion ends in sign-out, so fix sign-out here too: clear expo-image's memory and disk caches, and handle a `signOut()` error against the shared session (`SessionProvider`'s `SIGNED_OUT` event).*
 
 ### Story 6.10: Loading, Empty, and Error States Everywhere
 
@@ -930,6 +936,8 @@ So that I'm never staring at a blank or broken screen.
 **And** a review confirms row-level security actually rejects cross-user reads/writes on every table (FR30)
 
 *Implementation note: also fix the optimistic favorite/worn override that stays stuck on its reverted value after a failed write (`deferred-work.md`, Story 4.2 grid-cell review): after a failure, the UI returns to the server's value and follows later refetches.*
+
+*More carry-ins (`deferred-work.md`, "Planned in a story"): the fit-builder tray flashes "No items in this category" while loading, and a new canvas item is briefly invisible; Wardrobe's spinner shows on background refetches (`fits.tsx` guards this); My Closet's empty states don't support pull-to-refresh; and the builder's empty category has no route to Add item.*
 
 ### Story 6.11: Pre-Launch Verification
 
@@ -961,6 +969,8 @@ So that launch criteria are met before real users arrive.
 **Then** no Redis, queue, or streaming infrastructure exists, and all image storage access goes through the `ImageStore` interface
 
 **And** App Store assets (screenshots, listing copy, icon) are ready for submission
+
+*Carry-ins (`deferred-work.md`, "Planned in a story"): turn on the Supabase spend cap and usage alerts; set Sentry's `environment` per build so preview crashes stop reporting as production; add `npx expo-doctor` to CI; and the streak's `getWearDates` read is one of the unbounded wear reads above.*
 
 ## Validation Summary
 

@@ -1,26 +1,252 @@
+# Deferred work
+
+Findings and ideas deferred from story reviews. New entries go at the end of the matching section, in this shape:
+
+```markdown
+- source_spec: `<spec path>`
+  summary: <one sentence>
+  evidence: <why it is real, or what would settle it>
+```
+
+Add `planned_in: Story X.Y` when a story takes an entry on, and `resolved_by: <spec, migration or PR>` when it is fixed; then move the entry to Resolved.
+
+## Before the AI Stylist
+
+Fix these before the Stylist adds server-side reads, migrations and Edge Functions.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: A user can reference another user's `wardrobe_items.id` in their own `fit_items`, because the policies check only Fit ownership and foreign keys ignore RLS.
+  evidence: Confirmed in a local Postgres run of the repo's migrations during spec review. No data is exposed today: the `getFitItems` join returns null under `wardrobe_items_select_own`. Any future service-role or definer join over `fit_items` would expose the item. The fix is an RLS change, which the spec excludes.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: Nothing automated confirms a migration is on production before an OTA update ships.
+  evidence: CI runs against the dev project only, and migrations are applied by hand. An update that depends on `save_fit` would fail every save on a project without it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: Confirm migration 0014 is applied to the Supabase project CI's RLS suite uses.
+  evidence: Story 6.1 review (triage #4), maybe-false. Applied and passing 31/31 against the project in `.env.local`; whether CI's secrets point at the same project is unknown. Settle by comparing the CI secret's project ref.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
+  summary: The new `fit_wears_delete_own` RLS policy (and its cross-user-isolation test) is only exercised when live Supabase credentials are configured for `npm run test`, same as every other RLS test in this repo -- a broken or overly-permissive policy would ship without the normal test run catching it.
+  evidence: Code-review finding (verification-gap, pre-verified per that layer's own evidence rules). Same pre-existing gap every prior story's own RLS additions have shipped under; closing it means wiring live/local Supabase credentials into the normal CI/test path project-wide, which is bigger than this one policy.
+
+## Planned in a story
+
+Each entry is referenced from that story in `epics.md`; close it when the story ships.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: Wear counts come from an unbounded `fit_wears` `select('fit_id')`, so past PostgREST's `max_rows` (1000 by default) "Worn n×" undercounts and some worn Fits show "Saved".
+  evidence: Edge-case and blind reviewers. The query predates Phase 2; the fix is server-side aggregation (a view or an RPC doing `count(*) group by fit_id`), which Phase 2's intent ruled out.
+  planned_in: Story 6.6 (`epics.md`)
+
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-sign-in-and-sign-out.md`
   summary: Build password reset via email on the sign-in screen.
   evidence: epic-1-context.md's UX flow explicitly calls for "sign up/sign in with email (password reset via email)", but neither Story 1.1 (email sign-up) nor Story 1.2 (email sign-in) implemented it. Pre-existing gap predating this story, not caused by its diff.
+  planned_in: Story 6.8 (`epics.md`)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-sign-in-and-sign-out.md`
   summary: A new user who backgrounds/relaunches mid-onboarding lands on Home instead of resuming onboarding, since there's no persisted onboarding-completion flag.
   evidence: Already documented and accepted as a residual risk in spec-1-2's Design Notes. Its only real fix (a persisted "onboarding complete" flag) is directly excluded by spec-1-2's frozen Never boundary and belongs to Story 1.3 (profile setup).
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-sign-in-and-sign-out.md`
-  summary: Add a render test for app/index.tsx's cold-start redirect (existing session -> /(tabs)/index vs. no session -> /(auth)/welcome).
-  evidence: Verification-gap finding: no test renders or imports app/index.tsx, so a reverted or altered redirect target would ship undetected. Lower risk than the welcome.tsx/sign-in.tsx/profile.tsx gaps (single conditional, no branch logic) — reviewer's own suggested disposition was defer rather than patch.
+  planned_in: Story 6.8 (`epics.md`)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-set-up-and-edit-profile.md`
   summary: A new user who backgrounds/relaunches mid-onboarding lands on Home instead of resuming onboarding — derive "incomplete" from the placeholder display name and redirect app/index.tsx to /onboarding accordingly.
   evidence: Not one of Story 1.3's actual acceptance criteria in epics.md (display name required, avatar upload, profile view/edit) despite being related and previously deferred here from spec-1-2 to "Story 1.3". Split out at token-budget time to keep spec-1-3 scoped to its literal ACs; still worth doing as its own small, self-contained follow-up.
+  note: duplicate of the Story 1.2 entry above; both are planned in Story 6.8.
+  planned_in: Story 6.8 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-sign-up-for-an-account.md`
+  summary: Email sign-up never checks whether Supabase actually returned a session (it only checks `data.user`), so with "Confirm email" on (the project's deliberate setting), a brand-new email/password account has no session and silently can't do anything on the next screen — no error, no "check your email" messaging, just a dead Continue button on onboarding.
+  evidence: Found during live device testing of Story 1.3's onboarding screen: `email-sign-up.tsx` unconditionally routes to `/onboarding` after `signUpWithEmail` resolves, and `handleContinue`'s `if (!userId) return;` guard silently no-ops with no session. Root cause is in Story 1.1's sign-up flow, not Story 1.3.
+  planned_in: Story 6.8 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
+  summary: Confirm on a live project that an email `signUp`'s `SIGNED_IN` user passes `isNewAccount`, so a new email account is routed to onboarding by `app/index` rather than Home.
+  evidence: Story 6.3 review, maybe-false (medium if true). Email sign-up no longer navigates to onboarding unconditionally; `isNewAccount` was written for the ID-token flow (it returns true when `last_sign_in_at` is null). Settle with a device sign-up with "Confirm email" off.
+  planned_in: Story 6.8 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: The account-deletion Storage cleanup (Epic 1 retro item 5) must remove the whole `wardrobe/{uid}/` folder, not just `avatar.jpg`.
+  evidence: Story 6.1 review (triage #16). Avatars are now `avatar-{ts}.jpg`, and a failed best-effort delete (or a no-connection save) can leave several.
+  planned_in: Story 6.9 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: Private images stay in expo-image's memory and disk cache after sign-out; nothing calls `Image.clearDiskCache`/`clearMemoryCache`.
+  evidence: Story 6.1 review (triage #18). Pre-existing (expo-image's default `cachePolicy` is already `disk`); matters on a shared or handed-down phone. Fix: clear both caches in the sign-out flow.
+  planned_in: Story 6.9 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
+  summary: Epic 1 retro item 4 (`handleSignOut` ignores `signOut()`'s error) must now be built against the shared session: Profile no longer navigates after sign-out, and Welcome plus the Query-cache clear both come from `SessionProvider`'s `SIGNED_OUT` event.
+  evidence: Story 6.3 moved sign-out routing onto the `Stack.Protected` guards and cache cleanup onto the event, so a fix that only branches inside `app/profile.tsx` would miss the case where `signOut()` errors but the local session is still cleared.
+  planned_in: Story 6.9 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-grid-cell-favorite-heart.md`
+  summary: The favorite/wear optimistic-override pattern (`favoriteOverride`, `wornTodayOverride` in `app/fit/[id].tsx`; `favoriteOverride` in `FitsGridCell.tsx`) pins to its reverted value forever after a failed write and never re-derives from a later external refetch (e.g. the same Fit favorited/unfavorited from another device or screen while this instance stays mounted).
+  evidence: Code-review finding (edge-case-hunter), filed against `FitsGridCell.tsx`'s new instance of the pattern but verified identical to `app/fit/[id].tsx`'s own already-shipped catch block (Story 4.2) -- pre-existing, not introduced or worsened by this story. Fixing it means the override needs to compare against a fresher fetched value rather than staying pinned until the next user interaction, a design change affecting both call sites together.
+  planned_in: Story 6.10 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: The fit-builder's category tray can flash "No items in this category" during the initial wardrobe-items fetch, indistinguishable from a genuinely empty category.
+  evidence: Code-review finding (blind-hunter, edge-case-hunter). Real but narrow: the tray reuses the same TanStack Query key as the Wardrobe tab, so cache is normally warm by the time a user reaches this screen; only a cold-start (first-ever fetch) edge case. Fix needs a new loading prop/branch threaded through `app/new-fit.tsx` -> `CategoryTray`, more than a direct correction.
+  planned_in: Story 6.10 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: `CategoryTray`'s empty-category state ("No items in this category.") is a dead end with no call-to-action into the add-item flow, even though the user is actively mid-flow and may own no items in that category.
+  evidence: Code-review finding (blind-hunter). Real UX rough edge, not required by any Story 3.1 acceptance criterion.
+  planned_in: Story 6.10 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: A newly-added canvas item can render invisible-but-interactive (full hit area, no image) for a brief window while its signed cutout URL is still resolving.
+  evidence: Code-review finding (edge-case-hunter). Real but narrow timing window that self-corrects on the next render once the bulk signed-URL query resolves; fix needs a new loading-placeholder branch in `CanvasItem`, more than a direct correction.
+  planned_in: Story 6.10 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-1-my-closet.md`
+  summary: My Closet's empty-closet and no-results states are plain views, so pull-to-refresh doesn't work there; it's only on the grid. A piece added on another device won't appear until the user leaves the tab.
+  evidence: Blind and edge-case reviewers. The pre-v2 screen had the same gap. The fix is to render those states through the FlashList's `ListEmptyComponent`, or wrap them in a refreshable ScrollView.
+  planned_in: Story 6.10 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-react-query-set-up-for-react-native.md`
+  summary: Wardrobe binds `refreshing` to `isRefetching` (`app/(tabs)/wardrobe.tsx:288`), so the spinner shows on background refetches; `fits.tsx` guards this with `isPullRefreshing`. Pre-existing.
+  planned_in: Story 6.10 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
+  summary: Turn on the Supabase spend cap and usage alerts before launch, and count wear photos in Epic 6's storage-budget check.
+  evidence: Story 5.4's cost controls 9 and 10. Both are launch and Epic 6 tasks, not code in this story. Epic 5 context also notes account deletion (Story 6.9) must remove `wear-photos` files.
+  planned_in: Story 6.11 (`epics.md`)
+
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
+  summary: Add `npx expo-doctor` to CI (`.github/workflows/ci.yml` has lint, typecheck and test only).
+  evidence: Performance review of 2026-09-27. Catches mismatched native dependency versions before an EAS build does.
+  planned_in: Story 6.11 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-6-count-wears-on-the-server.md`
+  summary: `getWearDates` (`lib/fits/wearStreak.ts:12`) downloads every wear's `worn_on` for the streak, so the download grows with every wear.
+  evidence: Independent plan review, 2026-09-28. Ordered newest-first, so a response cut off at PostgREST's `max_rows` drops the oldest history, not the streak days; not wrong today, only growing. Fix when needed with a distinct-dates view (same `security_invoker` pattern as 6.6) or by reading only recent days.
+  planned_in: Story 6.11 (`epics.md`)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-4-production-crash-and-analytics-wiring.md`
+  summary: Set Sentry's `environment` per build (e.g. from `Updates.channel`) so preview builds stop reporting as `production`.
+  evidence: `initSentry` sets no `environment`, and the SDK defaults to `production` outside `__DEV__`, so internal preview crashes mix with store crashes; pre-existing, now easy with `expo-updates` installed.
+  planned_in: Story 6.11 (`epics.md`)
+
+## Open: bugs and UX
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
+  summary: In Item detail's edit mode the keyboard covers the pinned Save/Cancel bar and the lower inputs (Brand, Notes), so the user has to dismiss it to reach Save.
+  evidence: Blind and edge-case reviewers. The pre-v2 screen had the same layout with no keyboard avoidance. The fix is `KeyboardAvoidingView` around the screen, or `automaticallyAdjustKeyboardInsets` plus moving the bar inside the avoiding view.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
+  summary: Once a piece has a color, it can't be cleared back to "Not set", because `ColorSwatchPicker` has no deselect or "None" option.
+  evidence: Blind reviewer. This predates Phase 3, but is more visible now that Details shows "Not set". The fix is tapping the selected swatch to clear it, or a "None" swatch, with `onChange` accepting `null`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: Coming back to My Fits after a save keeps the grid's old scroll position, so the newly saved Fit (sorted first) can still be off-screen.
+  evidence: Blind reviewer. `router.dismissTo` returns to the mounted tab. This predates Phase 2, which only resets the filter. The fix is a list ref plus `scrollToOffset({ offset: 0 })` when the ack appears.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-small-webp-fit-cover-thumbnails.md`
+  summary: Closing the Save sheet (or tapping Save again) after a failed offline Fit save leaves that attempt's cover/thumbnail pair orphaned in Storage, because the offline rollback `remove` also fails and the next attempt mints a new `ts`.
+  evidence: Pre-existing for the cover alone (`app/new-fit.tsx` onClose clears `pendingSave`); Story 6.2 makes it two files. Triage #4/#30.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: Failed Fit saves leave orphaned cover files in Storage, and nothing sweeps them.
+  evidence: The spec keeps files on every failure because a lost request can't prove the row wasn't committed. A sweep comparing the bucket with `fits.cover_path` would reclaim them.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
+  summary: Saving a Fit that was deleted on another device shows the generic error and retries forever, instead of "This Fit is no longer available".
+  evidence: `save_fit` returns `P0002` and the failed-save invalidations use `refetchType: 'none'`, so `fitNotFound` never fires. Refetching `['fits', userId]` on `P0002` would reach it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
+  summary: The add-item queue stays editable while a batch save is in flight -- Remove, Cancel and row fields all work, but `saveBatch` saves a snapshot, so a removed item still saves, an edit doesn't reach the stored item (yet shows on its locked Saved row), and Cancel unmounts mid-save.
+  evidence: Review pass 1 (edge-case-hunter, blind-hunter). Pre-existing: the baseline also passed a snapshot to `saveBatch` with Cancel and Remove live. Fix is to lock the queue (rows, Remove, Cancel) while `submitting`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
+  summary: If an item's `wardrobe_items` upsert commits but its response is lost, `saveBatch`'s catch removes that item's Storage files while its row exists -- a broken tile if the user cancels instead of retrying.
+  evidence: Review pass 1 (edge-case-hunter). Pre-existing: the failing-item cleanup in `lib/wardrobe/addItem.ts` is unchanged from baseline. A retry heals it (re-upload + upsert). Fix options: skip file cleanup on ambiguous (network) failures, or check for the row before removing.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
+  summary: `lib/fits/saveFit.ts`'s rollback helpers swallow their own Storage/DB errors via `.catch(() => {})` with no Sentry logging, so a failed rollback (orphaned Storage object or stuck soft-delete) is undetectable.
+  evidence: Code-review finding (edge-case-hunter). Verified this is the exact pattern already shipped in `lib/wardrobe/addItem.ts`'s own rollback calls (`uploadItem`, `saveBatch`), which this story's spec explicitly required mirroring -- not introduced by this story, and fixing it here alone would leave `addItem.ts` inconsistent. Needs a follow-up covering both files together.
+  note: The Fit row rollback is gone (`spec-atomic-fit-save.md`). `saveFit.ts` now only swallows the best-effort previous-cover delete.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-react-query-set-up-for-react-native.md`
+  summary: Decide whether `onlineManager` should also follow `isInternetReachable`, so a reconnect refetch waits for working traffic (medium, unverified).
+  evidence: `lib/query/queryClient.ts` follows `isConnected` only and no-connection errors never retry, so a too-early refetch stays failed until a tap or focus. To settle it, check on a device how `expo-network` reports captive Wi-Fi and network switches.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: Unverified on the second platform: a cached `onLoad` may report a `source.url` that isn't the signed URL (bare cache key or `file://`), so ClosetTile's `isSignedUrlFor` guard would drop the measurement and tiles would keep the category default aspect.
+  evidence: Story 6.1 review (triage #9), maybe-false; would be medium. The user's device check passed on one platform. Settle by logging `event.source.url` for a cached load on both iOS and Android.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-share-a-fit.md`
+  summary: `shareFitCover` deletes the temp `fit-<id>.png` as soon as `Share.share` resolves. If a share target (AirDrop, Save to Files, a third-party extension) is still reading the file then, the transfer could fail.
+  evidence: Code-review finding (blind-hunter), verdict `maybe-false`, which would be medium if true. iOS's `completionWithItemsHandler` should fire only after the activity finishes, but this can only be settled on a device by sharing a Fit through AirDrop, Save to Files and one third-party app. If any fails, drop the post-share delete: `idempotent: true` already overwrites the file on the next share, and `Paths.cache` is OS-purgeable.
+
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: The Fit canvas briefly loses its color and shadow on screen while Save captures it.
+  evidence: `FitCanvas` drops both while `capturing`, for two frames plus the capture. Capturing an inner wrapper with no background would avoid it.
+
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: A cover Skia cannot decode for sharing reports a plain error with no context.
+  evidence: `fillBackground` in `lib/fits/shareFit.ts` throws without the byte length or file type.
+
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: The Save sheet preview crops a non-square cover, so it can differ from the saved tile.
+  evidence: `SaveFitSheet` uses `contentFit="cover"` in a square well; tiles use `contain`. Predates this change.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: The `expo-splash-screen` config in `app.json` has only a light `backgroundColor` (`#F6F4EE`), so dark-mode users see a cream flash before the `#1A1816` app base on cold start.
+  evidence: Edge-case and blind reviewers. The same gap existed before v2 (light `#FAFAF9` vs dark `#000000`). The fix is `"dark": { "backgroundColor": "#1A1816" }` in the plugin config, and it only takes effect after a dev-client rebuild.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-set-up-and-edit-profile.md`
   summary: No way to remove a previously-set avatar and revert to having none.
   evidence: Review finding (blind-hunter): not required by any of Story 1.3's ACs, and the frozen `Never` boundary explicitly forbids a Storage DELETE policy — a clean removal feature would need one (or a distinct null-avatar sentinel), which is a real design decision beyond this story's scope.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-1-sign-up-for-an-account.md`
-  summary: Email sign-up never checks whether Supabase actually returned a session (it only checks `data.user`), so with "Confirm email" on (the project's deliberate setting), a brand-new email/password account has no session and silently can't do anything on the next screen — no error, no "check your email" messaging, just a dead Continue button on onboarding.
-  evidence: Found during live device testing of Story 1.3's onboarding screen: `email-sign-up.tsx` unconditionally routes to `/onboarding` after `signUpWithEmail` resolves, and `handleContinue`'s `if (!userId) return;` guard silently no-ops with no session. Root cause is in Story 1.1's sign-up flow, not Story 1.3.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-view-edit-and-delete-an-item.md`
+  summary: No length limit on wardrobe item name/brand/notes anywhere in the app (add-item's identical fields have never had one either); Story 2.4's item-detail redesign shows the name as a large Cormorant headline, making an extreme-length name cosmetically worse than elsewhere.
+  evidence: Blind-hunter finding. The missing validation is pre-existing across the whole wardrobe item data model (Story 2.1 onward), not introduced by this story's diff -- fixing it here alone would mean inventing an arbitrary character cap unilaterally rather than deciding one consistently for the whole model.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-view-edit-and-delete-an-item.md`
+  summary: Soft-deleted wardrobe items (and their `cutout.png`/`thumb.webp` Storage objects) are never actually purged -- rows and files accumulate forever once `deleted_at` is set.
+  evidence: Discussed post-implementation. Not worth building now: a scheduled reaper job is real infra (cron, testing, monitoring) disproportionate to this app's current scale, and industry practice for small/indie apps is to skip it until storage cost or user volume actually justifies it -- a manual one-off cleanup script is enough if/when that day comes. The one exception is Epic 6's "Delete Account" flow, which needs a real hard-delete for privacy reasons regardless of this decision and should not be skipped.
+
+## Open: accessibility
+
+Worth one pass together.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-4-fit-behavior-when-a-wardrobe-item-is-deleted.md`
+  summary: `CanvasItem` (every placed item on the fit-builder canvas, not just a deleted-item gap) has no `accessibilityLabel`/`accessibilityRole` identifying it to a screen reader -- only the separate floating "Delete item" button does.
+  evidence: Code-review finding (blind-hunter), filed against this story's new gap placeholder specifically but verified to be a pre-existing, uniform gap across every `CanvasItem` since Story 3.1, not something this story's diff introduced or made inconsistent. Fixing only the gap would create a new asymmetry (gap labeled, ordinary placed items not) rather than resolve one -- belongs to a canvas-wide accessibility pass covering all placed items together.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-grid-cell-favorite-heart.md`
+  summary: `FitsGridCell`'s new favorite-heart `Pressable`, nested inside the cell's own outer `Pressable`, may be collapsed into the parent by VoiceOver/TalkBack and become unreachable via assistive tech, even though the automated test suite (which queries elements directly, not via real touch/accessibility hit-testing) passes.
+  evidence: Code-review finding (blind-hunter), verdicted `maybe-false` -- RN's actual nested-accessible-element behavior is version- and platform-dependent, and no simulator/device was available in the implementation environment to verify it. If true this would be medium-to-high (the affordance unusable for screen-reader users on the My Fits grid specifically). Settling this needs a manual on-device VoiceOver/TalkBack check.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: Unselected chips are marked only by a `border-hairline` outline, which is about 1.2:1 against the base surface. That is far below WCAG 1.4.11's 3:1 for non-text UI, and no test covers non-text contrast or `ink-disabled`.
+  evidence: Blind reviewer, verdict medium. The old palette had the same problem (`#E7E5E4` on `#FAFAF9`), so it predates v2. The label text (ink-secondary, AA) still identifies each chip, but the selected/unselected boundary relies on the fill.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: The ink "saved" banners (My Fits and My Closet) rely on `accessibilityRole="alert"`, which VoiceOver doesn't announce automatically, so iOS screen-reader users may never hear the confirmation.
+  evidence: Blind reviewer. The pattern is shared with Phase 1 `wardrobe.tsx:168`. The fix is `AccessibilityInfo.announceForAccessibility` when the ack appears.
+
+## Open: design system follow-ups
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
+  summary: DESIGN.md doesn't yet document the "state via icon-swap" convention this story introduced (Wear-today swaps `CalendarIcon`→`CheckIcon` for its already-logged state, since DESIGN.md only defines fill-vs-outline for the heart) -- should be added so Story 4.4 and the deferred grid-cell favorite fast-follow have a documented convention to match.
+  evidence: Code-review finding (blind-hunter), also self-flagged in this story's own Implementation Notes. Fix means editing a planning artifact, not this story's application code.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: The new `surface-tile` token is not used anywhere yet; photo wells (Fit detail collage, `FitsGridCell`, `FitsGridSkeleton`, `FitItemsList`) still use `bg-surface-raised`, and `FitsGridCell:114` pairs light `bg-surface-raised` with `dark:bg-surface-baseDark`.
+  evidence: Blind reviewer. Phase 0 deliberately left screen work to Phases 1–7, so apply the photo-well treatment when the grids and detail screens are redesigned.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: Hand-styled tracked uppercase labels (`SectionLabel`, the meta lines at `app/fit/[id].tsx:416` and `app/item/[id].tsx:255`, the Fit-detail action captions and the item delete label) still use `label`/`meta` plus Tailwind `tracking-*` instead of the new `caption` role, so their tracking does not scale with Dynamic Type.
+  evidence: Blind reviewer. These predate the change; move them to `caption` during the screen phases.
+
+## Open: tests
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-2-sign-in-and-sign-out.md`
+  summary: Add a render test for app/index.tsx's cold-start redirect (existing session -> /(tabs)/index vs. no session -> /(auth)/welcome).
+  evidence: Verification-gap finding: no test renders or imports app/index.tsx, so a reverted or altered redirect target would ship undetected. Lower risk than the welcome.tsx/sign-in.tsx/profile.tsx gaps (single conditional, no branch logic) — reviewer's own suggested disposition was defer rather than patch.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-3-browse-and-filter-the-wardrobe.md`
   summary: Add a repo-wide convention (and initial coverage) for testing `Sentry.captureException` calls -- no test anywhere in the codebase currently mocks `@/lib/observability/sentry` or asserts these calls fire/don't fire.
@@ -30,13 +256,45 @@
   summary: No automated screen-level test exists for `app/add-item.tsx` or `components/wardrobe/CameraFilmstrip.tsx`, so `handleSaveAll`'s readiness guard, `handleShutterPress`'s re-entrancy/error handling, source-dependent `handleRetake` branching, and the `batchSize`-carrying `trackItemAdded` analytics loop are all verified only by manual on-device testing.
   evidence: Verification-gap and blind-hunter findings, same root cause: this repo has no established pattern for testing screens with heavy native-module entanglement (`ActionSheetIOS`, `CameraView`, `ImagePicker`) -- Story 2.1's `app/add-item.tsx` set this precedent (two real bugs there were only ever caught by manual device testing, per its own Review Triage Log). Closing this properly would mean either extracting the screen's pure orchestration logic into testable helpers, or building a component-interaction test harness for this class of screen -- both bigger than a single story's scope.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-view-edit-and-delete-an-item.md`
-  summary: No length limit on wardrobe item name/brand/notes anywhere in the app (add-item's identical fields have never had one either); Story 2.4's item-detail redesign shows the name as a large Cormorant headline, making an extreme-length name cosmetically worse than elsewhere.
-  evidence: Blind-hunter finding. The missing validation is pre-existing across the whole wardrobe item data model (Story 2.1 onward), not introduced by this story's diff -- fixing it here alone would mean inventing an arbitrary character cap unilaterally rather than deciding one consistently for the whole model.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: No test exercises `app/new-fit.tsx`'s unmount-triggered `reset()` -- the sole mechanism implementing "discard the canvas on navigate away" (no persistence exists yet in Story 3.1).
+  evidence: Code-review finding (verification-gap). Real regression-detection gap, but no route-lifecycle unmount test exists anywhere in this repo for any screen, including `app/add-item.tsx` (the template this story's route mirrors) -- establishing that test pattern is bigger than this one story.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-view-edit-and-delete-an-item.md`
-  summary: Soft-deleted wardrobe items (and their `cutout.png`/`thumb.webp` Storage objects) are never actually purged -- rows and files accumulate forever once `deleted_at` is set.
-  evidence: Discussed post-implementation. Not worth building now: a scheduled reaper job is real infra (cron, testing, monitoring) disproportionate to this app's current scale, and industry practice for small/indie apps is to skip it until storage cost or user volume actually justifies it -- a manual one-off cleanup script is enough if/when that day comes. The one exception is Epic 6's "Delete Account" flow, which needs a real hard-delete for privacy reasons regardless of this decision and should not be skipped.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-4-fit-behavior-when-a-wardrobe-item-is-deleted.md`
+  summary: Build a working Reanimated v4 + react-native-gesture-handler jest test-double so `CanvasItem` (and any future canvas component like it) can be rendered for real in tests, not just mocked out.
+  evidence: Code-review finding (verification-gap, independently found by blind-hunter), attempted directly during this story rather than just flagged. Extending the existing minimal `runOnJS`-only Reanimated mock (`fitCanvas.test.tsx`'s own pattern) to actually render `CanvasItem` hit a cascade of real blockers in sequence: `Animated.View` resolves to `undefined` without an explicit `__esModule: true` on the jest.mock factory (a Babel CJS-interop quirk with `import Animated, {...} from 'react-native-reanimated'`); fixing that hits `GestureDetector` requiring `Reanimated.createAnimatedComponent`; fixing that hits `GestureDetector` requiring `Reanimated.useEvent` (react-native-gesture-handler's own Reanimated integration internals, `useAnimatedGesture.ts`). Each fix revealed a deeper one -- this is standalone Reanimated/RNGH jest test-double infrastructure work, not a small, story-scoped extension. `CanvasItem` has had zero direct test coverage since Story 3.1; this story's own new gap-chrome-suppression and gesture-restriction logic is currently verified only via `fitCanvas.test.tsx`'s indirect prop-passing assertions on a mocked `CanvasItem`, plus manual on-device checks.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
+  summary: Two color changes have no rendered test: the Save Fit check icon's scheme-aware color (`app/new-fit.tsx:394`), and the `text-ink-primary dark:text-ink-primaryDark` display names on Fit and Item detail. A regression could hide them in dark mode.
+  evidence: Verification-gap reviewer (disposition defer). Consider having `Button` pass an inverse icon color so callers don't compute it by hand.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
+  summary: `CanvasItem`'s `StorageImage` branch (`imagePath && imageUrl`) is never rendered by a test.
+  evidence: Story 6.1 review (triage #3). `CanvasItem` is mocked in every suite because Reanimated v4 has no working jest mock (`__tests__/fitCanvas.test.tsx:9-18`); `FitCanvas` passing `imagePath` is tested. Needs a Reanimated/gesture test harness.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-react-query-set-up-for-react-native.md`
+  summary: `registerQueryManagers` has no test for a rejected launch reading or for the `AppState` listener teardown.
+
+- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
+  summary: No test covers switching theme while the Fit detail screen is open, before sharing.
+  evidence: The fill is read in the share handler at render, which is correct today; wrapping the handler in `useCallback` or `useMemo` could freeze it silently.
+
+- source_spec: `_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md`
+  summary: Run the date-heavy suites (planner, week, streak) under a second, positive-offset time zone (e.g. `TZ=Asia/Tokyo`) in CI.
+  evidence: `jest.config.js` pins `America/Los_Angeles` (`f4e0c0a`), so off-by-one-day bugs east of UTC or in midnight-DST zones ship untested. The user chose not to track it as a sprint action item (Epic 5 retro, finding 16).
+
+## Open: ideas and infrastructure
+
+Product or scale decisions, not defects.
+
+- source_spec: none
+  summary: App-wide Mobbin-informed visual redesign (refreshed DESIGN.md tokens -- type scale, spacing, surfaces, motion -- and restyle of Wardrobe, My Fits grid, canvas builder, Profile, auth/onboarding) toward a minimal, refined, fashion-editorial look.
+  evidence: Split from the Story 4.3 (Share a Fit) request on 2026-09-23 per the scope standard; user chose to limit this story's redesign to the surfaces Story 4.3 touches (Fit detail) and do the rest as its own goal.
+  note: Redesign v2 phases 0–3 shipped (`spec-redesign-v2-phase-*.md`) and phase 4 became Epic 5. Profile, auth/onboarding and Fit builder phases aren't planned yet.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
+  summary: Story 2.4's "Create Fit With This" item-detail action (noted as an entry point into Story 3.1 in `epic-3-context.md`'s Cross-Story Dependencies) has no wiring into `app/new-fit.tsx` -- no route params exist to prefill a preselected wardrobe item.
+  evidence: Code-review finding (blind-hunter). Verified: `new-fit.tsx` accepts no params. This story's human-approved frozen Intent scopes entry to the Fits-tab flow only and never mentions item-detail prefill, so it's out of this story's approved scope, not a defect -- needs its own follow-up story/task.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
   summary: Undo/redo for canvas edits (item moves, adds, removes) during a Fit-building session.
@@ -51,142 +309,8 @@
   evidence: Surfaced from the same UI inspiration. No planning artifact mentions customizable canvas backgrounds; would need new storage/rendering support in the collage-save path (Story 3.2) at minimum.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
-  summary: The fit-builder's category tray can flash "No items in this category" during the initial wardrobe-items fetch, indistinguishable from a genuinely empty category.
-  evidence: Code-review finding (blind-hunter, edge-case-hunter). Real but narrow: the tray reuses the same TanStack Query key as the Wardrobe tab, so cache is normally warm by the time a user reaches this screen; only a cold-start (first-ever fetch) edge case. Fix needs a new loading prop/branch threaded through `app/new-fit.tsx` -> `CategoryTray`, more than a direct correction.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
   summary: No PostHog analytics events fire anywhere in the new Fit-builder flow (template pick, skip, item add), unlike `add-item.tsx`'s `trackItemAdded` precedent.
   evidence: Code-review finding (blind-hunter). No AC or planning artifact requires Fit-builder analytics; a real scope decision (what events, what properties) for product/analytics ownership to make, not a defect in this story.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
-  summary: Story 2.4's "Create Fit With This" item-detail action (noted as an entry point into Story 3.1 in `epic-3-context.md`'s Cross-Story Dependencies) has no wiring into `app/new-fit.tsx` -- no route params exist to prefill a preselected wardrobe item.
-  evidence: Code-review finding (blind-hunter). Verified: `new-fit.tsx` accepts no params. This story's human-approved frozen Intent scopes entry to the Fits-tab flow only and never mentions item-detail prefill, so it's out of this story's approved scope, not a defect -- needs its own follow-up story/task.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
-  summary: `CategoryTray`'s empty-category state ("No items in this category.") is a dead end with no call-to-action into the add-item flow, even though the user is actively mid-flow and may own no items in that category.
-  evidence: Code-review finding (blind-hunter). Real UX rough edge, not required by any Story 3.1 acceptance criterion.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
-  summary: A newly-added canvas item can render invisible-but-interactive (full hit area, no image) for a brief window while its signed cutout URL is still resolving.
-  evidence: Code-review finding (edge-case-hunter). Real but narrow timing window that self-corrects on the next render once the bulk signed-URL query resolves; fix needs a new loading-placeholder branch in `CanvasItem`, more than a direct correction.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-build-a-fit-on-the-canvas.md`
-  summary: No test exercises `app/new-fit.tsx`'s unmount-triggered `reset()` -- the sole mechanism implementing "discard the canvas on navigate away" (no persistence exists yet in Story 3.1).
-  evidence: Code-review finding (verification-gap). Real regression-detection gap, but no route-lifecycle unmount test exists anywhere in this repo for any screen, including `app/add-item.tsx` (the template this story's route mirrors) -- establishing that test pattern is bigger than this one story.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
-  summary: `fit_items.item_id` (FK to `wardrobe_items`, `on delete cascade`) has no index, unlike `fit_id`; a lookup by `item_id` will full-scan.
-  evidence: Code-review finding (blind-hunter). No query in Story 3.2's diff looks up `fit_items` by `item_id` -- Story 3.4 ("Fit behavior when a wardrobe item is deleted") is the actual consumer of that access path and should add the index alongside the code that needs it.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
-  summary: `lib/fits/saveFit.ts`'s rollback helpers swallow their own Storage/DB errors via `.catch(() => {})` with no Sentry logging, so a failed rollback (orphaned Storage object or stuck soft-delete) is undetectable.
-  evidence: Code-review finding (edge-case-hunter). Verified this is the exact pattern already shipped in `lib/wardrobe/addItem.ts`'s own rollback calls (`uploadItem`, `saveBatch`), which this story's spec explicitly required mirroring -- not introduced by this story, and fixing it here alone would leave `addItem.ts` inconsistent. Needs a follow-up covering both files together.
-  note: The Fit row rollback is gone (`spec-atomic-fit-save.md`). `saveFit.ts` now only swallows the best-effort previous-cover delete.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-edit-and-delete-a-fit.md`
-  summary: A saved placement whose wardrobe item was deleted seeds onto the edit canvas as a silent `'top'`-category fallback with no visible indication anything is missing.
-  evidence: Code-review finding (blind-hunter). Real today (deleting a wardrobe item is already possible, not gated on Story 3.4), but epics.md's own Story 3.4 ("Fit behavior when a wardrobe item is deleted") explicitly owns showing a visible gap at the deleted item's canvas position -- that story's own acceptance criterion, not this one's.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-4-fit-behavior-when-a-wardrobe-item-is-deleted.md`
-  summary: Build a working Reanimated v4 + react-native-gesture-handler jest test-double so `CanvasItem` (and any future canvas component like it) can be rendered for real in tests, not just mocked out.
-  evidence: Code-review finding (verification-gap, independently found by blind-hunter), attempted directly during this story rather than just flagged. Extending the existing minimal `runOnJS`-only Reanimated mock (`fitCanvas.test.tsx`'s own pattern) to actually render `CanvasItem` hit a cascade of real blockers in sequence: `Animated.View` resolves to `undefined` without an explicit `__esModule: true` on the jest.mock factory (a Babel CJS-interop quirk with `import Animated, {...} from 'react-native-reanimated'`); fixing that hits `GestureDetector` requiring `Reanimated.createAnimatedComponent`; fixing that hits `GestureDetector` requiring `Reanimated.useEvent` (react-native-gesture-handler's own Reanimated integration internals, `useAnimatedGesture.ts`). Each fix revealed a deeper one -- this is standalone Reanimated/RNGH jest test-double infrastructure work, not a small, story-scoped extension. `CanvasItem` has had zero direct test coverage since Story 3.1; this story's own new gap-chrome-suppression and gesture-restriction logic is currently verified only via `fitCanvas.test.tsx`'s indirect prop-passing assertions on a mocked `CanvasItem`, plus manual on-device checks.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-4-fit-behavior-when-a-wardrobe-item-is-deleted.md`
-  summary: `CanvasItem` (every placed item on the fit-builder canvas, not just a deleted-item gap) has no `accessibilityLabel`/`accessibilityRole` identifying it to a screen reader -- only the separate floating "Delete item" button does.
-  evidence: Code-review finding (blind-hunter), filed against this story's new gap placeholder specifically but verified to be a pre-existing, uniform gap across every `CanvasItem` since Story 3.1, not something this story's diff introduced or made inconsistent. Fixing only the gap would create a new asymmetry (gap labeled, ordinary placed items not) rather than resolve one -- belongs to a canvas-wide accessibility pass covering all placed items together.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-browse-and-filter-my-fits.md`
-  summary: `fit_wears` (this story's new table) has no UPDATE or DELETE policy at all, so a mis-tap on "mark worn" can never be corrected or undone by the user once Story 4.2 ships that action.
-  evidence: Code-review finding (blind-hunter). Real product gap, but the "mark worn" UI it would apply to doesn't exist until Story 4.2 -- whether/how to let a user undo a wear entry (a policy change, a UI affordance, or both) is that story's design decision, not a defect in this story, which only reads the table.
-  status: resolved by `spec-4-2-favorite-a-fit-and-mark-it-worn.md` -- see `supabase/migrations/0009_fit_wears_undo.sql` (`fit_wears_delete_own` policy) and `lib/fits/markFitWorn.ts`'s `unmarkFitWornToday`.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
-  summary: Add a Depop-style tappable favorite heart badge (top-right, small semi-transparent circular backing, monochrome, no like-count) to `FitsGridCell.tsx`/`app/(tabs)/fits.tsx`, so favoriting works from the My Fits grid as well as the Fit detail screen.
-  evidence: User request to match Pinterest/Depop's grid aesthetic specifically; validated via Mobbin (Pinterest's masonry layout already matches `FitsGridCell.tsx`, Depop's top-right heart-on-tile is the pattern to copy, its like-count/red fill are not per this app's no-badge-counts/monochrome rules). Split out purely for spec-size (pushed this story past the 1600-token guideline) — user asked for it as a fast-follow immediately after this story, not a backlog item.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
-  summary: DESIGN.md doesn't yet document the "state via icon-swap" convention this story introduced (Wear-today swaps `CalendarIcon`→`CheckIcon` for its already-logged state, since DESIGN.md only defines fill-vs-outline for the heart) -- should be added so Story 4.4 and the deferred grid-cell favorite fast-follow have a documented convention to match.
-  evidence: Code-review finding (blind-hunter), also self-flagged in this story's own Implementation Notes. Fix means editing a planning artifact, not this story's application code.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
-  summary: The new `fit_wears_delete_own` RLS policy (and its cross-user-isolation test) is only exercised when live Supabase credentials are configured for `npm run test`, same as every other RLS test in this repo -- a broken or overly-permissive policy would ship without the normal test run catching it.
-  evidence: Code-review finding (verification-gap, pre-verified per that layer's own evidence rules). Same pre-existing gap every prior story's own RLS additions have shipped under; closing it means wiring live/local Supabase credentials into the normal CI/test path project-wide, which is bigger than this one policy.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-grid-cell-favorite-heart.md`
-  summary: The favorite/wear optimistic-override pattern (`favoriteOverride`, `wornTodayOverride` in `app/fit/[id].tsx`; `favoriteOverride` in `FitsGridCell.tsx`) pins to its reverted value forever after a failed write and never re-derives from a later external refetch (e.g. the same Fit favorited/unfavorited from another device or screen while this instance stays mounted).
-  evidence: Code-review finding (edge-case-hunter), filed against `FitsGridCell.tsx`'s new instance of the pattern but verified identical to `app/fit/[id].tsx`'s own already-shipped catch block (Story 4.2) -- pre-existing, not introduced or worsened by this story. Fixing it means the override needs to compare against a fresher fetched value rather than staying pinned until the next user interaction, a design change affecting both call sites together.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-grid-cell-favorite-heart.md`
-  summary: `FitsGridCell`'s new favorite-heart `Pressable`, nested inside the cell's own outer `Pressable`, may be collapsed into the parent by VoiceOver/TalkBack and become unreachable via assistive tech, even though the automated test suite (which queries elements directly, not via real touch/accessibility hit-testing) passes.
-  evidence: Code-review finding (blind-hunter), verdicted `maybe-false` -- RN's actual nested-accessible-element behavior is version- and platform-dependent, and no simulator/device was available in the implementation environment to verify it. If true this would be medium-to-high (the affordance unusable for screen-reader users on the My Fits grid specifically). Settling this needs a manual on-device VoiceOver/TalkBack check.
-
-- source_spec: none
-  summary: App-wide Mobbin-informed visual redesign (refreshed DESIGN.md tokens -- type scale, spacing, surfaces, motion -- and restyle of Wardrobe, My Fits grid, canvas builder, Profile, auth/onboarding) toward a minimal, refined, fashion-editorial look.
-  evidence: Split from the Story 4.3 (Share a Fit) request on 2026-09-23 per the scope standard; user chose to limit this story's redesign to the surfaces Story 4.3 touches (Fit detail) and do the rest as its own goal.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-share-a-fit.md`
-  summary: `shareFitCover` deletes the temp `fit-<id>.png` as soon as `Share.share` resolves. If a share target (AirDrop, Save to Files, a third-party extension) is still reading the file then, the transfer could fail.
-  evidence: Code-review finding (blind-hunter), verdict `maybe-false`, which would be medium if true. iOS's `completionWithItemsHandler` should fire only after the activity finishes, but this can only be settled on a device by sharing a Fit through AirDrop, Save to Files and one third-party app. If any fails, drop the post-share delete: `idempotent: true` already overwrites the file on the next share, and `Paths.cache` is OS-purgeable.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-share-a-fit.md`
-  summary: `supabase/.temp/` (Supabase CLI state) is untracked but missing from `.gitignore`, so it could be committed by accident.
-  evidence: Code-review finding (blind-hunter). It predates this story; `git status` showed it at the start of the session.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
-  summary: The `expo-splash-screen` config in `app.json` has only a light `backgroundColor` (`#F6F4EE`), so dark-mode users see a cream flash before the `#1A1816` app base on cold start.
-  evidence: Edge-case and blind reviewers. The same gap existed before v2 (light `#FAFAF9` vs dark `#000000`). The fix is `"dark": { "backgroundColor": "#1A1816" }` in the plugin config, and it only takes effect after a dev-client rebuild.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
-  summary: The new `surface-tile` token is not used anywhere yet; photo wells (Fit detail collage, `FitsGridCell`, `FitsGridSkeleton`, `FitItemsList`) still use `bg-surface-raised`, and `FitsGridCell:114` pairs light `bg-surface-raised` with `dark:bg-surface-baseDark`.
-  evidence: Blind reviewer. Phase 0 deliberately left screen work to Phases 1–7, so apply the photo-well treatment when the grids and detail screens are redesigned.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
-  summary: Hand-styled tracked uppercase labels (`SectionLabel`, the meta lines at `app/fit/[id].tsx:416` and `app/item/[id].tsx:255`, the Fit-detail action captions and the item delete label) still use `label`/`meta` plus Tailwind `tracking-*` instead of the new `caption` role, so their tracking does not scale with Dynamic Type.
-  evidence: Blind reviewer. These predate the change; move them to `caption` during the screen phases.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
-  summary: Unselected chips are marked only by a `border-hairline` outline, which is about 1.2:1 against the base surface. That is far below WCAG 1.4.11's 3:1 for non-text UI, and no test covers non-text contrast or `ink-disabled`.
-  evidence: Blind reviewer, verdict medium. The old palette had the same problem (`#E7E5E4` on `#FAFAF9`), so it predates v2. The label text (ink-secondary, AA) still identifies each chip, but the selected/unselected boundary relies on the fill.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-0-design-system.md`
-  summary: Two color changes have no rendered test: the Save Fit check icon's scheme-aware color (`app/new-fit.tsx:394`), and the `text-ink-primary dark:text-ink-primaryDark` display names on Fit and Item detail. A regression could hide them in dark mode.
-  evidence: Verification-gap reviewer (disposition defer). Consider having `Button` pass an inverse icon color so callers don't compute it by hand.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-1-my-closet.md`
-  summary: My Closet's empty-closet and no-results states are plain views, so pull-to-refresh doesn't work there; it's only on the grid. A piece added on another device won't appear until the user leaves the tab.
-  evidence: Blind and edge-case reviewers. The pre-v2 screen had the same gap. The fix is to render those states through the FlashList's `ListEmptyComponent`, or wrap them in a refreshable ScrollView.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
-  summary: Wear counts come from an unbounded `fit_wears` `select('fit_id')`, so past PostgREST's `max_rows` (1000 by default) "Worn n×" undercounts and some worn Fits show "Saved".
-  evidence: Edge-case and blind reviewers. The query predates Phase 2; the fix is server-side aggregation (a view or an RPC doing `count(*) group by fit_id`), which Phase 2's intent ruled out.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
-  summary: A Fit saved with no canvas color bakes that moment's light or dark `surface-raised` into its cover PNG, so after a light/dark switch the letterboxed cover shows a seam against the tile (and Fit detail's well).
-  evidence: Blind reviewer. `FitCanvas.tsx` paints null backgrounds with `bg-surface-raised dark:bg-surface-raisedDark` inside the captured view; Fit detail (`app/fit/[id].tsx:387-402`) has the same well and contain. Possible fixes: capture with a transparent background, or save the resolved color on the Fit.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
-  summary: Coming back to My Fits after a save keeps the grid's old scroll position, so the newly saved Fit (sorted first) can still be off-screen.
-  evidence: Blind reviewer. `router.dismissTo` returns to the mounted tab. This predates Phase 2, which only resets the filter. The fix is a list ref plus `scrollToOffset({ offset: 0 })` when the ack appears.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
-  summary: The ink "saved" banners (My Fits and My Closet) rely on `accessibilityRole="alert"`, which VoiceOver doesn't announce automatically, so iOS screen-reader users may never hear the confirmation.
-  evidence: Blind reviewer. The pattern is shared with Phase 1 `wardrobe.tsx:168`. The fix is `AccessibilityInfo.announceForAccessibility` when the ack appears.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
-  summary: `fit_items` has no index on `item_id`, so Item detail's new "In N Fits" read (`.eq('item_id', …)`) becomes a sequential scan (plus a per-row RLS check) as Fits grow.
-  evidence: The blind reviewer found it. `0004_fits.sql` only indexes `fit_id`, and Phase 3's intent ruled out schema changes. The fix is a migration adding `fit_items_item_id_idx`.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
-  summary: In Item detail's edit mode the keyboard covers the pinned Save/Cancel bar and the lower inputs (Brand, Notes), so the user has to dismiss it to reach Save.
-  evidence: Blind and edge-case reviewers. The pre-v2 screen had the same layout with no keyboard avoidance. The fix is `KeyboardAvoidingView` around the screen, or `automaticallyAdjustKeyboardInsets` plus moving the bar inside the avoiding view.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
-  summary: Once a piece has a color, it can't be cleared back to "Not set", because `ColorSwatchPicker` has no deselect or "None" option.
-  evidence: Blind reviewer. This predates Phase 3, but is more visible now that Details shows "Not set". The fix is tapping the selected swatch to clear it, or a "None" swatch, with `onChange` accepting `null`.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-5-2-today-on-home-and-wear-streak.md`
-  summary: The Supabase CLI's `supabase/.temp/` directory is untracked and not in `.gitignore`, so a broad `git add` would commit it.
-  evidence: It showed as `?? supabase/.temp/` in git status before Story 5.2 started; flagged by the 5.2 blind review.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
   summary: Resize wear photos on the server with Supabase image transformations once the project is on Pro, instead of relying only on the on-device re-encode.
@@ -201,123 +325,86 @@
   evidence: Deferred by Story 5.4's frozen Never list. `lib/fits/wearPhoto.ts` is the only module that talks to the bucket (the `ImageStore` seam, NFR8), so a move only changes that file.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
-  summary: Turn on the Supabase spend cap and usage alerts before launch, and count wear photos in Epic 6's storage-budget check.
-  evidence: Story 5.4's cost controls 9 and 10. Both are launch and Epic 6 tasks, not code in this story. Epic 5 context also notes account deletion (Story 6.9) must remove `wear-photos` files.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-attach-a-photo-to-a-wear.md`
   summary: Wrap `auth.uid()` in `(select auth.uid())` in the `wardrobe` bucket's storage policies (`0002_avatar_storage.sql`), so it's evaluated once per statement rather than per row.
   evidence: Found while writing 0013's `wear-photos` policies, which use the wrapped form per the supabase-postgres-best-practices skill (security-rls-performance). The older `wardrobe` policies predate that and call it unwrapped.
-- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
-  summary: `supabase/.temp/` (Supabase CLI state) is not in `.gitignore` and shows up untracked.
-  evidence: `.gitignore` has no `supabase` entry; the directory predates Story 5.5.
-- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
-  summary: Fit detail left open across midnight keeps yesterday's `todayWornFitIds`, so the worn toggle (and now the Worn strip's Add tile) acts on yesterday's wear.
-  evidence: the `['todayWornFitIds', userId]` key has no date and Fit detail has no day-rollover refresh like Home's AppState listener; unverified whether a focus refetch covers it in practice — settle by leaving Fit detail open past midnight on a device.
 
 - source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
   summary: Move the My Fits grid (`app/(tabs)/fits.tsx:290`) from `FlatList` to FlashList v2, like the Wardrobe grid, with `recyclingKey` on its images.
   evidence: Performance review of 2026-09-27. Minor on its own; pick up alongside Story 6.2, which already touches `FitsGridCell`.
 
-- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
-  summary: Add `npx expo-doctor` to CI (`.github/workflows/ci.yml` has lint, typecheck and test only).
-  evidence: Performance review of 2026-09-27. Catches mismatched native dependency versions before an EAS build does.
+## Resolved
+
+Kept for history.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-browse-and-filter-my-fits.md`
+  summary: `fit_wears` (this story's new table) has no UPDATE or DELETE policy at all, so a mis-tap on "mark worn" can never be corrected or undone by the user once Story 4.2 ships that action.
+  evidence: Code-review finding (blind-hunter). Real product gap, but the "mark worn" UI it would apply to doesn't exist until Story 4.2 -- whether/how to let a user undo a wear entry (a policy change, a UI affordance, or both) is that story's design decision, not a defect in this story, which only reads the table.
+  status: resolved by `spec-4-2-favorite-a-fit-and-mark-it-worn.md` -- see `supabase/migrations/0009_fit_wears_undo.sql` (`fit_wears_delete_own` policy) and `lib/fits/markFitWorn.ts`'s `unmarkFitWornToday`.
 
 - source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 6 re-plan, 2026-09-28)
   summary: Saving a Fit (`lib/fits/saveFit.ts`) is several requests with client-side rollback, not one transaction, so a failure part-way can leave an orphaned row or file.
   evidence: Performance review of 2026-09-27, and the independent plan review found the rollback weaker than it looks: the `wardrobe` bucket had no DELETE policy, so file rollbacks did nothing until Story 6.1 adds one. A transactional save needs an RPC function, which Story 6.6 rules out for its own scope; it's a separate design decision.
   resolved_by: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-6-count-wears-on-the-server.md`
-  summary: `getWearDates` (`lib/fits/wearStreak.ts:12`) downloads every wear's `worn_on` for the streak, so the download grows with every wear.
-  evidence: Independent plan review, 2026-09-28. Ordered newest-first, so a response cut off at PostgREST's `max_rows` drops the oldest history, not the streak days; not wrong today, only growing. Fix when needed with a distinct-dates view (same `security_invoker` pattern as 6.6) or by reading only recent days.
-
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
   summary: Editing a Fit whose `fit_items` write fails soft-deletes the existing Fit (`rollbackOrphanedFit` in `lib/fits/saveFit.ts`), so an abandoned edit makes the Fit vanish.
   evidence: Story 6.1 review (triage #14). `app/new-fit.tsx:270` reuses `insertFit` for edits with the same `fitId`; the rollback was written for a brand-new row. A retry restores it (`deleted_at: null`). With 0014 applied, `rollbackCover` now also really deletes the new cover the soft-deleted row points at. Fix: only soft-delete when the row was new, or restore the previous `cover_path` on an edit. Related to the transactional-save entry above.
   resolved_by: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
-  summary: Private images stay in expo-image's memory and disk cache after sign-out; nothing calls `Image.clearDiskCache`/`clearMemoryCache`.
-  evidence: Story 6.1 review (triage #18). Pre-existing (expo-image's default `cachePolicy` is already `disk`); matters on a shared or handed-down phone. Fix: clear both caches in the sign-out flow.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
-  summary: Unverified on the second platform: a cached `onLoad` may report a `source.url` that isn't the signed URL (bare cache key or `file://`), so ClosetTile's `isSignedUrlFor` guard would drop the measurement and tiles would keep the category default aspect.
-  evidence: Story 6.1 review (triage #9), maybe-false; would be medium. The user's device check passed on one platform. Settle by logging `event.source.url` for a cached load on both iOS and Android.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
-  summary: `CanvasItem`'s `StorageImage` branch (`imagePath && imageUrl`) is never rendered by a test.
-  evidence: Story 6.1 review (triage #3). `CanvasItem` is mocked in every suite because Reanimated v4 has no working jest mock (`__tests__/fitCanvas.test.tsx:9-18`); `FitCanvas` passing `imagePath` is tested. Needs a Reanimated/gesture test harness.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
-  summary: Confirm migration 0014 is applied to the Supabase project CI's RLS suite uses.
-  evidence: Story 6.1 review (triage #4), maybe-false. Applied and passing 31/31 against the project in `.env.local`; whether CI's secrets point at the same project is unknown. Settle by comparing the CI secret's project ref.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-cache-storage-images-by-path.md`
-  summary: The account-deletion Storage cleanup (Epic 1 retro item 5) must remove the whole `wardrobe/{uid}/` folder, not just `avatar.jpg`.
-  evidence: Story 6.1 review (triage #16). Avatars are now `avatar-{ts}.jpg`, and a failed best-effort delete (or a no-connection save) can leave several.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-small-webp-fit-cover-thumbnails.md`
-  summary: Closing the Save sheet (or tapping Save again) after a failed offline Fit save leaves that attempt's cover/thumbnail pair orphaned in Storage, because the offline rollback `remove` also fails and the next attempt mints a new `ts`.
-  evidence: Pre-existing for the cover alone (`app/new-fit.tsx` onClose clears `pendingSave`); Story 6.2 makes it two files. Triage #4/#30.
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-2-small-webp-fit-cover-thumbnails.md`
   summary: `insertFit` rolls back the uploaded cover pair on any `fits`/`fit_items` error, including a lost response after the row actually committed, so an abandoned save can leave a live row pointing at deleted files (and on edit, soft-delete the existing Fit).
   evidence: Pre-existing rollback design in `lib/fits/saveFit.ts`; a same-`ts` retry now restores the exact paths, but an abandon does not. Severity unverified as medium. Settle by simulating a committed upsert with a dropped response. Triage #5.
   resolved_by: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
-  summary: Epic 1 retro item 4 (`handleSignOut` ignores `signOut()`'s error) must now be built against the shared session: Profile no longer navigates after sign-out, and Welcome plus the Query-cache clear both come from `SessionProvider`'s `SIGNED_OUT` event.
-  evidence: Story 6.3 moved sign-out routing onto the `Stack.Protected` guards and cache cleanup onto the event, so a fix that only branches inside `app/profile.tsx` would miss the case where `signOut()` errors but the local session is still cleared.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-3-one-shared-auth-session.md`
-  summary: Confirm on a live project that an email `signUp`'s `SIGNED_IN` user passes `isNewAccount`, so a new email account is routed to onboarding by `app/index` rather than Home.
-  evidence: Story 6.3 review, maybe-false (medium if true). Email sign-up no longer navigates to onboarding unconditionally; `isNewAccount` was written for the ID-token flow (it returns true when `last_sign_in_at` is null). Settle with a device sign-up with "Confirm email" off.
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-4-production-crash-and-analytics-wiring.md`
-  summary: Set Sentry's `environment` per build (e.g. from `Updates.channel`) so preview builds stop reporting as `production`.
-  evidence: `initSentry` sets no `environment`, and the SDK defaults to `production` outside `__DEV__`, so internal preview crashes mix with store crashes; pre-existing, now easy with `expo-updates` installed.
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-5-react-query-set-up-for-react-native.md`
-  summary: Decide whether `onlineManager` should also follow `isInternetReachable`, so a reconnect refetch waits for working traffic (medium, unverified).
-  evidence: `lib/query/queryClient.ts` follows `isConnected` only and no-connection errors never retry, so a too-early refetch stays failed until a tap or focus. To settle it, check on a device how `expo-network` reports captive Wi-Fi and network switches.
+  summary: `rollbackOrphanedFit` (`lib/fits/saveFit.ts:96`) soft-deletes the Fit even in edit mode, so a failed `fit_items` upsert on an edit followed by Cancel removes an existing Fit. Pre-existing. Resolved by `spec-atomic-fit-save.md`.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
 
-## Deferred from: code review of spec-6-5-react-query-set-up-for-react-native.md (2026-11-05)
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-5-react-query-set-up-for-react-native.md`
+  summary: `saveBatch` rollback (`lib/wardrobe/addItem.ts:153`) hard-deletes `wardrobe_items`, which has no DELETE policy, so rows survive after their files are removed and show as broken tiles. Pre-existing. Resolved by `spec-batch-save-keep-saved-items.md`: saved items are kept, not rolled back.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
 
-- `rollbackOrphanedFit` (`lib/fits/saveFit.ts:96`) soft-deletes the Fit even in edit mode, so a failed `fit_items` upsert on an edit followed by Cancel removes an existing Fit. Pre-existing. Resolved by `spec-atomic-fit-save.md`.
-- `saveBatch` rollback (`lib/wardrobe/addItem.ts:153`) hard-deletes `wardrobe_items`, which has no DELETE policy, so rows survive after their files are removed and show as broken tiles. Pre-existing. Resolved by `spec-batch-save-keep-saved-items.md`: saved items are kept, not rolled back.
-- Wardrobe binds `refreshing` to `isRefetching` (`app/(tabs)/wardrobe.tsx:288`), so the spinner shows on background refetches; `fits.tsx` guards this with `isPullRefreshing`. Pre-existing.
-- `registerQueryManagers` has no test for a rejected launch reading or for the `AppState` listener teardown.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-preview-name-and-save-a-fit.md`
+  summary: `fit_items.item_id` (FK to `wardrobe_items`, `on delete cascade`) has no index, unlike `fit_id`; a lookup by `item_id` will full-scan.
+  evidence: Code-review finding (blind-hunter). No query in Story 3.2's diff looks up `fit_items` by `item_id` -- Story 3.4 ("Fit behavior when a wardrobe item is deleted") is the actual consumer of that access path and should add the index alongside the code that needs it.
+  resolved_by: `supabase/migrations/0011_fit_items_item_id_index.sql`
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
-  summary: A user can reference another user's `wardrobe_items.id` in their own `fit_items`, because the policies check only Fit ownership and foreign keys ignore RLS.
-  evidence: Confirmed in a local Postgres run of the repo's migrations during spec review. No data is exposed today: the `getFitItems` join returns null under `wardrobe_items_select_own`. Any future service-role or definer join over `fit_items` would expose the item. The fix is an RLS change, which the spec excludes.
-- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
-  summary: Failed Fit saves leave orphaned cover files in Storage, and nothing sweeps them.
-  evidence: The spec keeps files on every failure because a lost request can't prove the row wasn't committed. A sweep comparing the bucket with `fits.cover_path` would reclaim them.
-- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
-  summary: Saving a Fit that was deleted on another device shows the generic error and retries forever, instead of "This Fit is no longer available".
-  evidence: `save_fit` returns `P0002` and the failed-save invalidations use `refetchType: 'none'`, so `fitNotFound` never fires. Refetching `['fits', userId]` on `P0002` would reach it.
-- source_spec: `_bmad-output/implementation-artifacts/spec-atomic-fit-save.md`
-  summary: Nothing automated confirms a migration is on production before an OTA update ships.
-  evidence: CI runs against the dev project only, and migrations are applied by hand. An update that depends on `save_fit` would fail every save on a project without it.
-- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
-  summary: The Fit canvas briefly loses its color and shadow on screen while Save captures it.
-  evidence: `FitCanvas` drops both while `capturing`, for two frames plus the capture. Capturing an inner wrapper with no background would avoid it.
-- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
-  summary: No test covers switching theme while the Fit detail screen is open, before sharing.
-  evidence: The fill is read in the share handler at render, which is correct today; wrapping the handler in `useCallback` or `useMemo` could freeze it silently.
-- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
-  summary: A cover Skia cannot decode for sharing reports a plain error with no context.
-  evidence: `fillBackground` in `lib/fits/shareFit.ts` throws without the byte length or file type.
-- source_spec: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md`
-  summary: The Save sheet preview crops a non-square cover, so it can differ from the saved tile.
-  evidence: `SaveFitSheet` uses `contentFit="cover"` in a square well; tiles use `contain`. Predates this change.
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-3-item-detail.md`
+  summary: `fit_items` has no index on `item_id`, so Item detail's new "In N Fits" read (`.eq('item_id', …)`) becomes a sequential scan (plus a per-row RLS check) as Fits grow.
+  evidence: The blind reviewer found it. `0004_fits.sql` only indexes `fit_id`, and Phase 3's intent ruled out schema changes. The fix is a migration adding `fit_items_item_id_idx`.
+  resolved_by: `supabase/migrations/0011_fit_items_item_id_index.sql`
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
-  summary: The add-item queue stays editable while a batch save is in flight -- Remove, Cancel and row fields all work, but `saveBatch` saves a snapshot, so a removed item still saves, an edit doesn't reach the stored item (yet shows on its locked Saved row), and Cancel unmounts mid-save.
-  evidence: Review pass 1 (edge-case-hunter, blind-hunter). Pre-existing: the baseline also passed a snapshot to `saveBatch` with Cancel and Remove live. Fix is to lock the queue (rows, Remove, Cancel) while `submitting`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-edit-and-delete-a-fit.md`
+  summary: A saved placement whose wardrobe item was deleted seeds onto the edit canvas as a silent `'top'`-category fallback with no visible indication anything is missing.
+  evidence: Code-review finding (blind-hunter). Real today (deleting a wardrobe item is already possible, not gated on Story 3.4), but epics.md's own Story 3.4 ("Fit behavior when a wardrobe item is deleted") explicitly owns showing a visible gap at the deleted item's canvas position -- that story's own acceptance criterion, not this one's.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-3-4-fit-behavior-when-a-wardrobe-item-is-deleted.md`
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-batch-save-keep-saved-items.md`
-  summary: If an item's `wardrobe_items` upsert commits but its response is lost, `saveBatch`'s catch removes that item's Storage files while its row exists -- a broken tile if the user cancels instead of retrying.
-  evidence: Review pass 1 (edge-case-hunter). Pre-existing: the failing-item cleanup in `lib/wardrobe/addItem.ts` is unchanged from baseline. A retry heals it (re-upload + upsert). Fix options: skip file cleanup on ambiguous (network) failures, or check for the row before removing.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-favorite-a-fit-and-mark-it-worn.md`
+  summary: Add a Depop-style tappable favorite heart badge (top-right, small semi-transparent circular backing, monochrome, no like-count) to `FitsGridCell.tsx`/`app/(tabs)/fits.tsx`, so favoriting works from the My Fits grid as well as the Fit detail screen.
+  evidence: User request to match Pinterest/Depop's grid aesthetic specifically; validated via Mobbin (Pinterest's masonry layout already matches `FitsGridCell.tsx`, Depop's top-right heart-on-tile is the pattern to copy, its like-count/red fill are not per this app's no-badge-counts/monochrome rules). Split out purely for spec-size (pushed this story past the 1600-token guideline) — user asked for it as a fast-follow immediately after this story, not a backlog item.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-4-2-grid-cell-favorite-heart.md`
 
-- source_spec: `_bmad-output/implementation-artifacts/epic-5-retro-2026-09-27.md`
-  summary: Run the date-heavy suites (planner, week, streak) under a second, positive-offset time zone (e.g. `TZ=Asia/Tokyo`) in CI.
-  evidence: `jest.config.js` pins `America/Los_Angeles` (`f4e0c0a`), so off-by-one-day bugs east of UTC or in midnight-DST zones ship untested. The user chose not to track it as a sprint action item (Epic 5 retro, finding 16).
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-share-a-fit.md`
+  summary: `supabase/.temp/` (Supabase CLI state) is untracked but missing from `.gitignore`, so it could be committed by accident.
+  evidence: Code-review finding (blind-hunter). It predates this story; `git status` showed it at the start of the session.
+  resolved_by: `.gitignore` now lists `supabase/.temp/`
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2-today-on-home-and-wear-streak.md`
+  summary: The Supabase CLI's `supabase/.temp/` directory is untracked and not in `.gitignore`, so a broad `git add` would commit it.
+  evidence: It showed as `?? supabase/.temp/` in git status before Story 5.2 started; flagged by the 5.2 blind review.
+  resolved_by: `.gitignore` now lists `supabase/.temp/` (duplicate of the Story 4.3 entry)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
+  summary: `supabase/.temp/` (Supabase CLI state) is not in `.gitignore` and shows up untracked.
+  evidence: `.gitignore` has no `supabase` entry; the directory predates Story 5.5.
+  resolved_by: `.gitignore` now lists `supabase/.temp/` (duplicate of the Story 4.3 entry)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-redesign-v2-phase-2-my-fits.md`
+  summary: A Fit saved with no canvas color bakes that moment's light or dark `surface-raised` into its cover PNG, so after a light/dark switch the letterboxed cover shows a seam against the tile (and Fit detail's well).
+  evidence: Blind reviewer. `FitCanvas.tsx` paints null backgrounds with `bg-surface-raised dark:bg-surface-raisedDark` inside the captured view; Fit detail (`app/fit/[id].tsx:387-402`) has the same well and contain. Possible fixes: capture with a transparent background, or save the resolved color on the Fit.
+  resolved_by: `docs/superpowers/specs/2026-11-19-transparent-default-covers-design.md` (PR #42)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-see-a-fit-s-wear-photos-on-fit-detail.md`
+  summary: Fit detail left open across midnight keeps yesterday's `todayWornFitIds`, so the worn toggle (and now the Worn strip's Add tile) acts on yesterday's wear.
+  evidence: the `['todayWornFitIds', userId]` key has no date and Fit detail has no day-rollover refresh like Home's AppState listener; unverified whether a focus refetch covers it in practice — settle by leaving Fit detail open past midnight on a device.
+  resolved_by: `_bmad-output/implementation-artifacts/spec-e5-retro-1-day-rollover-and-shared-toggle.md`
