@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-10-2026 22:05
-last_updated: 11-23-2026 12:00
+last_updated: 11-23-2026 18:00
 project: fittr
 project_key: NOKEY
 tracking_system: file-system
@@ -62,6 +62,7 @@ development_status:
   4-4-see-your-wear-streak: done
   4-5-see-wear-stats-and-spot-underused-items: backlog
   4-6-recap-card-and-streak-milestone-rewards: backlog
+  4-7-wardrobe-insights-paid: backlog
   epic-4-retrospective: optional
 
   epic-5: done
@@ -83,11 +84,57 @@ development_status:
   6-5-react-query-set-up-for-react-native: done
   6-6-count-wears-on-the-server: backlog
   6-7-turn-on-the-react-compiler: backlog
-  6-8-guided-onboarding-to-first-fit: backlog
+  6-8-guided-onboarding-to-a-first-stylist-result: backlog
   6-9-delete-account: backlog
   6-10-loading-empty-and-error-states-everywhere: backlog
   6-11-pre-launch-verification: backlog
   epic-6-retrospective: optional
+
+  # Launch sequence (epics.md): 6.6, 6.7 -> Epics 7-11 -> Epic 12 -> 6.8, 6.9, 6.10 -> 6.11
+  epic-7: backlog
+  7-1-close-the-fit-ownership-gaps: backlog
+  7-2-tag-items-automatically: backlog
+  7-3-correct-an-item-s-tags: backlog
+  7-4-eval-harness-and-random-baseline: backlog
+  7-5-ask-the-stylist-for-fits: backlog
+  7-6-act-on-a-suggestion: backlog
+  7-7-quick-shuffle: backlog
+  7-8-stylist-entry-points: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-item-embeddings: backlog
+  8-2-intent-parse-and-shortlist: backlog
+  8-3-best-and-surprise-me: backlog
+  8-4-text-pins-exclusions-and-never-rules: backlog
+  8-5-honest-coverage: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-taste-profile: backlog
+  9-2-fit-vibe-labels: backlog
+  9-3-past-fits-as-examples: backlog
+  9-4-swap-a-piece-and-more-like-this: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-style-presets: backlog
+  10-2-per-item-style-scores: backlog
+  10-3-any-style-typed: backlog
+  epic-10-retrospective: optional
+
+  epic-11: backlog
+  11-1-visual-check: backlog
+  11-2-today-s-suggestion-on-home: backlog
+  epic-11-retrospective: optional
+
+  epic-12: backlog
+  12-1-subscriptions-and-entitlements: backlog
+  12-2-paywall-and-restore-purchases: backlog
+  12-3-free-and-paid-limits: backlog
+  12-4-share-watermark: backlog
+  12-5-invite-a-friend: backlog
+  epic-12-retrospective: optional
 action_items:
   - id: "epic-1-retro-item-1-fix-analytics-env-var-prefix"
     epic: 1

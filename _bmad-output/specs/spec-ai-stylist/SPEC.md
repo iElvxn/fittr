@@ -58,9 +58,9 @@ A vision to realize and an opportunity to capture. Fittr users have catalogued r
   - **intent:** An offline harness scores the pipeline on fixture closets, and every live request is logged with its inputs, candidates, output, tokens, cost and latency.
   - **success:** One command produces a score table comparing the current pipeline with the baseline and previous runs; every live request has a `stylist_requests` row.
 
-- **CAP-12 Usage limits**
-  - **intent:** Each user has a daily request cap, enforced on the server.
-  - **success:** The request after the cap returns a defined over-limit response, and the client shows it.
+- **CAP-12 Access and usage limits**
+  - **intent:** The Stylist is a paid feature, with a taste for free users. Free users get unlimited quick shuffles, one free prompted request during onboarding (the first result), and then one free prompted request per week. Everything else needs an active subscription: prompted requests, pins, styles, personalization and the visual check. Paid users have a fair-use daily cap. Access and caps are enforced on the server, from the `entitlements` table, never from the client.
+  - **success:** A free user's prompted request beyond the onboarding result and the weekly allowance returns a defined paywall response, and the client opens the paywall. A paid user's request after the daily cap returns a defined over-limit response, and the client shows it. A forged client claim of a subscription is rejected. Quick shuffle works for free users.
 
 ## Constraints
 
@@ -74,9 +74,10 @@ A vision to realize and an opportunity to capture. Fittr users have catalogued r
 - **Retrieval favors recall; style is judged at the outfit level.** Style comes from how pieces combine, so the shortlist must keep plain, versatile pieces that score low on a style by themselves. Style adherence is judged on whole outfits, by the generator and the eval judge.
 - **Latency targets (proposed; confirmed by v0 measurements):** quick shuffle p95 < 1 s; prompted request p95 < 8 s.
 - **Unlock threshold:** the Stylist unlocks once the closet has at least one top, one bottom and one pair of shoes.
-- **Photo disclosure:** item photos are sent to a third-party model API, and Stylist onboarding discloses this before first use.
+- **Photo disclosure and consent:** item photos are sent to a third-party model API. Before first use, Stylist onboarding names the provider, says what is sent, and asks for explicit consent, as App Store review requires for personal data shared with third-party AI.
 - **UI:** named "Stylist" in the serif; no chat interface, no sparkles or AI clichés; follows the redesign v2 direction (`DESIGN.md`).
 - **Baseline first:** every layer after v0 ships only if the eval shows it improves quality, or matches quality at lower cost (`milestones.md`).
+- **Part of launch (decided 2026-11-23):** all milestones v0–v4 and the daily suggestion are built and evaluated before the public launch, inside a subscription launched the same day (see `milestones.md`). A layer that fails its gate ships turned off; it is not forced on.
 
 ## Non-goals
 
@@ -84,7 +85,7 @@ A vision to realize and an opportunity to capture. Fittr users have catalogued r
 - Virtual try-on, avatars, or generated images of clothing.
 - A conversational chat interface.
 - Cross-user collaborative filtering: each user's items are unique, so it doesn't apply.
-- Calendar integration (possible later).
+- Calendar integration and the "rediscover" toggle (possible after launch).
 - Training or fine-tuning custom models.
 
 ## Success signal
@@ -102,7 +103,7 @@ On the fixture eval, the shipped pipeline beats the category-valid random baseli
 
 - Which hosted embedding provider and model: FashionCLIP on Hugging Face or Replicate, or a commercial multimodal embedding API?
 - Which Claude model for each step (tagging, generation, visual check)? To be decided by eval cost and quality.
-- What's the daily cap for free users, and is there a paid tier?
+- What's the paid fair-use daily cap for prompted requests? (Free vs. paid is decided: see CAP-12 and Epic 12 in `epics.md`.)
 - Should `one_piece` become a real `wardrobe_items` category (this affects the builder templates), or stay a tagged attribute?
 - Which weather source to use, and is asking for location permission acceptable?
 - How long are `stylist_requests` and feedback rows kept, given they're used as eval data?
